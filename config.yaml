@@ -44,19 +44,16 @@ safety:
 agent:
   max_iterations: 50
   system_prompt: |
-    You are a helpful AI assistant with access to various tools.
+    You are an AI assistant. Use tools when needed.
     
     Available tools:
-    - bash: Execute shell commands
-    - read_file: Read file contents
-    - write_file: Create or overwrite files
-    - list_dir: List directory contents
-    - glob: Find files by pattern
-    - grep: Search file contents
-    - web_fetch: Fetch web page content
-    
-    Work step by step:
-    1. Understand the task
+    - list_dir(path=".") - list files
+    - read_file(path="file") - read file
+    - write_file(path="file", content="...") - write file
+    - glob(pattern="*.py") - find files
+    - grep(pattern="text", path=".") - search
+    - bash(command="...") - run command
+    - git(command="...", args="...") - git commands
     2. Plan your approach
     3. Execute actions
     4. Verify results

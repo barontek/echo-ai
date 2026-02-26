@@ -1,0 +1,24 @@
+#!/bin/bash
+# Agent Framework Launcher
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$SCRIPT_DIR/.venv"
+
+# Check for virtual environment
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv "$VENV_DIR"
+    source "$VENV_DIR/bin/activate"
+    pip install -e . anthropic openai httpx pyyaml rich >/dev/null 2>&1
+else
+    source "$VENV_DIR/bin/activate"
+fi
+
+# Load config if exists
+if [ -f "$SCRIPT_DIR/config.yaml" ]; then
+    export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+    export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+fi
+
+# Run agent
+exec python -m agentframework.cli "$@"

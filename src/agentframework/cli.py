@@ -20,8 +20,19 @@ from .tools.git import GitTool
 console = Console()
 
 
-def load_config(path: str = "config.yaml") -> dict:
-    """Load configuration from YAML file."""
+def load_config(path: str = None) -> dict:
+    if path is None:
+        script_dir = Path(__file__).parent.parent.parent
+        search_paths = [
+            Path.cwd() / "config.yaml",
+            script_dir / "config.yaml",
+            Path.home() / "vibe-ai" / "config.yaml",
+        ]
+        for config_path in search_paths:
+            if config_path.exists():
+                with open(config_path) as f:
+                    return yaml.safe_load(f)
+        return {}
     config_path = Path(path)
     if config_path.exists():
         with open(config_path) as f:

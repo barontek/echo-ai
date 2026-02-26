@@ -56,6 +56,9 @@ class OllamaProvider(LLMProvider):
             data = response.json()
 
             content = data.get("message", {}).get("content", "")
+            thinking = data.get("message", {}).get("thinking", "")
+            if thinking:
+                content = thinking + "\n\n" + content
             tool_calls = []
 
             if "tool_calls" in data.get("message", {}):

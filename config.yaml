@@ -1,0 +1,70 @@
+model:
+  # provider options: anthropic, openai, ollama
+  provider: ollama
+  name: qwen2.5:3b  # or codellama, mistral, etc.
+  # For ollama, optionally specify base_url (default: http://localhost:11434)
+  base_url: http://localhost:11434
+  temperature: 0.3
+
+tools:
+  enabled:
+    - bash
+    - read_file
+    - write_file
+    - list_dir
+    - glob
+    - grep
+    - web_fetch
+    - git
+  bash:
+    allowed_commands:
+      - git
+      - npm
+      - cargo
+      - make
+      - ls
+      - cat
+      - echo
+      - grep
+      - find
+      - python
+      - python3
+      - node
+    timeout: 60
+
+safety:
+  workspace: "."
+  allow_network: true  # Enable for ollama (local, trusted)
+  allowed_domains: []
+  blocked_commands: []
+  max_file_size: 10485760  # 10MB
+  max_execution_time: 60
+  require_approval_for: []  # Set to [] to disable approval prompts for testing
+
+agent:
+  max_iterations: 50
+  system_prompt: |
+    You are a helpful AI assistant with access to various tools.
+    
+    Available tools:
+    - bash: Execute shell commands
+    - read_file: Read file contents
+    - write_file: Create or overwrite files
+    - list_dir: List directory contents
+    - glob: Find files by pattern
+    - grep: Search file contents
+    - web_fetch: Fetch web page content
+    
+    Work step by step:
+    1. Understand the task
+    2. Plan your approach
+    3. Execute actions
+    4. Verify results
+    
+    Be thorough and think about edge cases.
+
+api_keys:
+  # Set via environment variables if needed:
+  # ANTHROPIC_API_KEY
+  # OPENAI_API_KEY
+  # OLLAMA_HOST (optional, for custom endpoint)

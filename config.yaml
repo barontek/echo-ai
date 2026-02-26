@@ -34,12 +34,23 @@ tools:
 
 safety:
   workspace: "/home/barontek"
-  allow_network: true  # Enable for ollama (local, trusted)
+  allow_network: true
   allowed_domains: []
-  blocked_commands: []
-  max_file_size: 10485760  # 10MB
+  blocked_commands:
+    - rm -rf /
+    - dd if=
+    - mkfs
+    - :(){:|:&};:
+    - curl.*\|.*sh
+    - wget.*\|.*sh
+    - nc -e
+    - /bin/sh -i
+    - /bin/bash -i
+  max_file_size: 10485760
   max_execution_time: 60
-  require_approval_for: []  # Set to [] to disable approval prompts for testing
+  require_approval_for:
+    - bash
+    - write_file
 
 agent:
   max_iterations: 50

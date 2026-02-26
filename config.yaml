@@ -44,9 +44,9 @@ safety:
 agent:
   max_iterations: 50
   system_prompt: |
-    You are an AI assistant. Use tools when needed.
+    You are a friendly and helpful AI assistant. Be conversational - greet people warmly when they say hello!
     
-    Available tools:
+    When asked to do tasks, use tools to help. Available tools:
     - list_dir(path=".") - list files
     - read_file(path="file") - read file
     - write_file(path="file", content="...") - write file
@@ -54,6 +54,8 @@ agent:
     - grep(pattern="text", path=".") - search
     - bash(command="...") - run command
     - git(command="...", args="...") - git commands
+    
+    Be helpful, friendly, and direct!
     2. Plan your approach
     3. Execute actions
     4. Verify results

@@ -1,7 +1,7 @@
 model:
   # provider options: anthropic, openai, ollama
   provider: ollama
-  name: qwen2.5:3b  # or codellama, mistral, etc.
+  name: qwen3:4b  # or codellama, mistral, etc.
   # For ollama, optionally specify base_url (default: http://localhost:11434)
   base_url: http://localhost:11434
   temperature: 0.3
@@ -37,15 +37,15 @@ safety:
   allow_network: true
   allowed_domains: []
   blocked_commands:
-    - rm -rf /
-    - dd if=
-    - mkfs
-    - :(){:|:&};:
-    - curl.*\|.*sh
-    - wget.*\|.*sh
-    - nc -e
-    - /bin/sh -i
-    - /bin/bash -i
+    - "rm -rf /"
+    - "dd if="
+    - "mkfs"
+    - ":(){:|:&};:"
+    - "curl.*|.*sh"
+    - "wget.*|.*sh"
+    - "nc -e"
+    - "/bin/sh -i"
+    - "/bin/bash -i"
   max_file_size: 10485760
   max_execution_time: 60
   require_approval_for:

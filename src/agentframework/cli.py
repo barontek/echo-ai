@@ -17,7 +17,7 @@ from .tools.search import GlobTool, GrepTool
 from .tools.web import WebFetchTool
 from .tools.git import GitTool
 
-console = Console()
+console = Console(color_system="256")
 
 
 def load_config(path: str = None) -> dict:
@@ -160,7 +160,17 @@ async def interactive_mode(agent: Agent):
 
             response = await agent.run(user_input)
             console.print("\n")
-            console.print(Markdown(response))
+            
+            # Handle thinking markers for qwen3
+            if "__THINKING__" in response:
+                parts = response.split("__THINKING_END__")
+                thinking_part = parts[0].replace("__THINKING__\n", "")
+                content_part = parts[1] if len(parts) > 1 else ""
+                console.print(thinking_part, style="bright_black")
+                if content_part.strip():
+                    console.print(Markdown(content_part))
+            else:
+                console.print(Markdown(response))
             console.print()
         except KeyboardInterrupt:
             break
@@ -175,7 +185,17 @@ async def interactive_mode(agent: Agent):
 async def run_single(agent: Agent, task: str):
     """Run a single task and print the response."""
     response = await agent.run(task)
-    console.print(Markdown(response))
+    
+    # Handle thinking markers for qwen3
+    if "__THINKING__" in response:
+        parts = response.split("__THINKING_END__")
+        thinking_part = parts[0].replace("__THINKING__\n", "")
+        content_part = parts[1] if len(parts) > 1 else ""
+        console.print(thinking_part, style="bright_black")
+        if content_part.strip():
+            console.print(Markdown(content_part))
+    else:
+        console.print(Markdown(response))
 
 
 def main():

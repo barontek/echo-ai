@@ -58,7 +58,7 @@ class OllamaProvider(LLMProvider):
             content = data.get("message", {}).get("content", "")
             thinking = data.get("message", {}).get("thinking", "")
             if thinking:
-                content = f"[dim]{thinking}[/dim]\n\n{content}"
+                content = f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
             tool_calls = []
 
             if "tool_calls" in data.get("message", {}):

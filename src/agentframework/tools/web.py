@@ -99,4 +99,18 @@ class WebSearchTool(Tool):
             if not approved:
                 return ToolResult(error="Web search requires approval")
 
-        return ToolResult(content=f"Web search not implemented. Query: {query}")
+        try:
+            from ddgs import DDGS
+            ddgs = DDGS()
+            results = list(ddgs.text(query, max_results=5))
+            
+            if not results:
+                return ToolResult(content="No results found.")
+            
+            formatted = []
+            for r in results:
+                formatted.append(f"- {r['title']}: {r.get('href', '')}\n  {r.get('body', '')[:200]}")
+            
+            return ToolResult(content="\n\n".join(formatted))
+        except Exception as e:
+            return ToolResult(error=f"Search failed: {e}")

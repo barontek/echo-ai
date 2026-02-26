@@ -14,7 +14,7 @@ from .safety import SafetyConfig
 from .tools.bash import BashTool
 from .tools.file import ReadFileTool, WriteFileTool, ListDirTool
 from .tools.search import GlobTool, GrepTool
-from .tools.web import WebFetchTool
+from .tools.web import WebFetchTool, WebSearchTool
 from .tools.git import GitTool
 
 console = Console(color_system="256")
@@ -94,6 +94,9 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
 
     if "web_fetch" in enabled:
         tools.append(WebFetchTool(safety_config=safety_config))
+
+    if "web_search" in enabled:
+        tools.append(WebSearchTool(safety_config=safety_config))
 
     if "git" in enabled:
         tools.append(GitTool(safety_config=safety_config))

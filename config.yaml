@@ -15,6 +15,7 @@ tools:
     - glob
     - grep
     - web_fetch
+    - web_search
     - git
   bash:
     allowed_commands:
@@ -64,6 +65,7 @@ agent:
     - "create file" -> write_file
     - "list files" -> list_dir
     - "read file" -> read_file
+    - "weather in [city]" -> web_fetch to wttr.in/[city]?format=j1 or wttr.in/[city]?format=3 for simple output
     
     Be chill, not robotic!
     2. Plan your approach

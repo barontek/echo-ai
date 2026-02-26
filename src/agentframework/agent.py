@@ -100,7 +100,7 @@ class Agent:
 
     async def _run_loop(self) -> str:
         """Main agent loop - get response, execute tools, repeat."""
-        thinking_content = ""
+        has_thinking = False
         
         for iteration in range(self.config.max_iterations):
             response = await self.llm.chat(
@@ -111,16 +111,16 @@ class Agent:
 
             if not response.tool_calls:
                 final_content = response.content
-                if thinking_content:
-                    final_content = f"__THINKING__\n{thinking_content}\n__THINKING_END__\n\n{response.content}"
+                if has_thinking:
+                    final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{response.content}"
                 self.messages.append(
                     Message(role="assistant", content=final_content)
                 )
                 return final_content
 
-            # Store thinking for display before tool execution
+            # Mark that we have thinking content before tool execution
             if iteration == 0 and response.content:
-                thinking_content = response.content
+                has_thinking = True
 
             for tool_call in response.tool_calls:
                 result = await self._execute_tool(tool_call)

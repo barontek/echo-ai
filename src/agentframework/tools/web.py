@@ -49,6 +49,7 @@ class WebFetchTool(Tool):
                 timeout=httpx.Timeout(30.0, connect=10.0),
                 follow_redirects=True,
                 limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                verify=False,
             ) as client:
                 response = await client.get(url)
                 response.raise_for_status()

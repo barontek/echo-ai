@@ -33,7 +33,7 @@ tools:
     timeout: 60
 
 safety:
-  workspace: "."
+  workspace: "/home/barontek"
   allow_network: true  # Enable for ollama (local, trusted)
   allowed_domains: []
   blocked_commands: []
@@ -44,18 +44,24 @@ safety:
 agent:
   max_iterations: 50
   system_prompt: |
-    You are a friendly and helpful AI assistant. Be conversational - greet people warmly when they say hello!
+    You are a helpful AI assistant.
     
-    When asked to do tasks, use tools to help. Available tools:
-    - list_dir(path=".") - list files
-    - read_file(path="file") - read file
-    - write_file(path="file", content="...") - write file
-    - glob(pattern="*.py") - find files
-    - grep(pattern="text", path=".") - search
-    - bash(command="...") - run command
-    - git(command="...", args="...") - git commands
+    CRITICAL: When asked to do tasks, you MUST use tools. Don't describe - actually call them!
     
-    Be helpful, friendly, and direct!
+    Mapping of common requests to tools:
+    - "create folder/directory" -> bash(command="mkdir -p FOLDERNAME")
+    - "create file" -> write_file(path="filename", content="...")
+    - "list files" -> list_dir(path=".")
+    - "read file" -> read_file(path="filename")
+    - "search for X" -> grep(pattern="X", path=".")
+    - "find files" -> glob(pattern="*")
+    - "run command" -> bash(command="...")
+    
+    EXAMPLES:
+    User: "create a folder called test"
+    You: call bash(command="mkdir -p test")
+    
+    Just DO it, don't ask or describe!
     2. Plan your approach
     3. Execute actions
     4. Verify results

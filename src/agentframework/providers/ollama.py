@@ -106,8 +106,8 @@ class OllamaProvider(LLMProvider):
                 extracted = self._extract_tool_calls_from_content(content)
                 if extracted:
                     tool_calls = extracted
-                    # Remove the tool call block from content
-                    content = re.sub(r'\`\`\`(?:json)?\s*\n?(\{.*?\})\n?\`\`\`', '', content, flags=re.DOTALL).strip()
+                    # If we extracted tool calls, clear the content since it was just the tool call
+                    content = ""
 
             return LLMResponse(content=content, tool_calls=tool_calls)
 
@@ -214,8 +214,8 @@ class OllamaProvider(LLMProvider):
                 extracted = self._extract_tool_calls_from_content(final_content)
                 if extracted:
                     tool_calls = extracted
-                    # Remove the tool call block from content
-                    final_content = re.sub(r'\`\`\`(?:json)?\s*\n?(\{.*?\})\n?\`\`\`', '', final_content, flags=re.DOTALL).strip()
+                    # If we extracted tool calls, clear the content since it was just the tool call
+                    final_content = ""
             
             return LLMResponse(content=final_content, tool_calls=tool_calls)
 

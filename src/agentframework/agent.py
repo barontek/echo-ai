@@ -136,9 +136,9 @@ class Agent:
             )
 
             if not response.tool_calls:
-                final_content = response.content
+                final_content = response.content or ""
                 if has_thinking:
-                    final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{response.content}"
+                    final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{final_content}"
                 self.messages.append(
                     Message(role="assistant", content=final_content)
                 )
@@ -162,6 +162,23 @@ class Agent:
                 *[execute_and_message(tc) for tc in response.tool_calls]
             )
             self.messages.extend(tool_messages)
+
+            # If content is empty after tool execution (or only contains tool call JSON), add system note
+            content = response.content or ""
+            # Check if content only contains tool call JSON (markdown format)
+            is_only_tool_call = bool(response.tool_calls and (
+                not content.strip() or 
+                content.strip().startswith("{") or
+                content.strip().startswith("```")
+            ))
+            
+            if is_only_tool_call:
+                self.messages.append(
+                    Message(
+                        role="user",
+                        content="System Note: Tools executed successfully. Now you MUST provide a final readable response to the user explaining the results."
+                    )
+                )
 
         return "Max iterations reached. The agent could not complete the task."
 
@@ -186,9 +203,9 @@ class Agent:
                 )
 
             if not response.tool_calls:
-                final_content = response.content
+                final_content = response.content or ""
                 if has_thinking:
-                    final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{response.content}"
+                    final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{final_content}"
                 self.messages.append(
                     Message(role="assistant", content=final_content)
                 )
@@ -212,6 +229,23 @@ class Agent:
                 *[execute_and_message(tc) for tc in response.tool_calls]
             )
             self.messages.extend(tool_messages)
+
+            # If content is empty after tool execution (or only contains tool call JSON), add system note
+            content = response.content or ""
+            # Check if content only contains tool call JSON (markdown format)
+            is_only_tool_call = bool(response.tool_calls and (
+                not content.strip() or 
+                content.strip().startswith("{") or
+                content.strip().startswith("```")
+            ))
+            
+            if is_only_tool_call:
+                self.messages.append(
+                    Message(
+                        role="user",
+                        content="System Note: Tools executed successfully. Now you MUST provide a final readable response to the user explaining the results."
+                    )
+                )
 
         return "Max iterations reached. The agent could not complete the task."
 

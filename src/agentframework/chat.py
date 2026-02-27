@@ -281,10 +281,12 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     sys.stdout.write('\033[90m' + chunk + '\033[0m')
                 else:
                     sys.stdout.write(chunk)
+                sys.stdout.flush()
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
             import sys
             sys.stdout.write('\n')
+            sys.stdout.flush()
             
         except KeyboardInterrupt:
             agent.save_session()

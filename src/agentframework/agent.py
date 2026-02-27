@@ -86,6 +86,15 @@ class Agent:
             tools=tools or [],
             system_prompt=system_prompt,
         )
+        
+        # Add delegate tool if not already present
+        if "delegate" not in self.tool_map:
+            from .tools.delegate import DelegateTool
+            delegate_tool = DelegateTool(agent=self)
+            self.tool_map["delegate"] = delegate_tool
+            # Also add to config.tools if it exists there
+            if self.config.tools is not None:
+                self.config.tools.append(delegate_tool)
 
     async def run(self, user_input: str) -> str:
         """Run the agent with user input and return the response."""

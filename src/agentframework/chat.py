@@ -254,6 +254,17 @@ def main():
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     agent = create_agent(agent_config, api_key)
 
+    # Load sub-agents from config
+    sub_agents_config = config.get("agent", {}).get("sub_agents", {})
+    for name, sub_cfg in sub_agents_config.items():
+        agent.register_sub_agent(
+            name=name,
+            description=sub_cfg.get("description", ""),
+            model=sub_cfg.get("model"),
+            tools=sub_cfg.get("tools", []),
+            system_prompt=sub_cfg.get("system_prompt", ""),
+        )
+
     # Check for session to load
     session_name = None
     if len(sys.argv) > 1:

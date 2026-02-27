@@ -57,6 +57,17 @@ agent:
   max_iterations: 50
   max_context_messages: 50  # Max messages to keep in context (0 = unlimited)
   max_context_chars: 100000  # Max characters in context (0 = unlimited)
+  
+  # Sub-agents configuration
+  sub_agents:
+    coder:
+      description: "Expert programmer for code tasks"
+      model: "qwen3:4b"
+      tools: ["read_file", "write_file", "glob", "grep", "list_dir"]
+    researcher:
+      description: "Research assistant for web searches"
+      tools: ["web_search", "web_fetch"]
+  
   system_prompt: |
     You are a friendly AI assistant. Keep responses brief.
     
@@ -70,6 +81,7 @@ agent:
     - web_fetch(url="...") to fetch URLs
     - web_search(query="...") to search the web
     - bash(command="...") to run commands
+    - delegate(agent_name="...", task="...") to delegate to sub-agents (@coder, @researcher)
     
     For weather: use web_fetch with url="https://wttr.in/[CITY]?format=3"
 

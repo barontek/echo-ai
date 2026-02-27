@@ -39,11 +39,6 @@ class OllamaProvider(LLMProvider):
             "stream": False,
         }
 
-        if tools and "qwen3" in self.model.lower():
-            for msg in payload["messages"]:
-                if msg["role"] == "user":
-                    msg["content"] = msg["content"] + "\n\n/no_think"
-
         if tools:
             payload["tools"] = tools
 
@@ -98,11 +93,6 @@ class OllamaProvider(LLMProvider):
             "temperature": temperature,
             "stream": True,
         }
-
-        if tools and "qwen3" in self.model.lower():
-            for msg in payload["messages"]:
-                if msg["role"] == "user":
-                    msg["content"] = msg["content"] + "\n\n/no_think"
 
         if tools:
             payload["tools"] = tools

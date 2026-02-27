@@ -1,7 +1,7 @@
 """Ollama provider implementation."""
 
 import json
-from typing import Any
+from typing import Any, Callable, Optional
 
 import httpx
 
@@ -78,6 +78,89 @@ class OllamaProvider(LLMProvider):
                     ))
 
             return LLMResponse(content=content, tool_calls=tool_calls)
+
+        except httpx.HTTPStatusError as e:
+            return LLMResponse(content=f"HTTP error: {e.response.status_code}")
+        except Exception as e:
+            return LLMResponse(content=f"Error: {str(e)}")
+
+    async def chat_streaming(
+        self,
+        messages: list[dict[str, str]],
+        tools: Optional[list[dict[str, Any]]] = None,
+        temperature: float = 0.3,
+        on_chunk: Optional[Callable[[str], None]] = None,
+    ) -> LLMResponse:
+        """Send a streaming chat request to Ollama."""
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+
+        if tools and "qwen3" in self.model.lower():
+            for msg in payload["messages"]:
+                if msg["role"] == "user":
+                    msg["content"] = msg["content"] + "\n\n/no_think"
+
+        if tools:
+            payload["tools"] = tools
+
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        try:
+            async with self.client.stream("POST", "/api/chat", json=payload, headers=headers) as response:
+                response.raise_for_status()
+                
+                content = ""
+                thinking = ""
+                tool_calls = []
+                
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except:
+                        continue
+                    
+                    msg = data.get("message", {})
+                    
+                    # Handle thinking
+                    if msg.get("thinking"):
+                        thinking = msg["thinking"]
+                    
+                    # Handle content
+                    chunk = msg.get("content", "")
+                    if chunk:
+                        content += chunk
+                        if on_chunk:
+                            on_chunk(chunk)
+                    
+                    # Handle tool calls
+                    if "tool_calls" in msg:
+                        for tc in msg["tool_calls"]:
+                            args = tc.get("function", {}).get("arguments", {})
+                            if isinstance(args, str):
+                                args = json.loads(args)
+                            tool_calls.append(LLMToolCall(
+                                id=tc.get("id", ""),
+                                name=tc.get("function", {}).get("name", ""),
+                                arguments=args,
+                            ))
+                    
+                    if data.get("done"):
+                        break
+
+            # Combine thinking with content if present
+            final_content = content
+            if thinking:
+                final_content = f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
+            
+            return LLMResponse(content=final_content, tool_calls=tool_calls)
 
         except httpx.HTTPStatusError as e:
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")

@@ -3,7 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Callable
 
 from .providers import LLMProvider, get_provider, LLMToolCall
 from .tools import Tool, ToolResult
@@ -98,6 +98,20 @@ class Agent:
         
         return response
 
+    async def run_streaming(self, user_input: str, on_chunk: Callable[[str], None] | None = None) -> str:
+        """Run the agent with streaming output."""
+        self.add_user_message(user_input)
+        
+        if self.session_manager:
+            self.session_manager.add_message("user", user_input)
+        
+        response = await self._run_loop_streaming(on_chunk)
+        
+        if self.session_manager:
+            self.session_manager.add_message("assistant", response)
+        
+        return response
+
     async def _run_loop(self) -> str:
         """Main agent loop - get response, execute tools, repeat."""
         has_thinking = False
@@ -108,6 +122,52 @@ class Agent:
                 tools=self._get_tool_schemas(),
                 temperature=self.config.temperature,
             )
+
+            if not response.tool_calls:
+                final_content = response.content
+                if has_thinking:
+                    final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{response.content}"
+                self.messages.append(
+                    Message(role="assistant", content=final_content)
+                )
+                return final_content
+
+            # Mark that we have thinking content before tool execution
+            if iteration == 0 and response.content:
+                has_thinking = True
+
+            for tool_call in response.tool_calls:
+                result = await self._execute_tool(tool_call)
+                self.messages.append(
+                    Message(
+                        role="tool",
+                        content=result.content,
+                        tool_call_id=tool_call.id,
+                        tool_name=tool_call.name,
+                    )
+                )
+
+        return "Max iterations reached. The agent could not complete the task."
+
+    async def _run_loop_streaming(self, on_chunk: Callable[[str], None] | None = None) -> str:
+        """Main agent loop with streaming output."""
+        has_thinking = False
+        
+        for iteration in range(self.config.max_iterations):
+            # Check if provider supports streaming
+            if hasattr(self.llm, 'chat_streaming'):
+                response = await self.llm.chat_streaming(
+                    messages=self._prepare_messages(),
+                    tools=self._get_tool_schemas(),
+                    temperature=self.config.temperature,
+                    on_chunk=on_chunk,
+                )
+            else:
+                response = await self.llm.chat(
+                    messages=self._prepare_messages(),
+                    tools=self._get_tool_schemas(),
+                    temperature=self.config.temperature,
+                )
 
             if not response.tool_calls:
                 final_content = response.content

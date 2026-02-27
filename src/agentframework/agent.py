@@ -30,6 +30,8 @@ class AgentConfig:
     model: str = "claude-sonnet-4-20250514"
     temperature: float = 0.3
     max_iterations: int = 50
+    max_context_messages: int = 50  # Max messages to keep in context (0 = unlimited)
+    max_context_chars: int = 100000  # Max characters in context (0 = unlimited)
     system_prompt: str = ""
     tools: list[Tool] = field(default_factory=list)
     base_url: str | None = None
@@ -196,7 +198,7 @@ class Agent:
         return "Max iterations reached. The agent could not complete the task."
 
     def _prepare_messages(self) -> list[dict[str, str]]:
-        """Prepare messages for the LLM."""
+        """Prepare messages for the LLM with sliding window to prevent context overflow."""
         msgs = []
         
         # Add sub-agents info to system prompt
@@ -211,7 +213,13 @@ class Agent:
         if system_prompt:
             msgs.append({"role": "system", "content": system_prompt})
 
-        for msg in self.messages:
+        # Apply sliding window to messages
+        filtered_messages = self._apply_context_window()
+        
+        # Track tool_call_id -> tool_name mapping for tool messages
+        tool_call_names = {}
+        
+        for msg in filtered_messages:
             if msg.role == "tool":
                 msgs.append({
                     "role": msg.role,
@@ -219,10 +227,75 @@ class Agent:
                     "tool_call_id": msg.tool_call_id,
                     "name": msg.tool_name,
                 })
+                if msg.tool_call_id and msg.tool_name:
+                    tool_call_names[msg.tool_call_id] = msg.tool_name
+            elif msg.role == "assistant" and msg.tool_call_id:
+                # Include assistant tool call messages
+                msgs.append({
+                    "role": msg.role,
+                    "content": msg.content,
+                    "tool_call_id": msg.tool_call_id,
+                })
             else:
                 msgs.append({"role": msg.role, "content": msg.content})
 
         return msgs
+    
+    def _apply_context_window(self) -> list["Message"]:
+        """Apply sliding window to messages based on configured limits."""
+        if not self.messages:
+            return []
+        
+        max_msgs = self.config.max_context_messages
+        max_chars = self.config.max_context_chars
+        
+        # If both are unlimited, return all
+        if max_msgs <= 0 and max_chars <= 0:
+            return self.messages
+        
+        # If only messages limit is set
+        if max_msgs > 0 and max_chars <= 0:
+            return self.messages[-max_msgs:]
+        
+        # If only chars limit is set
+        if max_chars > 0 and max_msgs <= 0:
+            return self._trim_by_chars(self.messages, max_chars)
+        
+        # Both limits set - first trim by chars, then by count
+        trimmed = self._trim_by_chars(self.messages, max_chars)
+        return trimmed[-max_msgs:] if max_msgs > 0 else trimmed
+    
+    def _trim_by_chars(self, messages: list["Message"], max_chars: int) -> list["Message"]:
+        """Trim messages to fit within character limit, keeping most recent."""
+        if max_chars <= 0:
+            return messages
+        
+        # Always keep: system prompt (not in self.messages), first user message, last N messages
+        # Build from end, accumulate until we hit limit
+        result: list[Message] = []
+        total_chars = 0
+        
+        # Go through messages in reverse order
+        for msg in reversed(messages):
+            msg_chars = len(msg.content)
+            if total_chars + msg_chars > max_chars:
+                break
+            result.insert(0, msg)
+            total_chars += msg_chars
+        
+        # If we trimmed anything, add a notice
+        if result != messages and result:
+            # Try to keep at least the last user message for context
+            if result[0].role == "tool":
+                # Find the corresponding assistant message
+                for i, m in enumerate(messages):
+                    if m.role == "assistant" and m.tool_call_id == result[0].tool_call_id:
+                        if i > 0 and messages[i-1].role == "user":
+                            # Insert user message at the start
+                            result.insert(0, messages[i-1])
+                        break
+        
+        return result
 
     def _get_tool_schemas(self) -> list[dict[str, Any]]:
         """Get tool schemas for the LLM."""

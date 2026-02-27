@@ -55,6 +55,8 @@ safety:
 
 agent:
   max_iterations: 50
+  max_context_messages: 50  # Max messages to keep in context (0 = unlimited)
+  max_context_chars: 100000  # Max characters in context (0 = unlimited)
   system_prompt: |
     You are a friendly AI assistant. Keep responses brief.
     

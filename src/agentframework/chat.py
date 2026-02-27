@@ -201,10 +201,9 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             console.print("[dim]Thinking...[/dim]", end="\r")
             
             in_thinking = False
-            buffer = ""
             
             def on_chunk(chunk: str):
-                nonlocal in_thinking, buffer
+                nonlocal in_thinking
                 
                 if '__THINKING__' in chunk:
                     in_thinking = True
@@ -217,32 +216,13 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     if not chunk:
                         return
                 
-                buffer += chunk
-                
-                # Flush on sentence boundaries
-                if buffer.rstrip().endswith(('.', '!', '?', '.\n', '!\n', '?\n')):
-                    if in_thinking:
-                        console.file.write('\033[90m' + buffer + '\033[0m')
-                    else:
-                        console.file.write(buffer)
-                    buffer = ""
-                # Also flush on newlines that aren't at sentence ends
-                elif '\n' in buffer and not buffer.endswith(('.', '!', '?', ' ', '\n')):
-                    pass  # Keep buffering
-                elif len(buffer) > 50:  # Flush periodically
-                    if in_thinking:
-                        console.file.write('\033[90m' + buffer + '\033[0m')
-                    else:
-                        console.file.write(buffer)
-                    buffer = ""
+                # Stream every chunk
+                if in_thinking:
+                    console.file.write('\033[90m' + chunk + '\033[0m')
+                else:
+                    console.file.write(chunk)
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
-            # Flush remaining buffer
-            if buffer:
-                if in_thinking:
-                    console.file.write('\033[90m' + buffer + '\033[0m')
-                else:
-                    console.file.write(buffer)
             console.print()
             
         except KeyboardInterrupt:

@@ -216,12 +216,11 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     if not chunk:
                         return
                 
-                # Clear "Thinking" and stream
-                console.print(" " * 20 + "\r", end="")
+                # Use file.write directly to avoid Rich spacing issues
                 if in_thinking:
-                    console.print(chunk, style="bright_black", end="")
+                    console.file.write('\033[90m' + chunk + '\033[0m')
                 else:
-                    console.print(chunk, end="")
+                    console.file.write(chunk)
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
             console.print()

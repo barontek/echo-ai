@@ -197,25 +197,38 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     print_help()
                     continue
             
-            # Regular message
+            # Regular message - stream output
             console.print("[dim]Thinking...[/dim]", end="\r")
             
-            response = await agent.run(user_input)
+            in_thinking = False
             
-            # Clear "Thinking" and print response
-            console.print(" " * 20 + "\r", end="")
-            console.print()
+            def on_chunk(chunk: str):
+                import sys
+                nonlocal in_thinking
+                
+                if '__THINKING__' in chunk:
+                    in_thinking = True
+                    chunk = chunk.replace('__THINKING__', '')
+                    if not chunk:
+                        return
+                if '__THINKING_END__' in chunk:
+                    in_thinking = False
+                    chunk = chunk.replace('__THINKING_END__', '')
+                    if not chunk:
+                        return
+                
+                # Clear "Thinking" message
+                console.print(" " * 20 + "\r", end="")
+                
+                if in_thinking:
+                    sys.stdout.write('\033[90m' + chunk + '\033[0m')
+                else:
+                    sys.stdout.write(chunk)
+                sys.stdout.flush()
             
-            # Handle thinking markers for qwen3
-            if "__THINKING__" in response:
-                parts = response.split("__THINKING_END__")
-                thinking_part = parts[0].replace("__THINKING__\n", "")
-                content_part = parts[1] if len(parts) > 1 else ""
-                console.print(thinking_part, style="bright_black")
-                if content_part.strip():
-                    console.print(Markdown(content_part))
-            else:
-                console.print(Markdown(response))
+            response = await agent.run_streaming(user_input, on_chunk=on_chunk)
+            import sys
+            sys.stdout.write('\n')
             
         except KeyboardInterrupt:
             agent.save_session()

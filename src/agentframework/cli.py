@@ -163,11 +163,28 @@ async def interactive_mode(agent: Agent):
 
             # Streaming output
             stream_console = Console(color_system="256")
+            in_thinking = False
             
             def on_chunk(chunk: str):
+                nonlocal in_thinking
+                
+                # Handle thinking markers - these come as separate chunks
                 if "__THINKING__" in chunk:
-                    chunk = chunk.split("__THINKING_END__")[-1]
-                stream_console.print(chunk, end="")
+                    in_thinking = True
+                    # Remove the marker from the chunk content
+                    chunk = chunk.replace("__THINKING__", "")
+                    if not chunk:  # If marker was the only content, skip
+                        return
+                if "__THINKING_END__" in chunk:
+                    in_thinking = False
+                    chunk = chunk.replace("__THINKING_END__", "")
+                    if not chunk:
+                        return
+                
+                if in_thinking:
+                    stream_console.print(chunk, style="bright_black", end="")
+                else:
+                    stream_console.print(chunk, end="")
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
             console.print()

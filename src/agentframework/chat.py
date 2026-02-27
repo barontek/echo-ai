@@ -197,25 +197,34 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     print_help()
                     continue
             
-            # Regular message
+            # Regular message - stream output with Rich
             console.print("[dim]Thinking...[/dim]", end="\r")
             
-            response = await agent.run_streaming(user_input, on_chunk=None)
+            in_thinking = False
             
-            # Clear "Thinking" and print response
-            console.print(" " * 20 + "\r", end="")
+            def on_chunk(chunk: str):
+                nonlocal in_thinking
+                
+                if '__THINKING__' in chunk:
+                    in_thinking = True
+                    chunk = chunk.replace('__THINKING__', '')
+                    if not chunk:
+                        return
+                if '__THINKING_END__' in chunk:
+                    in_thinking = False
+                    chunk = chunk.replace('__THINKING_END__', '')
+                    if not chunk:
+                        return
+                
+                # Clear "Thinking" and stream
+                console.print(" " * 20 + "\r", end="")
+                if in_thinking:
+                    console.print(chunk, style="bright_black", end="")
+                else:
+                    console.print(chunk, end="")
+            
+            response = await agent.run_streaming(user_input, on_chunk=on_chunk)
             console.print()
-            
-            # Handle thinking markers for qwen3
-            if "__THINKING__" in response:
-                parts = response.split("__THINKING_END__")
-                thinking_part = parts[0].replace("__THINKING__\n", "")
-                content_part = parts[1] if len(parts) > 1 else ""
-                console.print(thinking_part, style="bright_black")
-                if content_part.strip():
-                    console.print(Markdown(content_part))
-            else:
-                console.print(Markdown(response))
             
         except KeyboardInterrupt:
             agent.save_session()

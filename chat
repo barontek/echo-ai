@@ -13,4 +13,4 @@ else
     source "$VENV_DIR/bin/activate"
 fi
 
-exec python -m agentframework.chat "$@"
+exec python -u -m agentframework.chat "$@"

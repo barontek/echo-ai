@@ -216,14 +216,16 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     if not chunk:
                         return
                 
-                # Stream every chunk
+                # Use stdout directly for unbuffered streaming
+                import sys
                 if in_thinking:
-                    console.file.write('\033[90m' + chunk + '\033[0m')
+                    sys.stdout.write('\033[90m' + chunk + '\033[0m')
                 else:
-                    console.file.write(chunk)
+                    sys.stdout.write(chunk)
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
-            console.print()
+            import sys
+            sys.stdout.write('\n')
             
         except KeyboardInterrupt:
             agent.save_session()

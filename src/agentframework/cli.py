@@ -101,6 +101,10 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
     if "git" in enabled:
         tools.append(GitTool(safety_config=safety_config))
 
+    if "memory" in enabled:
+        from .tools.memory import MemoryTool
+        tools.append(MemoryTool())
+
     return tools
 
 

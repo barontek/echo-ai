@@ -17,6 +17,7 @@ tools:
     - web_fetch
     - web_search
     - git
+    - memory
   bash:
     allowed_commands:
       - git
@@ -82,6 +83,8 @@ agent:
     - web_search(query="...") to search the web
     - bash(command="...") to run commands
     - delegate(agent_name="...", task="...") to delegate to sub-agents (@coder, @researcher)
+    - memory(action="save_fact", query="...", category="...") to remember personal info
+    - memory(action="recall_fact", query="...") to search your memory
     
     For weather: use web_fetch with url="https://wttr.in/[CITY]?format=3"
 

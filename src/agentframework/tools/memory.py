@@ -19,10 +19,10 @@ class MemoryTool(Tool):
         )
         
         if db_path is None:
-            home = Path.home()
-            db_path = home / ".agent_memory" / "memory.db"
-        
-        self.db_path = Path(db_path)
+            home = str(Path.home())
+            self.db_path = Path(home) / ".agent_memory" / "memory.db"
+        else:
+            self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 

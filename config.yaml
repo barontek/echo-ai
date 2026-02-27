@@ -18,6 +18,7 @@ tools:
     - web_search
     - git
     - memory
+    - notes
   bash:
     allowed_commands:
       - git
@@ -85,6 +86,11 @@ agent:
     - delegate(agent_name="...", task="...") to delegate to sub-agents (@coder, @researcher)
     - memory(action="save_fact", query="...", category="...") to remember personal info
     - memory(action="recall_fact", query="...") to search your memory
+    - notes(action="create_note", filename="...", content="...") to create a new note
+    - notes(action="read_note", filename="...") to read a note
+    - notes(action="append_to_note", filename="...", content="...") to add to a note
+    - notes(action="search_notes", query="...") to search all notes
+    - notes(action="list_notes") to list all your notes
     
     For weather: use web_fetch with url="https://wttr.in/[CITY]?format=3"
 

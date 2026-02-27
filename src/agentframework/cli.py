@@ -105,6 +105,10 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
         from .tools.memory import MemoryTool
         tools.append(MemoryTool())
 
+    if "notes" in enabled:
+        from .tools.notes import PersonalNotesTool
+        tools.append(PersonalNotesTool())
+
     return tools
 
 

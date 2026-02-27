@@ -161,19 +161,15 @@ async def interactive_mode(agent: Agent):
             if not user_input.strip():
                 continue
 
-            response = await agent.run(user_input)
-            console.print("\n")
+            # Streaming output
+            stream_console = Console(color_system="256")
             
-            # Handle thinking markers for qwen3
-            if "__THINKING__" in response:
-                parts = response.split("__THINKING_END__")
-                thinking_part = parts[0].replace("__THINKING__\n", "")
-                content_part = parts[1] if len(parts) > 1 else ""
-                console.print(thinking_part, style="bright_black")
-                if content_part.strip():
-                    console.print(Markdown(content_part))
-            else:
-                console.print(Markdown(response))
+            def on_chunk(chunk: str):
+                if "__THINKING__" in chunk:
+                    chunk = chunk.split("__THINKING_END__")[-1]
+                stream_console.print(chunk, end="")
+            
+            response = await agent.run_streaming(user_input, on_chunk=on_chunk)
             console.print()
         except KeyboardInterrupt:
             break

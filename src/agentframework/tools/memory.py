@@ -12,7 +12,7 @@ from . import Tool, ToolResult
 class MemoryTool(Tool):
     """Store and retrieve personal facts using SQLite."""
 
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_path: str | Path | None = None):
         super().__init__(
             name="memory",
             description="Store and retrieve personal facts about you. Use save_fact to remember information, and recall_fact to search your memory.",

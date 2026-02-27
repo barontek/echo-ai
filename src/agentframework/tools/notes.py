@@ -10,16 +10,17 @@ from . import Tool, ToolResult
 class PersonalNotesTool(Tool):
     """Manage personal notes in a dedicated directory."""
 
-    def __init__(self, notes_dir: str | None = None):
+    def __init__(self, notes_dir: str | Path | None = None):
         super().__init__(
             name="notes",
             description="Manage personal notes. Create, read, append to, or search markdown notes in your personal notes folder.",
         )
         
         if notes_dir is None:
-            notes_dir = Path.home() / "personal_notes"
+            self.notes_dir = Path.home() / "personal_notes"
+        else:
+            self.notes_dir = Path(notes_dir)
         
-        self.notes_dir = Path(notes_dir)
         self.notes_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_parameters(self) -> dict[str, Any]:

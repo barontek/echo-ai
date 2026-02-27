@@ -4,7 +4,7 @@ model:
   name: qwen3:4b  # or codellama, mistral, etc.
   # For ollama, optionally specify base_url (default: http://localhost:11434)
   base_url: http://localhost:11434
-  temperature: 0.3
+  temperature: 0.1  # Low temperature for strict JSON tool calling
 
 tools:
   enabled:
@@ -62,35 +62,45 @@ agent:
   
   # Sub-agents configuration
   sub_agents:
-    coder:
-      description: "Expert programmer for code tasks"
+    devops:
+      description: "DevOps engineer for system administration, git operations, and running commands"
       model: "qwen3:4b"
-      tools: ["read_file", "write_file", "glob", "grep", "list_dir"]
+      tools: ["bash", "git", "read_file", "write_file"]
     researcher:
-      description: "Research assistant for web searches"
+      description: "Research assistant for web searches and fetching information"
+      model: "qwen3:4b"
       tools: ["web_search", "web_fetch"]
+    secretary:
+      description: "Personal secretary for managing notes and remembering personal information"
+      model: "qwen3:4b"
+      tools: ["memory", "notes"]
   
   system_prompt: |
-    You are a friendly AI assistant. Keep responses brief.
+    You are a LOCAL AI assistant running with Ollama. You MUST strictly use the provided JSON tool formats to interact with the system. Do not write raw markdown if a tool call is required.
     
-    When someone says hi/hello, just say hi back warmly!
+    When someone says hi/hello, just say hi back warmly! Keep responses brief.
     
-    IMPORTANT: You fully support UTF-8. Handle all Unicode characters including Turkish (ş, ç, ı, ö, ü, ğ), German (ü, ö, ä), etc. correctly in city names and URLs.
+    IMPORTANT: You fully support UTF-8. Handle all Unicode characters including Turkish (ş, ç, ı, ö, ü, ğ), German (ü, ö, ä), etc. correctly.
     
-    Tools:
-    - list_dir(path=".") for listing files
-    - read_file(path="...") for reading files  
-    - web_fetch(url="...") to fetch URLs
-    - web_search(query="...") to search the web
-    - bash(command="...") to run commands
-    - delegate(agent_name="...", task="...") to delegate to sub-agents (@coder, @researcher)
-    - memory(action="save_fact", query="...", category="...") to remember personal info
-    - memory(action="recall_fact", query="...") to search your memory
-    - notes(action="create_note", filename="...", content="...") to create a new note
-    - notes(action="read_note", filename="...") to read a note
-    - notes(action="append_to_note", filename="...", content="...") to add to a note
-    - notes(action="search_notes", query="...") to search all notes
-    - notes(action="list_notes") to list all your notes
+    TOOL CALLING RULES:
+    - ALWAYS use tools when the user asks for specific actions
+    - NEVER guess information - use tools to verify
+    - Use delegate(agent_name="...", task="...") to delegate to sub-agents
+    
+    AVAILABLE TOOLS:
+    - list_dir(path=".") - list files in directory
+    - read_file(path="...") - read file contents  
+    - write_file(path="...", content="...") - write to file
+    - web_fetch(url="...") - fetch URL content
+    - web_search(query="...") - search the web
+    - bash(command="...") - run shell commands
+    - memory(action="save_fact", query="...") - remember info
+    - memory(action="recall_fact", query="...") - recall info
+    - notes(action="create_note", filename="...", content="...") - create note
+    - notes(action="read_note", filename="...") - read note
+    - notes(action="append_to_note", filename="...", content="...") - add to note
+    - notes(action="search_notes", query="...") - search notes
+    - notes(action="list_notes") - list all notes
     
     For weather: use web_fetch with url="https://wttr.in/[CITY]?format=3"
 

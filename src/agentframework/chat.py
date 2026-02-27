@@ -120,7 +120,8 @@ def print_welcome():
 
 
 RECOMMENDED_MODELS = [
-    ("qwen2.5-coder:3b", "Best for strict tool calling and coding"),
+    ("qwen2.5-coder:3b", "Best for strict tool calling and coding (default)"),
+    ("qwen3:4b", "General purpose with strong reasoning"),
     ("llama3.2", "Meta's lightweight model, great reasoning"),
     ("phi3.5", "Microsoft's highly stable model"),
 ]

@@ -1,7 +1,7 @@
 model:
   # provider options: anthropic, openai, ollama
   provider: ollama
-  name: qwen3:4b  # or codellama, mistral, etc.
+  name: qwen2.5-coder:3b  # Default model - optimized for tool calling and coding
   # For ollama, optionally specify base_url (default: http://localhost:11434)
   base_url: http://localhost:11434
   temperature: 0.1  # Low temperature for strict JSON tool calling

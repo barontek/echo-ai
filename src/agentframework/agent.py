@@ -163,21 +163,20 @@ class Agent:
             )
             self.messages.extend(tool_messages)
 
-            # If content is empty or only contains tool call JSON/error, add system note
-            content = response.content or ""
-            # Check if content only contains tool call JSON (markdown format) or is very short
-            is_only_tool_call = bool(response.tool_calls and (
-                not content.strip() or 
-                content.strip().startswith("{") or
-                content.strip().startswith("```") or
-                len(content.strip()) < 50  # Short content likely means error or empty result
-            ))
+            # Always prompt for response after tool execution (unless there's meaningful content)
+            content = (response.content or "").strip()
+            needs_prompt = (
+                not content or 
+                content.startswith("{") or 
+                content.startswith("```") or
+                len(content) < 50
+            )
             
-            if is_only_tool_call:
+            if needs_prompt and tool_messages:
                 self.messages.append(
                     Message(
                         role="user",
-                        content="System Note: Tools executed. Now you MUST provide a final readable response to the user."
+                        content="System Note: Tools executed. Now provide a final response to the user."
                     )
                 )
 
@@ -231,21 +230,20 @@ class Agent:
             )
             self.messages.extend(tool_messages)
 
-            # If content is empty or only contains tool call JSON/error, add system note
-            content = response.content or ""
-            # Check if content only contains tool call JSON (markdown format) or is very short
-            is_only_tool_call = bool(response.tool_calls and (
-                not content.strip() or 
-                content.strip().startswith("{") or
-                content.strip().startswith("```") or
-                len(content.strip()) < 50  # Short content likely means error or empty result
-            ))
+            # Always prompt for response after tool execution (unless there's meaningful content)
+            content = (response.content or "").strip()
+            needs_prompt = (
+                not content or 
+                content.startswith("{") or 
+                content.startswith("```") or
+                len(content) < 50
+            )
             
-            if is_only_tool_call:
+            if needs_prompt and tool_messages:
                 self.messages.append(
                     Message(
                         role="user",
-                        content="System Note: Tools executed. Now you MUST provide a final readable response to the user."
+                        content="System Note: Tools executed. Now provide a final response to the user."
                     )
                 )
 

@@ -80,7 +80,7 @@ class SafetyConfig:
     allowed_domains: list[str] = field(default_factory=list)
     max_file_size: int = 10 * 1024 * 1024
     max_execution_time: int = 60
-    require_approval_for: list[str] = field(default_factory=lambda: ["bash", "write_file", "web_fetch"])
+    require_approval_for: list[str] = field(default_factory=lambda: ["bash", "write_file"])
     approval_callback: Optional[Callable[[str, str], bool]] = None
 
 

@@ -21,7 +21,8 @@ class WebFetchTool(Tool):
         if safety_config:
             self.validator = SecurityValidator(safety_config)
         else:
-            self.validator = SecurityValidator(SafetyConfig(allow_network=False))
+            # Default to allowing network if no config provided
+            self.validator = SecurityValidator(SafetyConfig(allow_network=True))
 
     def _get_parameters(self) -> dict[str, Any]:
         return {

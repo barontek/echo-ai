@@ -11,6 +11,7 @@ from rich.markdown import Markdown
 from rich.prompt import Prompt
 
 from .agent import Agent, AgentConfig, create_agent
+from .providers import get_provider
 from .safety import SafetyConfig
 from .tools.bash import BashTool
 from .tools.file import ReadFileTool, WriteFileTool, ListDirTool
@@ -118,12 +119,21 @@ def print_welcome():
     console.print("[bold blue]╰───────────────────────────────────────╯[/bold blue]\n")
 
 
+RECOMMENDED_MODELS = [
+    ("qwen2.5-coder:3b", "Best for strict tool calling and coding"),
+    ("llama3.2", "Meta's lightweight model, great reasoning"),
+    ("phi3.5", "Microsoft's highly stable model"),
+]
+
+
 def print_help():
-    console.print("\n[bold cyan]Commands:[/bold cyan]")
-    console.print("  [bold]/new[/bold]       - Start a new chat")
-    console.print("  [bold]/save [name][/bold] - Save current chat")
+    console.print("\n[bold]Commands:[/bold]")
+    console.print("  [bold]/new[/bold]     - Start a new chat")
+    console.print("  [bold]/save <name>[/bold] - Save current chat")
     console.print("  [bold]/load <name>[/bold] - Load a saved chat")
     console.print("  [bold]/chats[/bold]     - List saved chats")
+    console.print("  [bold]/models[/bold]    - List recommended local models")
+    console.print("  [bold]/model <name>[/bold] - Switch to a different model")
     console.print("  [bold]/undo[/bold]      - Undo last file change")
     console.print("  [bold]/redo[/bold]      - Redo last undone change")
     console.print("  [bold]/clear[/bold]     - Clear screen")
@@ -203,6 +213,46 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                 
                 elif cmd == "/help":
                     print_help()
+                    continue
+                
+                elif cmd == "/models":
+                    console.print("\n[bold]Recommended Models (4GB VRAM):[/bold]")
+                    for model_name, description in RECOMMENDED_MODELS:
+                        console.print(f"  [cyan]{model_name}[/cyan] - {description}")
+                    console.print("\n[dim]Use /model <name> to switch[/dim]\n")
+                    continue
+                
+                elif cmd == "/model":
+                    if not args.strip():
+                        console.print("[yellow]Usage: /model <model_name>[/yellow]")
+                        console.print("[dim]Use /models to see available models[/dim]\n")
+                        continue
+                    
+                    new_model = args.strip()
+                    old_model = agent.config.model
+                    
+                    try:
+                        # Get existing provider settings
+                        provider_name = agent.config.provider
+                        base_url = agent.config.base_url
+                        temperature = agent.config.temperature
+                        tools = agent.config.tools
+                        
+                        # Create new provider with new model
+                        new_provider = get_provider(
+                            name=provider_name,
+                            model=new_model,
+                            base_url=base_url,
+                        )
+                        
+                        # Update agent
+                        agent.llm = new_provider
+                        agent.config.model = new_model
+                        
+                        console.print(f"[green]Model successfully switched to {new_model}[/green]\n")
+                    except Exception as e:
+                        console.print(f"[red]Failed to switch model: {e}[/red]")
+                        console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
                     continue
             
             # Regular message - stream output with Rich

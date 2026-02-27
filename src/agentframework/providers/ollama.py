@@ -130,18 +130,23 @@ class OllamaProvider(LLMProvider):
                     msg = data.get("message", {})
                     
                     # Handle thinking (stream it with marker)
-                    if msg.get("thinking"):
-                        thinking = msg["thinking"]
+                    msg_thinking = msg.get("thinking", "")
+                    if msg_thinking:
+                        # Only send start marker if we haven't started thinking yet
+                        if not thinking:
+                            if on_chunk:
+                                on_chunk("__THINKING__")
+                        thinking = msg_thinking
                         if on_chunk:
-                            on_chunk("__THINKING__")
-                            on_chunk(msg["thinking"])
+                            on_chunk(msg_thinking)
                     
                     # Handle content
                     chunk = msg.get("content", "")
                     if chunk:
                         # If we had thinking, add end marker before content
-                        if thinking and on_chunk:
-                            on_chunk("__THINKING_END__")
+                        if thinking:
+                            if on_chunk:
+                                on_chunk("__THINKING_END__")
                             thinking = None  # Clear so we don't add again
                         content += chunk
                         if on_chunk:

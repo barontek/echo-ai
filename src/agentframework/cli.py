@@ -162,32 +162,32 @@ async def interactive_mode(agent: Agent):
                 continue
 
             # Streaming output
-            stream_console = Console(color_system="256")
             in_thinking = False
             
             def on_chunk(chunk: str):
                 nonlocal in_thinking
                 
-                # Handle thinking markers - these come as separate chunks
-                if "__THINKING__" in chunk:
+                # Handle thinking markers
+                if '__THINKING__' in chunk:
                     in_thinking = True
-                    # Remove the marker from the chunk content
-                    chunk = chunk.replace("__THINKING__", "")
-                    if not chunk:  # If marker was the only content, skip
+                    chunk = chunk.replace('__THINKING__', '')
+                    if not chunk:
                         return
-                if "__THINKING_END__" in chunk:
+                if '__THINKING_END__' in chunk:
                     in_thinking = False
-                    chunk = chunk.replace("__THINKING_END__", "")
+                    chunk = chunk.replace('__THINKING_END__', '')
                     if not chunk:
                         return
                 
+                # Use stdout.write for immediate output
                 if in_thinking:
-                    stream_console.print(chunk, style="bright_black", end="")
+                    sys.stdout.write('\033[90m' + chunk + '\033[0m')
                 else:
-                    stream_console.print(chunk, end="")
+                    sys.stdout.write(chunk)
+                sys.stdout.flush()
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
-            console.print()
+            sys.stdout.write('\n')
         except KeyboardInterrupt:
             break
         except Exception as e:
@@ -200,34 +200,30 @@ async def interactive_mode(agent: Agent):
 
 async def run_single(agent: Agent, task: str):
     """Run a single task with streaming output."""
-    from rich.console import Console
-    stream_console = Console(color_system="256")
-    
-    buffer = ""
-    thinking_buffer = ""
     in_thinking = False
     
     def on_chunk(chunk: str):
-        nonlocal buffer, thinking_buffer, in_thinking
+        nonlocal in_thinking
         
-        # Check if we're in thinking mode
-        if "__THINKING__" in chunk:
+        if '__THINKING__' in chunk:
             in_thinking = True
-            chunk = chunk.split("__THINKING__")[1] if "__THINKING__" in chunk else ""
-        
-        if "__THINKING_END__" in chunk:
+            chunk = chunk.replace('__THINKING__', '')
+            if not chunk:
+                return
+        if '__THINKING_END__' in chunk:
             in_thinking = False
-            chunk = chunk.split("__THINKING_END__")[1] if "__THINKING_END__" in chunk else ""
+            chunk = chunk.replace('__THINKING_END__', '')
+            if not chunk:
+                return
         
-        if in_thinking or "__THINKING__" in buffer:
-            thinking_buffer += chunk
+        if in_thinking:
+            sys.stdout.write('\033[90m' + chunk + '\033[0m')
         else:
-            buffer += chunk
-            # Print without newlines for smooth streaming
-            stream_console.print(chunk, end="")
+            sys.stdout.write(chunk)
+        sys.stdout.flush()
     
     response = await agent.run_streaming(task, on_chunk=on_chunk)
-    stream_console.print()  # New line after streaming
+    sys.stdout.write('\n')
 
 
 def main():

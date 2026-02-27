@@ -1,5 +1,6 @@
 """Core agent implementation with session support."""
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -138,16 +139,20 @@ class Agent:
             if iteration == 0 and response.content:
                 has_thinking = True
 
-            for tool_call in response.tool_calls:
+            # Execute tool calls concurrently using asyncio.gather()
+            async def execute_and_message(tool_call: LLMToolCall) -> Message:
                 result = await self._execute_tool(tool_call)
-                self.messages.append(
-                    Message(
-                        role="tool",
-                        content=result.content,
-                        tool_call_id=tool_call.id,
-                        tool_name=tool_call.name,
-                    )
+                return Message(
+                    role="tool",
+                    content=result.content,
+                    tool_call_id=tool_call.id,
+                    tool_name=tool_call.name,
                 )
+
+            tool_messages = await asyncio.gather(
+                *[execute_and_message(tc) for tc in response.tool_calls]
+            )
+            self.messages.extend(tool_messages)
 
         return "Max iterations reached. The agent could not complete the task."
 
@@ -184,16 +189,20 @@ class Agent:
             if iteration == 0 and response.content:
                 has_thinking = True
 
-            for tool_call in response.tool_calls:
+            # Execute tool calls concurrently using asyncio.gather()
+            async def execute_and_message(tool_call: LLMToolCall) -> Message:
                 result = await self._execute_tool(tool_call)
-                self.messages.append(
-                    Message(
-                        role="tool",
-                        content=result.content,
-                        tool_call_id=tool_call.id,
-                        tool_name=tool_call.name,
-                    )
+                return Message(
+                    role="tool",
+                    content=result.content,
+                    tool_call_id=tool_call.id,
+                    tool_name=tool_call.name,
                 )
+
+            tool_messages = await asyncio.gather(
+                *[execute_and_message(tc) for tc in response.tool_calls]
+            )
+            self.messages.extend(tool_messages)
 
         return "Max iterations reached. The agent could not complete the task."
 

@@ -60,6 +60,8 @@ agent:
     
     When someone says hi/hello, just say hi back warmly!
     
+    IMPORTANT: You fully support UTF-8. Handle all Unicode characters including Turkish (ş, ç, ı, ö, ü, ğ), German (ü, ö, ä), etc. correctly in city names and URLs.
+    
     Tools:
     - list_dir(path=".") for listing files
     - read_file(path="...") for reading files  

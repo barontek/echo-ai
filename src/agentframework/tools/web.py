@@ -3,6 +3,8 @@
 import httpx
 from typing import Any
 
+from bs4 import BeautifulSoup
+
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
@@ -13,7 +15,7 @@ class WebFetchTool(Tool):
     def __init__(self, safety_config: SafetyConfig | None = None):
         super().__init__(
             name="web_fetch",
-            description="Fetch content from a URL.",
+            description="Fetch content from a URL and extract readable text.",
         )
         
         if safety_config:
@@ -33,6 +35,37 @@ class WebFetchTool(Tool):
             "required": ["url"],
         }
 
+    def _extract_readable_text(self, html: str, max_length: int = 10000) -> str:
+        """Parse HTML and extract readable text using BeautifulSoup."""
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            
+            # Remove script, style, nav, header, footer elements
+            for tag in soup(["script", "style", "nav", "header", "footer", "aside", "iframe"]):
+                tag.decompose()
+            
+            # Get text from body or entire document
+            body = soup.find("body")
+            if body:
+                text = body.get_text(separator="\n", strip=True)
+            else:
+                text = soup.get_text(separator="\n", strip=True)
+            
+            # Clean up whitespace
+            lines = [line.strip() for line in text.split("\n")]
+            lines = [line for line in lines if line]
+            text = "\n".join(lines)
+            
+            # Truncate to max length
+            if len(text) > max_length:
+                text = text[:max_length] + "\n... (truncated)"
+            
+            return text if text else "No readable content found"
+            
+        except Exception:
+            # Fallback to raw text if parsing fails
+            return html[:10000]
+
     async def execute(self, url: str, **kwargs) -> ToolResult:
         """Fetch the URL with safety checks."""
         allowed, reason = self.validator.check_network_allowed(url)
@@ -50,10 +83,13 @@ class WebFetchTool(Tool):
                 follow_redirects=True,
                 limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
                 verify=False,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; AgentBot/1.0)"},
             ) as client:
                 response = await client.get(url)
                 response.raise_for_status()
-                content = response.text[:50000]
+                
+                # Extract readable text from HTML
+                content = self._extract_readable_text(response.text)
                 return ToolResult(content=content)
         except httpx.TimeoutException:
             return ToolResult(error="Request timed out")

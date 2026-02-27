@@ -21,7 +21,7 @@ from .tools.git import GitTool
 console = Console(color_system="256")
 
 
-def load_config(path: str = None) -> dict:
+def load_config(path: str | None = None) -> dict:
     if path is None:
         # Try to find config.yaml in common locations
         script_dir = Path(__file__).parent.parent.parent
@@ -123,7 +123,7 @@ def print_help():
     console.print("  [bold]/exit[/bold]      - Exit\n")
 
 
-async def chat_session(agent: Agent, session_name: str = None):
+async def chat_session(agent: Agent, session_name: str | None = None):
     """Run a chat session."""
     if session_name:
         agent.load_session(session_name)

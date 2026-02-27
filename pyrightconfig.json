@@ -1,0 +1,6 @@
+{
+  "reportMissingImports": false,
+  "reportMissingTypeStubs": false,
+  "reportCallIssue": false,
+  "pythonVersion": "3.13"
+}

@@ -43,6 +43,6 @@ class Tool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, *args: Any, **kwargs: Any) -> ToolResult:
         """Execute the tool with given arguments."""
         pass

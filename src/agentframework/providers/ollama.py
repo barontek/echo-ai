@@ -1,6 +1,7 @@
 """Ollama provider implementation."""
 
 import json
+import re
 from typing import Any, Callable, Optional
 
 import httpx
@@ -24,6 +25,34 @@ class OllamaProvider(LLMProvider):
             base_url=self.base_url,
             timeout=120.0,
         )
+
+    def _extract_tool_calls_from_content(self, content: str) -> list[LLMToolCall]:
+        """Extract tool calls from markdown code blocks in content."""
+        tool_calls = []
+        
+        # Match ```json or ``` blocks with tool call JSON
+        pattern = r'\`\`\`(?:json)?\s*\n?(\{.*?\})\n?\`\`\`'
+        matches = re.findall(pattern, content, re.DOTALL)
+        
+        for match in matches:
+            try:
+                # Try to parse as JSON
+                data = json.loads(match)
+                name = data.get("name", "")
+                arguments = data.get("arguments", {})
+                if isinstance(arguments, str):
+                    arguments = json.loads(arguments)
+                
+                if name:
+                    tool_calls.append(LLMToolCall(
+                        id=f"call_{len(tool_calls)}",
+                        name=name,
+                        arguments=arguments,
+                    ))
+            except (json.JSONDecodeError, KeyError):
+                continue
+        
+        return tool_calls
 
     async def chat(
         self,
@@ -71,6 +100,14 @@ class OllamaProvider(LLMProvider):
                         name=tc.get("function", {}).get("name", ""),
                         arguments=args,
                     ))
+            
+            # Also check content for markdown tool calls (qwen2.5-coder style)
+            if content:
+                extracted = self._extract_tool_calls_from_content(content)
+                if extracted:
+                    tool_calls = extracted
+                    # Remove the tool call block from content
+                    content = re.sub(r'\`\`\`(?:json)?\s*\n?(\{.*?\})\n?\`\`\`', '', content, flags=re.DOTALL).strip()
 
             return LLMResponse(content=content, tool_calls=tool_calls)
 
@@ -138,6 +175,16 @@ class OllamaProvider(LLMProvider):
                             if on_chunk:
                                 on_chunk("__THINKING_END__")
                             thinking = None  # Clear so we don't add again
+                        
+                        # Skip chunks that are part of markdown tool calls
+                        stripped = chunk.strip()
+                        if (stripped.startswith('```') or 
+                            stripped in ('json', 'java', 'python', 'text') or
+                            (stripped.startswith('{') and '"name"' in chunk)):
+                            # Accumulate for later extraction, but don't output
+                            content += chunk
+                            continue
+                        
                         content += chunk
                         if on_chunk:
                             on_chunk(chunk)
@@ -161,6 +208,14 @@ class OllamaProvider(LLMProvider):
             final_content = content
             if thinking:
                 final_content = f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
+            
+            # Also check content for markdown tool calls (qwen2.5-coder style)
+            if final_content:
+                extracted = self._extract_tool_calls_from_content(final_content)
+                if extracted:
+                    tool_calls = extracted
+                    # Remove the tool call block from content
+                    final_content = re.sub(r'\`\`\`(?:json)?\s*\n?(\{.*?\})\n?\`\`\`', '', final_content, flags=re.DOTALL).strip()
             
             return LLMResponse(content=final_content, tool_calls=tool_calls)
 

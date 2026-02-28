@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -20,6 +21,15 @@ from .tools.web import WebFetchTool, WebSearchTool
 from .tools.git import GitTool
 
 console = Console(color_system="256")
+
+
+def make_clickable_links(text: str) -> str:
+    """Convert markdown links [text](url) to clickable terminal links."""
+    def replace_link(match):
+        name = match.group(1)
+        url = match.group(2)
+        return f"\033]8;;{url}\007{name}\033]8;;\007"
+    return re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
 
 # Enable command history with readline
 try:
@@ -288,6 +298,9 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     chunk = chunk.replace('__THINKING_END__', '')
                     if not chunk:
                         return
+                
+                # Convert markdown links to clickable terminal links
+                chunk = make_clickable_links(chunk)
                 
                 # Use stdout directly for unbuffered streaming
                 import sys

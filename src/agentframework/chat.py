@@ -29,7 +29,12 @@ def make_clickable_links(text: str) -> str:
         name = match.group(1)
         url = match.group(2)
         return f"\033]8;;{url}\007{name}\033]8;;\007"
-    return re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
+    
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
+    
+    text = re.sub(r'\[(https?://[^]]+)\]\((https?://[^)]+)\)', replace_link, text)
+    
+    return text
 
 # Enable command history with readline
 try:

@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass
@@ -34,6 +34,16 @@ class LLMProvider(ABC):
     ) -> LLMResponse:
         """Send a chat request to the LLM."""
         pass
+
+    async def chat_streaming(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.3,
+        on_chunk: Callable[[str], None] | None = None,
+    ) -> LLMResponse:
+        """Streaming chat - override in subclass if supported."""
+        raise NotImplementedError("Streaming not supported")
 
 
 def get_provider(

@@ -195,7 +195,12 @@ async def interactive_mode(agent: Agent):
                 sys.stdout.flush()
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
+            # Print final response if not already printed via streaming
+            if response:
+                print(response)
+            # Add newline after response
             sys.stdout.write('\n')
+            sys.stdout.flush()
         except KeyboardInterrupt:
             break
         except Exception as e:

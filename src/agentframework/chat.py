@@ -21,6 +21,18 @@ from .tools.git import GitTool
 
 console = Console(color_system="256")
 
+# Enable command history with readline
+try:
+    import readline
+    histfile = Path.home() / ".cache" / "agentframework" / "history"
+    histfile.parent.mkdir(parents=True, exist_ok=True)
+    if histfile.exists():
+        readline.read_history_file(str(histfile))
+    import atexit
+    atexit.register(readline.write_history_file, str(histfile))
+except ImportError:
+    pass  # readline not available on all platforms
+
 
 def load_config(path: str | None = None) -> dict:
     if path is None:
@@ -120,7 +132,8 @@ def print_welcome():
 
 
 RECOMMENDED_MODELS = [
-    ("qwen2.5-coder:3b", "Best for strict tool calling and coding (default)"),
+    ("qwen3:4b-instruct", "Best for following instructions and tool calling (default)"),
+    ("qwen2.5-coder:3b", "Best for strict tool calling and coding"),
     ("qwen3:4b", "General purpose with strong reasoning"),
     ("llama3.2", "Meta's lightweight model, great reasoning"),
     ("phi3.5", "Microsoft's highly stable model"),
@@ -150,7 +163,8 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 
     while True:
         try:
-            user_input = Prompt.ask("\n[bold green]>[/bold green] ")
+            # Use better readline compatibility input() for
+            user_input = input("\n> ")
             
             if not user_input.strip():
                 continue
@@ -284,8 +298,18 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                 sys.stdout.flush()
             
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
+            
             import sys
             sys.stdout.write('\n')
+            
+            # Print which tools were used (in gray)
+            tool_names = set()
+            for msg in agent.messages:
+                if msg.role == "tool" and msg.tool_name:
+                    tool_names.add(msg.tool_name)
+            if tool_names:
+                print(f"\033[90mUsed: {', '.join(tool_names)}\033[0m")
+            
             sys.stdout.flush()
             
         except KeyboardInterrupt:

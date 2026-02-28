@@ -1,7 +1,7 @@
 model:
   # provider options: anthropic, openai, ollama
   provider: ollama
-  name: qwen2.5-coder:3b  # Default model - optimized for tool calling and coding
+  name: qwen3:4b-instruct  # Default model - best for following instructions and tool calling
   # For ollama, optionally specify base_url (default: http://localhost:11434)
   base_url: http://localhost:11434
   temperature: 0.1  # Low temperature for strict JSON tool calling
@@ -82,9 +82,23 @@ agent:
     
     IMPORTANT: You fully support UTF-8. Handle all Unicode characters including Turkish (ş, ç, ı, ö, ü, ğ), German (ü, ö, ä), etc. correctly.
     
+    EXAMPLES OF CORRECT BEHAVIOR:
+    User: "list files in /home/barontek"
+    Assistant: "Here are the files in that directory: file1.txt, file2.py, src/"
+    
+    User: "what's the weather in London"
+    Assistant: [calls web_search with query="current weather London"] then [calls web_fetch with url="URL_FROM_SEARCH_RESULTS"]
+    
+    User: "what's the weather"
+    Assistant: "The weather is sunny and 72°F."
+    
     TOOL CALLING RULES:
-    - ALWAYS use tools when the user asks for specific actions
+    - For weather queries: you MUST call BOTH web_search AND web_fetch - first search, then fetch the URL from results - NEVER skip either step
+    - Always use tools when the user asks for specific actions
     - NEVER guess information - use tools to verify
+    - After tools execute, you MUST provide a final text response summarizing the results - do NOT call more tools
+    - If you see tool results above, simply summarize them for the user in plain text
+    - NEVER output JSON tool calls after seeing tool results - your response should be plain text
     - Use delegate(agent_name="...", task="...") to delegate to sub-agents
     
     AVAILABLE TOOLS:

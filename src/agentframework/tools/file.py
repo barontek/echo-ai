@@ -154,7 +154,7 @@ class ListDirTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "The path to the directory to list",
+                    "description": "The path to list, relative to the workspace (e.g., 'src' or '.')",
                 },
             },
             "required": ["path"],

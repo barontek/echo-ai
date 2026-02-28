@@ -151,9 +151,13 @@ class Agent:
             # Execute tool calls concurrently using asyncio.gather()
             async def execute_and_message(tool_call: LLMToolCall) -> Message:
                 result = await self._execute_tool(tool_call)
+                # Include error in content if present
+                content = result.content or ""
+                if result.error:
+                    content = f"Error: {result.error}"
                 return Message(
                     role="tool",
-                    content=result.content,
+                    content=content,
                     tool_call_id=tool_call.id,
                     tool_name=tool_call.name,
                 )
@@ -163,20 +167,17 @@ class Agent:
             )
             self.messages.extend(tool_messages)
 
-            # Always prompt for response after tool execution (unless there's meaningful content)
-            content = (response.content or "").strip()
-            needs_prompt = (
-                not content or 
-                content.startswith("{") or 
-                content.startswith("```") or
-                len(content) < 50
-            )
-            
-            if needs_prompt and tool_messages:
+            # Always prompt for response after tool execution
+            if tool_messages:
+                # Include tool results in the prompt for clarity
+                tool_results = "\n".join(
+                    f"Tool '{msg.tool_name}' returned: {msg.content[:200]}"
+                    for msg in tool_messages if msg.content
+                )
                 self.messages.append(
                     Message(
                         role="user",
-                        content="System Note: Tools executed. Now provide a final response to the user."
+                        content=f"System Note: Tools executed.\n{tool_results}\n\nProvide a final response to the user summarizing these results."
                     )
                 )
 
@@ -230,20 +231,17 @@ class Agent:
             )
             self.messages.extend(tool_messages)
 
-            # Always prompt for response after tool execution (unless there's meaningful content)
-            content = (response.content or "").strip()
-            needs_prompt = (
-                not content or 
-                content.startswith("{") or 
-                content.startswith("```") or
-                len(content) < 50
-            )
-            
-            if needs_prompt and tool_messages:
+            # Always prompt for response after tool execution
+            if tool_messages:
+                # Include tool results in the prompt for clarity
+                tool_results = "\n".join(
+                    f"Tool '{msg.tool_name}' returned: {msg.content[:200]}"
+                    for msg in tool_messages if msg.content
+                )
                 self.messages.append(
                     Message(
                         role="user",
-                        content="System Note: Tools executed. Now provide a final response to the user."
+                        content=f"System Note: Tools executed.\n{tool_results}\n\nProvide a final response to the user summarizing these results."
                     )
                 )
 

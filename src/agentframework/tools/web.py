@@ -137,9 +137,21 @@ class WebSearchTool(Tool):
                 return ToolResult(error="Web search requires approval")
 
         try:
+            import io
+            import sys
             from ddgs import DDGS
-            ddgs = DDGS()
-            results = list(ddgs.text(query, max_results=5))
+            
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            try:
+                # Suppress ddgs stdout/stderr messages like "Impersonate 'chrome_116' does not exist"
+                sys.stdout = io.StringIO()
+                sys.stderr = io.StringIO()
+                ddgs = DDGS()
+                results = list(ddgs.text(query, max_results=5))
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
             
             if not results:
                 return ToolResult(content="No results found.")

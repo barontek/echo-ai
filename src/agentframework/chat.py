@@ -36,6 +36,7 @@ def make_clickable_links(text: str) -> str:
     
     return text
 
+
 # Enable command history with readline
 try:
     import readline
@@ -304,9 +305,6 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     if not chunk:
                         return
                 
-                # Convert markdown links to clickable terminal links
-                chunk = make_clickable_links(chunk)
-                
                 # Use stdout directly for unbuffered streaming
                 import sys
                 if in_thinking:
@@ -319,6 +317,14 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             
             import sys
             sys.stdout.write('\n')
+            
+            # Extract and display clickable links from the response
+            links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', response)
+            if links:
+                console.print("[dim]Links:[/dim]")
+                for name, url in links:
+                    clickable = f"\033]8;;{url}\007{name}\033]8;;\007"
+                    console.print(f"  {clickable}")
             
             # Print which tools were used (in gray)
             tool_names = set()

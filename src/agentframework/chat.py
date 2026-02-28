@@ -357,7 +357,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     seen_urls.add(url)
             
             if all_urls:
-                console.print("[dim]Links:[/dim]")
+                console.print("[dim]Sources:[/dim]")
                 for name, url in all_urls:
                     clickable = f"\033]8;;{url}\007{name}\033]8;;\007"
                     print(f"  {clickable}")

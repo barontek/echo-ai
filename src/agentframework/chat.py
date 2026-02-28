@@ -37,6 +37,11 @@ def make_clickable_links(text: str) -> str:
     return text
 
 
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
+
+
 # Enable command history with readline
 try:
     import readline
@@ -319,7 +324,8 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             sys.stdout.write('\n')
             
             # Extract and display clickable links from the response
-            links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', response)
+            clean_response = strip_ansi(response)
+            links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
             if links:
                 console.print("[dim]Links:[/dim]")
                 for name, url in links:

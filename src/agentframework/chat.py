@@ -326,13 +326,14 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             # Extract and display clickable links from the response
             clean_response = strip_ansi(response)
             
-            # Find markdown links [text](url) and plain URLs (url)
+            # Find markdown links [text](url)
             links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
             
-            # Also find URLs in parentheses like (https://...)
-            url_only_links = re.findall(r'\((https?://[^)]+)\)', clean_response)
-            for url in url_only_links:
-                if (url, url) not in links:
+            # Also find URLs in parentheses like (https://...) that aren't already captured
+            url_only = re.findall(r'\((https?://[^)]+)\)', clean_response)
+            for url in url_only:
+                # Skip if this URL is already in our links
+                if not any(url in pair[1] or pair[1] in url for pair in links):
                     links.append((url, url))
             
             if links:

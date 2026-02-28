@@ -151,10 +151,11 @@ class Agent:
             # Execute tool calls concurrently using asyncio.gather()
             async def execute_and_message(tool_call: LLMToolCall) -> Message:
                 result = await self._execute_tool(tool_call)
-                # Include error in content if present
-                content = result.content or ""
+                # Include error in content if present - make failures very explicit
                 if result.error:
-                    content = f"Error: {result.error}"
+                    content = f"FAILED - Operation was denied by user: {result.error}"
+                else:
+                    content = result.content or ""
                 return Message(
                     role="tool",
                     content=content,
@@ -219,9 +220,14 @@ class Agent:
             # Execute tool calls concurrently using asyncio.gather()
             async def execute_and_message(tool_call: LLMToolCall) -> Message:
                 result = await self._execute_tool(tool_call)
+                # Make failures very explicit
+                if result.error:
+                    content = f"FAILED - Operation was denied by user: {result.error}"
+                else:
+                    content = result.content or ""
                 return Message(
                     role="tool",
-                    content=result.content,
+                    content=content,
                     tool_call_id=tool_call.id,
                     tool_name=tool_call.name,
                 )

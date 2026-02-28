@@ -330,7 +330,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                 console.print("[dim]Links:[/dim]")
                 for name, url in links:
                     clickable = f"\033]8;;{url}\007{name}\033]8;;\007"
-                    console.print(f"  {clickable}")
+                    print(f"  {clickable}")
             
             # Print which tools were used (in gray)
             tool_names = set()

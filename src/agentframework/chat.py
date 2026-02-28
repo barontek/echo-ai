@@ -329,16 +329,36 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             # Find markdown links [text](url)
             links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
             
-            # Also find URLs in parentheses like (https://...) that aren't already captured
-            url_only = re.findall(r'\((https?://[^)]+)\)', clean_response)
-            for url in url_only:
-                # Skip if this URL is already in our links
-                if not any(url in pair[1] or pair[1] in url for pair in links):
-                    links.append((url, url))
+            # Extract URLs from tool results (web searches)
+            tool_urls = set()
+            for msg in agent.messages:
+                if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
+                    # Extract URLs from tool content
+                    found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
+                    tool_urls.update(found)
             
-            if links:
+            # Also extract plain URLs from AI response
+            url_only = re.findall(r'\((https?://[^)]+)\)', clean_response)
+            
+            # Combine and deduplicate
+            all_urls = list(links)
+            seen_urls = set(pair[1] for pair in links)
+            
+            for url in url_only:
+                if url not in seen_urls:
+                    all_urls.append((url, url))
+                    seen_urls.add(url)
+            
+            for url in tool_urls:
+                if url not in seen_urls:
+                    # Try to get domain as name
+                    name = url.split('/')[2] if len(url.split('/')) > 2 else url
+                    all_urls.append((name, url))
+                    seen_urls.add(url)
+            
+            if all_urls:
                 console.print("[dim]Links:[/dim]")
-                for name, url in links:
+                for name, url in all_urls:
                     clickable = f"\033]8;;{url}\007{name}\033]8;;\007"
                     print(f"  {clickable}")
             

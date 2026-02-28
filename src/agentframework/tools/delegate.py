@@ -83,8 +83,7 @@ class DelegateTool(Tool):
         # Instantiate sub-agent
         sub_agent = Agent(
             config=agent_config,
-            llm=provider,
-            tool_map={t.name: t for t in selected_tools},
+            llm_provider=provider,
         )
 
         try:

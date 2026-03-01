@@ -327,69 +327,74 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             # Extract and display clickable links from the response
             clean_response = strip_ansi(response)
             
-            # Find markdown links [text](url)
-            links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
-            
-            # Extract URLs from tool results - only from the most recent user query
-            tool_urls = set()
-            
-            # Find the last user message index
+            # Only show sources if this query had web search/fetch tool calls
+            has_web_tool = False
             last_user_idx = None
             for i in range(len(agent.messages) - 1, -1, -1):
                 if agent.messages[i].role == "user":
                     last_user_idx = i
                     break
             
-            # Only get tool results after the last user message
             if last_user_idx is not None:
                 for msg in agent.messages[last_user_idx + 1:]:
                     if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
-                        found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
-                        tool_urls.update(found)
+                        has_web_tool = True
+                        break
             
-            # Also extract plain URLs from AI response
-            url_only = re.findall(r'\((https?://[^)]+)\)', clean_response)
-            
-            # Combine and deduplicate
-            all_urls = list(links)
-            seen_urls = set(pair[1] for pair in links)
-            
-            for url in url_only:
-                if url not in seen_urls:
-                    all_urls.append((url, url))
-                    seen_urls.add(url)
-            
-            for url in tool_urls:
-                if url not in seen_urls:
-                    # Try to get domain as name
-                    name = url.split('/')[2] if len(url.split('/')) > 2 else url
-                    all_urls.append((name, url))
-                    seen_urls.add(url)
-            
-            if all_urls:
-                # Fetch titles for URLs
-                async def fetch_titles():
-                    titles = {}
-                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
-                        for name, url in all_urls:
-                            try:
-                                async with session.get(url, ssl=False) as resp:
-                                    if resp.status == 200:
-                                        html = await resp.text()
-                                        match = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE)
-                                        if match:
-                                            titles[url] = match.group(1).strip()[:60]
-                            except Exception:
-                                pass
-                    return titles
+            if has_web_tool:
+                # Find markdown links [text](url)
+                links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
                 
-                titles = await fetch_titles()
+                # Extract URLs from tool results
+                tool_urls = set()
+                if last_user_idx is not None:
+                    for msg in agent.messages[last_user_idx + 1:]:
+                        if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
+                            found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
+                            tool_urls.update(found)
                 
-                console.print("[dim]Sources:[/dim]")
-                for name, url in all_urls:
-                    display_name = titles.get(url, name)
-                    clickable = f"\033]8;;{url}\007{display_name}\033]8;;\007"
-                    print(f"  {clickable}")
+                # Also extract plain URLs from AI response
+                url_only = re.findall(r'\((https?://[^)]+)\)', clean_response)
+                
+                # Combine and deduplicate
+                all_urls = list(links)
+                seen_urls = set(pair[1] for pair in links)
+                
+                for url in url_only:
+                    if url not in seen_urls:
+                        all_urls.append((url, url))
+                        seen_urls.add(url)
+                
+                for url in tool_urls:
+                    if url not in seen_urls:
+                        name = url.split('/')[2] if len(url.split('/')) > 2 else url
+                        all_urls.append((name, url))
+                        seen_urls.add(url)
+                
+                if all_urls:
+                    # Fetch titles for URLs
+                    async def fetch_titles():
+                        titles = {}
+                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+                            for name, url in all_urls:
+                                try:
+                                    async with session.get(url, ssl=False) as resp:
+                                        if resp.status == 200:
+                                            html = await resp.text()
+                                            match = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE)
+                                            if match:
+                                                titles[url] = match.group(1).strip()[:60]
+                                except Exception:
+                                    pass
+                        return titles
+                    
+                    titles = await fetch_titles()
+                    
+                    console.print("[dim]Sources:[/dim]")
+                    for name, url in all_urls:
+                        display_name = titles.get(url, name)
+                        clickable = f"\033]8;;{url}\007{display_name}\033]8;;\007"
+                        print(f"  {clickable}")
             
             # Print which tools were used (in gray)
             tool_names = set()

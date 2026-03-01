@@ -407,11 +407,18 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         clickable = f"\033]8;;{url}\007{display_name}\033]8;;\007"
                         print(f"  {clickable}")
             
-            # Print which tools were used (in gray)
+            # Print which tools were used in this query only
             tool_names = set()
-            for msg in agent.messages:
-                if msg.role == "tool" and msg.tool_name:
-                    tool_names.add(msg.tool_name)
+            user_messages = [i for i, m in enumerate(agent.messages) if m.role == "user"]
+            
+            if len(user_messages) >= 2:
+                for msg in agent.messages[user_messages[-2] + 1:user_messages[-1]]:
+                    if msg.role == "tool" and msg.tool_name:
+                        tool_names.add(msg.tool_name)
+            elif len(user_messages) == 1:
+                for msg in agent.messages:
+                    if msg.role == "tool" and msg.tool_name:
+                        tool_names.add(msg.tool_name)
             if tool_names:
                 print(f"\033[90mUsed: {', '.join(tool_names)}\033[0m")
             

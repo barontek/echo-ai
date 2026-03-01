@@ -33,7 +33,7 @@ class AgentConfig:
     temperature: float = 0.3
     max_iterations: int = 50
     max_context_messages: int = 50  # Max messages to keep in context (0 = unlimited)
-    max_context_chars: int = 100000  # Max characters in context (0 = unlimited)
+    max_context_chars: int = 64000  # Max tokens in context (~16k tokens, 4 chars = 1 token)
     system_prompt: str = ""
     tools: list[Tool] = field(default_factory=list)
     base_url: str | None = None
@@ -300,6 +300,10 @@ class Agent:
 
         return msgs
     
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count. Uses ~4 chars = 1 token as a rough approximation."""
+        return len(text) // 4
+
     def _apply_context_window(self) -> list["Message"]:
         """Apply sliding window to messages based on configured limits."""
         if not self.messages:
@@ -318,29 +322,35 @@ class Agent:
         
         # If only chars limit is set
         if max_chars > 0 and max_msgs <= 0:
-            return self._trim_by_chars(self.messages, max_chars)
+            return self._trim_by_tokens(self.messages, max_chars)
         
         # Both limits set - first trim by chars, then by count
-        trimmed = self._trim_by_chars(self.messages, max_chars)
+        trimmed = self._trim_by_tokens(self.messages, max_chars)
         return trimmed[-max_msgs:] if max_msgs > 0 else trimmed
     
-    def _trim_by_chars(self, messages: list["Message"], max_chars: int) -> list["Message"]:
-        """Trim messages to fit within character limit, keeping most recent."""
-        if max_chars <= 0:
+    def _trim_by_tokens(self, messages: list["Message"], max_tokens: int) -> list["Message"]:
+        """Trim messages to fit within token limit, keeping most recent."""
+        if max_tokens <= 0:
             return messages
         
-        # Always keep: system prompt (not in self.messages), first user message, last N messages
-        # Build from end, accumulate until we hit limit
         result: list[Message] = []
-        total_chars = 0
+        total_tokens = 0
         
         # Go through messages in reverse order
         for msg in reversed(messages):
-            msg_chars = len(msg.content)
-            if total_chars + msg_chars > max_chars:
+            # Truncate tool outputs that are too long
+            content = msg.content
+            if msg.role == "tool" and len(content) > 10000:
+                content = content[:10000] + f"\n\n[Output truncated - was {len(content)} chars]"
+            
+            msg_tokens = self._estimate_tokens(content)
+            if total_tokens + msg_tokens > max_tokens:
                 break
             result.insert(0, msg)
-            total_chars += msg_chars
+            total_tokens += msg_tokens
+            # Replace content with truncated version
+            if content != msg.content:
+                msg.content = content
         
         # If we trimmed anything, add a notice
         if result != messages and result:

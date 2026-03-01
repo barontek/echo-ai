@@ -144,7 +144,6 @@ class WebSearchTool(Tool):
             old_stdout = sys.stdout
             old_stderr = sys.stderr
             try:
-                # Suppress ddgs stdout/stderr messages like "Impersonate 'chrome_116' does not exist"
                 sys.stdout = io.StringIO()
                 sys.stderr = io.StringIO()
                 ddgs = DDGS()
@@ -157,8 +156,35 @@ class WebSearchTool(Tool):
                 return ToolResult(content="No results found.")
             
             formatted = []
-            for r in results:
-                formatted.append(f"- {r['title']}: {r.get('href', '')}\n  {r.get('body', '')[:200]}")
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                for r in results:
+                    url = r.get('href', '')
+                    title = r.get('title', '')
+                    
+                    # Fetch full page content
+                    content = ""
+                    try:
+                        resp = await client.get(url)
+                        if resp.status_code == 200:
+                            soup = BeautifulSoup(resp.text, 'html.parser')
+                            
+                            # Remove script, style, nav, header, footer elements
+                            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript']):
+                                tag.decompose()
+                            
+                            # Get text from main content areas
+                            main = soup.find('main') or soup.find('article') or soup.find('body')
+                            if main:
+                                text = main.get_text(separator=' ', strip=True)
+                            else:
+                                text = soup.get_text(separator=' ', strip=True)
+                            
+                            # Clean up whitespace
+                            content = ' '.join(text.split())[:2000]
+                    except Exception:
+                        content = r.get('body', '')[:500]
+                    
+                    formatted.append(f"- {title}: {url}\n  {content}")
             
             return ToolResult(content="\n\n".join(formatted))
         except Exception as e:

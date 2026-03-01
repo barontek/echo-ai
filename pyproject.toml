@@ -12,6 +12,7 @@ dependencies = [
     "ddgs>=9.0.0",
     "beautifulsoup4>=4.12.0",
     "prompt_toolkit>=3.0.0",
+    "aiohttp>=3.9.0",
 ]
 
 [project.scripts]

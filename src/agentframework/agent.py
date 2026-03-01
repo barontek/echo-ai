@@ -21,6 +21,7 @@ class Message:
     content: str
     tool_call_id: str | None = None
     tool_name: str | None = None
+    tool_arguments: dict | None = None
 
 
 @dataclass
@@ -161,6 +162,7 @@ class Agent:
                     content=content,
                     tool_call_id=tool_call.id,
                     tool_name=tool_call.name,
+                    tool_arguments=tool_call.arguments,
                 )
 
             tool_messages = await asyncio.gather(
@@ -230,6 +232,7 @@ class Agent:
                     content=content,
                     tool_call_id=tool_call.id,
                     tool_name=tool_call.name,
+                    tool_arguments=tool_call.arguments,
                 )
 
             tool_messages = await asyncio.gather(
@@ -433,7 +436,7 @@ class Agent:
         
         # Save messages
         self.session_manager.current_session.messages = [
-            {"role": m.role, "content": m.content, "tool_call_id": m.tool_call_id, "tool_name": m.tool_name}
+            {"role": m.role, "content": m.content, "tool_call_id": m.tool_call_id, "tool_name": m.tool_name, "tool_arguments": m.tool_arguments}
             for m in self.messages
         ]
         self.session_manager.save_session()
@@ -449,7 +452,7 @@ class Agent:
             return f"Session not found: {session_id}"
         
         self.messages = [
-            Message(role=m["role"], content=m["content"], tool_call_id=m.get("tool_call_id"), tool_name=m.get("tool_name"))
+            Message(role=m["role"], content=m["content"], tool_call_id=m.get("tool_call_id"), tool_name=m.get("tool_name"), tool_arguments=m.get("tool_arguments"))
             for m in session.messages
         ]
         return f"Session loaded: {session_id}"

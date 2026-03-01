@@ -6,6 +6,7 @@ import re
 import sys
 from pathlib import Path
 
+import aiohttp
 import yaml
 from rich.console import Console
 from rich.markdown import Markdown
@@ -357,9 +358,28 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     seen_urls.add(url)
             
             if all_urls:
+                # Fetch titles for URLs
+                async def fetch_titles():
+                    titles = {}
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+                        for name, url in all_urls:
+                            try:
+                                async with session.get(url, ssl=False) as resp:
+                                    if resp.status == 200:
+                                        html = await resp.text()
+                                        match = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE)
+                                        if match:
+                                            titles[url] = match.group(1).strip()[:60]
+                            except Exception:
+                                pass
+                    return titles
+                
+                titles = asyncio.run(fetch_titles())
+                
                 console.print("[dim]Sources:[/dim]")
                 for name, url in all_urls:
-                    clickable = f"\033]8;;{url}\007{name}\033]8;;\007"
+                    display_name = titles.get(url, name)
+                    clickable = f"\033]8;;{url}\007{display_name}\033]8;;\007"
                     print(f"  {clickable}")
             
             # Print which tools were used (in gray)

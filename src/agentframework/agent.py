@@ -369,7 +369,15 @@ class Agent:
         try:
             args = tool_call.arguments
             if isinstance(args, str):
-                args = json.loads(args)
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    return ToolResult(error=f"Invalid JSON in arguments: {args}")
+
+            validation_error = self._validate_tool_args(tool, args)
+            if validation_error:
+                return ToolResult(error=validation_error)
+
             result = await tool.execute(**args)
             
             # Track file changes for undo
@@ -386,9 +394,52 @@ class Agent:
                     pass
             
             return result
+        except TypeError as e:
+            error_msg = str(e)
+            if "missing" in error_msg or "required" in error_msg:
+                return ToolResult(error=f"Missing required argument: {error_msg}")
+            elif "unexpected keyword" in error_msg:
+                return ToolResult(error=f"Invalid argument: {error_msg}")
+            return ToolResult(error=f"Argument error: {error_msg}")
         except Exception as e:
             logger.exception(f"Tool {tool_call.name} failed")
             return ToolResult(error=str(e))
+
+    def _validate_tool_args(self, tool: Tool, args: dict) -> str | None:
+        """Validate tool arguments against schema. Returns error message or None if valid."""
+        try:
+            schema = tool._get_parameters()
+        except Exception:
+            return None
+
+        required = schema.get("required", [])
+        properties = schema.get("properties", {})
+
+        for req_field in required:
+            if req_field not in args:
+                return f"Missing required argument: '{req_field}'"
+
+        for arg_name, arg_value in args.items():
+            if arg_name not in properties:
+                continue
+
+            prop_schema = properties[arg_name]
+            expected_type = prop_schema.get("type")
+
+            if expected_type == "string" and not isinstance(arg_value, str):
+                return f"Argument '{arg_name}' must be a string, got {type(arg_value).__name__}"
+            elif expected_type == "integer" and not isinstance(arg_value, int):
+                return f"Argument '{arg_name}' must be an integer, got {type(arg_value).__name__}"
+            elif expected_type == "number" and not isinstance(arg_value, (int, float)):
+                return f"Argument '{arg_name}' must be a number, got {type(arg_value).__name__}"
+            elif expected_type == "boolean" and not isinstance(arg_value, bool):
+                return f"Argument '{arg_name}' must be a boolean, got {type(arg_value).__name__}"
+            elif expected_type == "array" and not isinstance(arg_value, list):
+                return f"Argument '{arg_name}' must be an array, got {type(arg_value).__name__}"
+            elif expected_type == "object" and not isinstance(arg_value, dict):
+                return f"Argument '{arg_name}' must be an object, got {type(arg_value).__name__}"
+
+        return None
 
     def undo(self) -> str:
         """Undo the last file change."""

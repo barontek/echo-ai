@@ -330,13 +330,17 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             # Find markdown links [text](url)
             links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
             
-            # Extract URLs from tool results (web searches)
+            # Extract URLs from tool results - only from most recent tool calls
             tool_urls = set()
-            for msg in agent.messages:
+            found_web_tool = False
+            for msg in reversed(agent.messages):
                 if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
-                    # Extract URLs from tool content
+                    found_web_tool = True
                     found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
                     tool_urls.update(found)
+                elif found_web_tool:
+                    # Stop after first tool result
+                    break
             
             # Also extract plain URLs from AI response
             url_only = re.findall(r'\((https?://[^)]+)\)', clean_response)

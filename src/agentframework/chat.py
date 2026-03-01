@@ -374,7 +374,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                                 pass
                     return titles
                 
-                titles = asyncio.run(fetch_titles())
+                titles = await fetch_titles()
                 
                 console.print("[dim]Sources:[/dim]")
                 for name, url in all_urls:

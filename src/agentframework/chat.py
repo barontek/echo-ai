@@ -425,7 +425,10 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             sys.stdout.flush()
             
         except KeyboardInterrupt:
-            agent.save_session()
+            try:
+                agent.save_session()
+            except Exception:
+                pass
             console.print("\n[dim]Chat saved. Goodbye![/dim]")
             return
         except Exception as e:
@@ -468,13 +471,23 @@ def main():
         if sys.argv[1] == "--load" and len(sys.argv) > 2:
             session_name = sys.argv[2]
         elif not sys.argv[1].startswith("-"):
-            asyncio.run(agent.run(" ".join(sys.argv[1:])))
+            try:
+                asyncio.run(agent.run(" ".join(sys.argv[1:])))
+            except KeyboardInterrupt:
+                pass
             agent.save_session()
             return
 
     console.clear()
     print_welcome()
-    asyncio.run(chat_session(agent, session_name))
+    try:
+        asyncio.run(chat_session(agent, session_name))
+    except KeyboardInterrupt:
+        try:
+            agent.save_session()
+        except Exception:
+            pass
+        console.print("\n[dim]Chat saved. Goodbye![/dim]")
 
 
 if __name__ == "__main__":

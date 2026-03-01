@@ -424,13 +424,6 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             
             sys.stdout.flush()
             
-        except KeyboardInterrupt:
-            try:
-                agent.save_session()
-            except Exception:
-                pass
-            console.print("\n[dim]Chat saved. Goodbye![/dim]")
-            return
         except Exception as e:
             console.print(f"[red]Error:[/red] {e}")
 

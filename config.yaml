@@ -33,12 +33,30 @@ tools:
       - python
       - python3
       - node
+      - cd
+      - pwd
+      - mkdir
+      - rm
+      - cp
+      - mv
+      - pip
+      - docker
+      - curl
+      - wget
+      - ssh
+      - pytest
+      - uv
     timeout: 60
 
 safety:
   workspace: "/home/barontek"
   allow_network: true
-  allowed_domains: []
+  allowed_domains:
+    - "github.com"
+    - "stackoverflow.com"
+    - "pypi.org"
+    - "docs.python.org"
+    - "npmjs.com"
   blocked_commands:
     - "rm -rf /"
     - "dd if="
@@ -54,6 +72,10 @@ safety:
   require_approval_for:
     - bash
     - write_file
+  # New security options
+  audit_log_path: "vibe-ai-audit.log"
+  read_requires_approval: false
+  read_size_threshold: 102400
 
 agent:
   max_iterations: 50
@@ -64,15 +86,15 @@ agent:
   sub_agents:
     devops:
       description: "DevOps engineer for system administration, git operations, and running commands"
-      model: "qwen3:4b"
+      model: "qwen3:4b-instruct"
       tools: ["bash", "git", "read_file", "write_file"]
     researcher:
       description: "Research assistant for web searches and fetching information"
-      model: "qwen3:4b"
+      model: "qwen3:4b-instruct"
       tools: ["web_search", "web_fetch"]
     secretary:
       description: "Personal secretary for managing notes and remembering personal information"
-      model: "qwen3:4b"
+      model: "qwen3:4b-instruct"
       tools: ["memory", "notes"]
   
   system_prompt: |
@@ -122,4 +144,3 @@ api_keys:
   # Set via environment variables if needed:
   # ANTHROPIC_API_KEY
   # OPENAI_API_KEY
-  # OLLAMA_HOST (optional, for custom endpoint)

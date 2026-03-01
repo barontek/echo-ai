@@ -5,6 +5,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -38,6 +39,14 @@ DANGEROUS_PATTERNS = [
     (re.compile(r'/bin/(sh|bash)\s+-i'), "Interactive shell"),
     (re.compile(r'eval\s+'), "Eval execution"),
     (re.compile(r'exec\s+'), "Exec execution"),
+]
+
+DESTRUCTIVE_KEYWORDS = [
+    'delete', 'destroy', 'remove', 'drop', 'truncate', 'erase',
+    'rm -rf', 'rmdir', 'unlink', 'deltree',
+    'format', 'fdisk', 'mkfs',
+    '--force', '-f', '--force', 'force',
+    'chmod 777', 'chmod -r', 'chown -r',
 ]
 
 SAFE_COMMANDS = {
@@ -82,6 +91,9 @@ class SafetyConfig:
     max_execution_time: int = 60
     require_approval_for: list[str] = field(default_factory=lambda: ["bash", "write_file"])
     approval_callback: Optional[Callable[[str, str], bool]] = None
+    audit_log_path: Optional[str] = None
+    read_requires_approval: bool = False
+    read_size_threshold: int = 100 * 1024
 
 
 class SecurityValidator:
@@ -192,17 +204,64 @@ class SecurityValidator:
                 pass
         return True
 
-    def requires_approval(self, tool_name: str) -> bool:
+    def requires_approval(self, tool_name: str, path: str | None = None, content: str | None = None) -> bool:
         """Check if tool requires user approval."""
-        return tool_name in self.config.require_approval_for
+        if tool_name in self.config.require_approval_for:
+            return True
+        
+        if tool_name == "read_file":
+            if self.config.read_requires_approval:
+                return True
+            if path:
+                try:
+                    file_path = Path(path)
+                    if file_path.exists():
+                        size = file_path.stat().st_size
+                        if size > self.config.read_size_threshold:
+                            return True
+                except Exception:
+                    pass
+        
+        return False
+
+    def check_destructive_keywords(self, command: str) -> list[str]:
+        """Check for destructive keywords in command."""
+        found = []
+        cmd_lower = command.lower()
+        for keyword in DESTRUCTIVE_KEYWORDS:
+            if keyword in cmd_lower:
+                found.append(keyword)
+        return found
+
+    def log_approval(self, tool_name: str, details: str, approved: bool):
+        """Log approval/denial to audit file."""
+        if not self.config.audit_log_path:
+            return
+        
+        try:
+            timestamp = datetime.now().isoformat()
+            status = "APPROVED" if approved else "DENIED"
+            log_entry = f"[{timestamp}] {status}: {tool_name} - {details}\n"
+            
+            audit_path = Path(self.config.audit_log_path)
+            audit_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(audit_path, "a") as f:
+                f.write(log_entry)
+        except Exception as e:
+            logger.error(f"Failed to write audit log: {e}")
 
     def get_approval(self, tool_name: str, details: str) -> bool:
         """Get user approval for dangerous operation."""
         if not self.requires_approval(tool_name):
             return True
+        
         if self.config.approval_callback:
-            return self.config.approval_callback(tool_name, details)
+            approved = self.config.approval_callback(tool_name, details)
+            self.log_approval(tool_name, details, approved)
+            return approved
+        
         logger.warning(f"Approval required for {tool_name}: {details}")
+        self.log_approval(tool_name, details, False)
         return False
 
 

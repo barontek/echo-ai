@@ -47,13 +47,22 @@ class ReadFileTool(Tool):
         if self.validator.is_blocked_path(path):
             return ToolResult(error="Cannot read blocked path")
 
-        if self.validator.requires_approval("read_file"):
-            approved = self.validator.get_approval("read_file", f"read: {path}")
+        full_path = (self.base_dir / path).resolve()
+        
+        file_size_info = ""
+        try:
+            if full_path.exists() and full_path.is_file():
+                size = full_path.stat().st_size
+                file_size_info = f" ({size // 1024} KB)"
+        except Exception:
+            pass
+
+        if self.validator.requires_approval("read_file", path=str(full_path)):
+            approved = self.validator.get_approval("read_file", f"read: {path}{file_size_info}")
             if not approved:
                 return ToolResult(error="Read requires approval")
 
         try:
-            full_path = (self.base_dir / path).resolve()
             if not full_path.exists():
                 return ToolResult(error=f"File not found: {path}")
             if not full_path.is_file():
@@ -118,13 +127,18 @@ class WriteFileTool(Tool):
         if not self.validator.check_file_size(content=content):
             return ToolResult(error="Content too large")
 
-        if self.validator.requires_approval("write_file"):
-            approved = self.validator.get_approval("write_file", f"write: {path}")
+        full_path = (self.base_dir / path).resolve()
+        file_status = "new file"
+        if full_path.exists():
+            size = full_path.stat().st_size
+            file_status = f"existing ({size} bytes)"
+
+        if self.validator.requires_approval("write_file", path=str(full_path), content=content):
+            approved = self.validator.get_approval("write_file", f"write: {path} - {file_status}")
             if not approved:
                 return ToolResult(error="Write requires approval")
 
         try:
-            full_path = (self.base_dir / path).resolve()
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_text(content)
             return ToolResult(content=f"Written to {path}")

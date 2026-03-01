@@ -14,7 +14,7 @@ from rich.prompt import Prompt
 
 from .agent import Agent, AgentConfig, create_agent
 from .providers import get_provider
-from .safety import SafetyConfig
+from .safety import SafetyConfig, SecurityValidator
 from .tools.bash import BashTool
 from .tools.file import ReadFileTool, WriteFileTool, ListDirTool
 from .tools.search import GlobTool, GrepTool
@@ -81,8 +81,42 @@ def get_safety_config(config: dict) -> SafetyConfig:
     safety = config.get("safety", {})
     tools_config = config.get("tools", {})
 
+    validator = SecurityValidator(SafetyConfig(
+        workspace=safety.get("workspace", "."),
+    ))
+
     def approval_callback(tool: str, details: str) -> bool:
-        console.print(f"[yellow]Approval required for {tool}:[/yellow] {details}")
+        warning_msg = ""
+        
+        if tool == "bash":
+            destructive = validator.check_destructive_keywords(details)
+            if destructive:
+                warning_msg = f" [red]⚠️ DESTRUCTIVE keywords detected: {', '.join(destructive)}[/red]"
+        
+        if tool == "write_file":
+            try:
+                from pathlib import Path
+                path = details.replace("write: ", "")
+                file_path = Path(path)
+                if file_path.exists():
+                    warning_msg = f" [red]⚠️ File exists - will overwrite![/red]"
+            except Exception:
+                pass
+        
+        if tool == "read_file":
+            try:
+                from pathlib import Path
+                path = details.replace("read: ", "")
+                file_path = Path(path)
+                if file_path.exists():
+                    size = file_path.stat().st_size
+                    threshold = safety.get("read_size_threshold", 102400)
+                    if size > threshold:
+                        warning_msg = f" [yellow]⚠️ Large file ({size // 1024} KB)[/yellow]"
+            except Exception:
+                pass
+        
+        console.print(f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}")
         response = Prompt.ask("[bold]Allow? (y/N)[/bold]", default="n")
         return response.lower() in ("y", "yes")
 
@@ -96,6 +130,9 @@ def get_safety_config(config: dict) -> SafetyConfig:
         max_execution_time=safety.get("max_execution_time", 60),
         require_approval_for=safety.get("require_approval_for", []),
         approval_callback=approval_callback,
+        audit_log_path=safety.get("audit_log_path"),
+        read_requires_approval=safety.get("read_requires_approval", False),
+        read_size_threshold=safety.get("read_size_threshold", 102400),
     )
 
 

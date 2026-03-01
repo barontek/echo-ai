@@ -7,7 +7,6 @@ from pathlib import Path
 
 import yaml
 from rich.console import Console
-from rich.markdown import Markdown
 
 from .agent import Agent, AgentConfig, create_agent
 from .safety import SafetyConfig
@@ -235,7 +234,7 @@ async def run_single(agent: Agent, task: str):
             sys.stdout.write(chunk)
         sys.stdout.flush()
     
-    response = await agent.run_streaming(task, on_chunk=on_chunk)
+    await agent.run_streaming(task, on_chunk=on_chunk)
     sys.stdout.write('\n')
 
 

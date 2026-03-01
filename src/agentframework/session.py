@@ -1,7 +1,6 @@
 """Session management for the agent framework."""
 
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path

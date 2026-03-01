@@ -2,7 +2,6 @@
 
 import json
 import re
-import sys
 from typing import Any, Callable, Optional
 
 import httpx
@@ -179,7 +178,6 @@ class OllamaProvider(LLMProvider):
                 content = ""
                 thinking = ""
                 tool_calls = []
-                pending_chunks = []  # Buffer chunks until we know they're not tool calls
                 has_seen_non_json = False  # Track if we've seen actual text content
                 
                 async for line in response.aiter_lines():
@@ -187,7 +185,7 @@ class OllamaProvider(LLMProvider):
                         continue
                     try:
                         data = json.loads(line)
-                    except:
+                    except Exception:
                         continue
                     
                     msg = data.get("message", {})

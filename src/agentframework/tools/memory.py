@@ -1,7 +1,5 @@
 """Memory tool for storing and retrieving personal facts across sessions."""
 
-import json
-import os
 import sqlite3
 from pathlib import Path
 from typing import Any

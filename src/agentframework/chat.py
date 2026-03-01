@@ -9,7 +9,6 @@ from pathlib import Path
 import aiohttp
 import yaml
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.prompt import Prompt
 
 from .agent import Agent, AgentConfig, create_agent
@@ -99,7 +98,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
                 path = details.replace("write: ", "")
                 file_path = Path(path)
                 if file_path.exists():
-                    warning_msg = f" [red]⚠️ File exists - will overwrite![/red]"
+                    warning_msg = " [red]⚠️ File exists - will overwrite![/red]"
             except Exception:
                 pass
         
@@ -207,6 +206,7 @@ def print_help():
     console.print("  [bold]/chats[/bold]     - List saved chats")
     console.print("  [bold]/models[/bold]    - List recommended local models")
     console.print("  [bold]/model <name>[/bold] - Switch to a different model")
+    console.print("  [bold]/temperature <val>[/bold] - Set temperature (0.0-2.0)")
     console.print("  [bold]/undo[/bold]      - Undo last file change")
     console.print("  [bold]/redo[/bold]      - Redo last undone change")
     console.print("  [bold]/clear[/bold]     - Clear screen")
@@ -302,6 +302,120 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         console.print("[dim]Use /models to see available models[/dim]\n")
                         continue
                     
+                    old_model = agent.config.model
+                    
+                    try:
+                        # Get existing provider settings
+                        provider_name = agent.config.provider
+                        base_url = agent.config.base_url
+                        
+                        # Create new provider with new model
+                        new_provider = get_provider(
+                            name=provider_name,
+                            model=args.strip(),
+                            base_url=base_url,
+                        )
+                        
+                        # Update agent
+                        agent.llm = new_provider
+                        agent.config.model = args.strip()
+                        
+                        console.print(f"[green]Model successfully switched to {args.strip()}[/green]\n")
+                    except Exception as e:
+                        console.print(f"[red]Failed to switch model: {e}[/red]")
+                        console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
+                    continue
+                
+                elif cmd == "/temperature":
+                    if not args.strip():
+                        console.print(f"[cyan]Current temperature: {agent.config.temperature}[/cyan]")
+                        console.print("[dim]Use /temperature <0.0-1.0> to change[/dim]\n")
+                        continue
+                    
+                    try:
+                        new_temp = float(args.strip())
+                        if not 0.0 <= new_temp <= 2.0:
+                            raise ValueError("Temperature must be between 0.0 and 2.0")
+                        agent.config.temperature = new_temp
+                        console.print(f"[green]Temperature set to {new_temp}[/green]\n")
+                    except ValueError as e:
+                        console.print(f"[red]Invalid temperature: {e}[/red]")
+                        console.print("[dim]Temperature must be between 0.0 and 2.0[/dim]\n")
+                    continue
+
+                elif cmd == "/undo":
+                    result = agent.undo()
+                    console.print(f"[cyan]{result}[/cyan]")
+                    continue
+                
+                elif cmd == "/redo":
+                    result = agent.redo()
+                    console.print(f"[cyan]{result}[/cyan]")
+                    continue
+                
+                elif cmd == "/clear":
+                    console.clear()
+                    print_welcome()
+                    continue
+                
+                elif cmd == "/help":
+                    print_help()
+                    continue
+                
+                elif cmd == "/models":
+                    console.print("\n[bold]Recommended Models (4GB VRAM):[/bold]")
+                    for model_name, description in RECOMMENDED_MODELS:
+                        console.print(f"  [cyan]{model_name}[/cyan] - {description}")
+                    console.print("\n[dim]Use /model <name> to switch[/dim]\n")
+                    continue
+                
+                elif cmd == "/model":
+                    if not args.strip():
+                        console.print("[yellow]Usage: /model <model_name>[/yellow]")
+                        console.print("[dim]Use /models to see available models[/dim]\n")
+                        continue
+                    
+                    old_model = agent.config.model
+                    
+                    try:
+                        # Get existing provider settings
+                        provider_name = agent.config.provider
+                        base_url = agent.config.base_url
+                        
+                        # Create new provider with new model
+                        new_provider = get_provider(
+                            name=provider_name,
+                            model=args.strip(),
+                            base_url=base_url,
+                        )
+                        
+                        # Update agent
+                        agent.llm = new_provider
+                        agent.config.model = args.strip()
+                        
+                        console.print(f"[green]Model successfully switched to {args.strip()}[/green]\n")
+                    except Exception as e:
+                        console.print(f"[red]Failed to switch model: {e}[/red]")
+                        console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
+                    continue
+
+                elif cmd == "/temperature":
+                    if not args.strip():
+                        console.print(f"[cyan]Current temperature: {agent.config.temperature}[/cyan]")
+                        console.print("[dim]Use /temperature <0.0-1.0> to change[/dim]\n")
+                        continue
+                    
+                    try:
+                        new_temp = float(args.strip())
+                        if not 0.0 <= new_temp <= 2.0:
+                            raise ValueError("Temperature must be between 0.0 and 2.0")
+                        agent.config.temperature = new_temp
+                        console.print(f"[green]Temperature set to {new_temp}[/green]\n")
+                    except ValueError as e:
+                        console.print(f"[red]Invalid temperature: {e}[/red]")
+                        console.print("[dim]Temperature must be between 0.0 and 2.0[/dim]\n")
+                    continue
+                    
                     new_model = args.strip()
                     old_model = agent.config.model
                     
@@ -309,8 +423,6 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         # Get existing provider settings
                         provider_name = agent.config.provider
                         base_url = agent.config.base_url
-                        temperature = agent.config.temperature
-                        tools = agent.config.tools
                         
                         # Create new provider with new model
                         new_provider = get_provider(

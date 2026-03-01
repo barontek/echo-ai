@@ -1,6 +1,5 @@
 """File tools for reading, writing, and listing files with safety."""
 
-import os
 from pathlib import Path
 from typing import Any
 

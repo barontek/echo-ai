@@ -57,7 +57,6 @@ class DelegateTool(Tool):
 
         # Create sub-agent instance
         from ..agent import AgentConfig
-        from ..providers import get_provider
         
         # Get provider from parent agent
         parent_llm = getattr(self.agent, 'llm', None)

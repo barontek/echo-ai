@@ -328,15 +328,19 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             clean_response = strip_ansi(response)
             
             # Only show sources if this query had web search/fetch tool calls
+            # Check tool messages between the last two user messages (current query)
             has_web_tool = False
-            last_user_idx = None
-            for i in range(len(agent.messages) - 1, -1, -1):
-                if agent.messages[i].role == "user":
-                    last_user_idx = i
-                    break
+            user_messages = [i for i, m in enumerate(agent.messages) if m.role == "user"]
             
-            if last_user_idx is not None:
-                for msg in agent.messages[last_user_idx + 1:]:
+            if len(user_messages) >= 2:
+                # Check messages between last two user messages
+                for msg in agent.messages[user_messages[-2] + 1:user_messages[-1]]:
+                    if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
+                        has_web_tool = True
+                        break
+            elif len(user_messages) == 1:
+                # First query - check all tool messages
+                for msg in agent.messages:
                     if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
                         has_web_tool = True
                         break
@@ -345,10 +349,17 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                 # Find markdown links [text](url)
                 links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
                 
-                # Extract URLs from tool results
+                # Extract URLs from tool results in current query
                 tool_urls = set()
-                if last_user_idx is not None:
-                    for msg in agent.messages[last_user_idx + 1:]:
+                user_messages = [i for i, m in enumerate(agent.messages) if m.role == "user"]
+                
+                if len(user_messages) >= 2:
+                    for msg in agent.messages[user_messages[-2] + 1:user_messages[-1]]:
+                        if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
+                            found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
+                            tool_urls.update(found)
+                elif len(user_messages) == 1:
+                    for msg in agent.messages:
                         if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
                             found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
                             tool_urls.update(found)

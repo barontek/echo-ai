@@ -28,8 +28,8 @@ class Message:
 class AgentConfig:
     """Configuration for the agent."""
 
-    provider: str = "anthropic"
-    model: str = "claude-sonnet-4-20250514"
+    provider: str = "ollama"
+    model: str = "qwen3:4b-instruct"
     temperature: float = 0.3
     max_iterations: int = 50
     max_context_messages: int = 50  # Max messages to keep in context (0 = unlimited)

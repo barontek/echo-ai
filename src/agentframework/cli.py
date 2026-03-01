@@ -245,7 +245,7 @@ def main():
 
     agent_config = AgentConfig(
         provider=config.get("model", {}).get("provider", "anthropic"),
-        model=config.get("model", {}).get("name", "claude-sonnet-4-20250514"),
+        model=config.get("model", {}).get("name", "qwen3:4b-instruct"),
         temperature=config.get("model", {}).get("temperature", 0.3),
         max_iterations=config.get("agent", {}).get("max_iterations", 50),
         system_prompt=config.get("agent", {}).get("system_prompt", ""),

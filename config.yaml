@@ -53,6 +53,7 @@ safety:
   allow_network: true
   allowed_domains:
     - "github.com"
+    - "*.github.com"
     - "stackoverflow.com"
     - "pypi.org"
     - "docs.python.org"

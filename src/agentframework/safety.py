@@ -192,7 +192,9 @@ class SecurityValidator:
             from urllib.parse import urlparse
             domain = urlparse(url).netloc
             for allowed in self.config.allowed_domains:
-                if fnmatch.fnmatch(domain, allowed):
+                # Remove wildcard prefix for subdomain matching
+                pattern = allowed.lstrip("*.")
+                if fnmatch.fnmatch(domain, allowed) or domain == pattern or domain.endswith("." + pattern):
                     return True, "OK"
             return False, f"Domain not in allowlist: {domain}"
         return False, "Network access disabled"

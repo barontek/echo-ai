@@ -143,7 +143,7 @@ class SecurityValidator:
 
         base_cmd = parts[0]
 
-        # Check blocked commands - ensure we have a list of strings
+        # Check blocked commands - compile regex patterns
         if self.config.blocked_commands:
             if not isinstance(self.config.blocked_commands, list):
                 pass  # Skip if not a list
@@ -151,8 +151,13 @@ class SecurityValidator:
                 for blocked in self.config.blocked_commands:
                     if not isinstance(blocked, str):
                         continue
-                    if fnmatch.fnmatch(base_cmd, blocked):
-                        return False, f"Command '{base_cmd}' is blocked"
+                    try:
+                        if re.search(blocked, command):
+                            return False, f"Command '{base_cmd}' is blocked"
+                    except re.error:
+                        # Fall back to fnmatch for simple patterns
+                        if fnmatch.fnmatch(base_cmd, blocked):
+                            return False, f"Command '{base_cmd}' is blocked"
 
         # Check allowed commands
         allowed = self.config.allowed_commands

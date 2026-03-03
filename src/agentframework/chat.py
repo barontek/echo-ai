@@ -25,31 +25,34 @@ console = Console(color_system="256")
 
 def make_clickable_links(text: str) -> str:
     """Convert markdown links [text](url) to clickable terminal links."""
+
     def replace_link(match):
         name = match.group(1)
         url = match.group(2)
         return f"\033]8;;{url}\007{name}\033]8;;\007"
-    
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', replace_link, text)
-    
-    text = re.sub(r'\[(https?://[^]]+)\]\((https?://[^)]+)\)', replace_link, text)
-    
+
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, text)
+
+    text = re.sub(r"\[(https?://[^]]+)\]\((https?://[^)]+)\)", replace_link, text)
+
     return text
 
 
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from text."""
-    return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
+    return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
 
 
 # Enable command history with readline
 try:
     import readline
+
     histfile = Path.home() / ".cache" / "agentframework" / "history"
     histfile.parent.mkdir(parents=True, exist_ok=True)
     if histfile.exists():
         readline.read_history_file(str(histfile))
     import atexit
+
     atexit.register(readline.write_history_file, str(histfile))
 except ImportError:
     pass  # readline not available on all platforms
@@ -80,42 +83,50 @@ def get_safety_config(config: dict) -> SafetyConfig:
     safety = config.get("safety", {})
     tools_config = config.get("tools", {})
 
-    validator = SecurityValidator(SafetyConfig(
-        workspace=safety.get("workspace", "."),
-    ))
+    validator = SecurityValidator(
+        SafetyConfig(
+            workspace=safety.get("workspace", "."),
+        )
+    )
 
     def approval_callback(tool: str, details: str) -> bool:
         warning_msg = ""
-        
+
         if tool == "bash":
             destructive = validator.check_destructive_keywords(details)
             if destructive:
                 warning_msg = f" [red]⚠️ DESTRUCTIVE keywords detected: {', '.join(destructive)}[/red]"
-        
+
         if tool == "write_file":
             try:
                 from pathlib import Path
+
                 path = details.replace("write: ", "")
                 file_path = Path(path)
                 if file_path.exists():
                     warning_msg = " [red]⚠️ File exists - will overwrite![/red]"
             except Exception:
                 pass
-        
+
         if tool == "read_file":
             try:
                 from pathlib import Path
+
                 path = details.replace("read: ", "")
                 file_path = Path(path)
                 if file_path.exists():
                     size = file_path.stat().st_size
                     threshold = safety.get("read_size_threshold", 102400)
                     if size > threshold:
-                        warning_msg = f" [yellow]⚠️ Large file ({size // 1024} KB)[/yellow]"
+                        warning_msg = (
+                            f" [yellow]⚠️ Large file ({size // 1024} KB)[/yellow]"
+                        )
             except Exception:
                 pass
-        
-        console.print(f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}")
+
+        console.print(
+            f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}"
+        )
         response = Prompt.ask("[bold]Allow? (y/N)[/bold]", default="n")
         return response.lower() in ("y", "yes")
 
@@ -141,11 +152,13 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
 
     if "bash" in enabled:
         bash_config = config.get("tools", {}).get("bash", {})
-        tools.append(BashTool(
-            timeout=bash_config.get("timeout", 60),
-            allowed_commands=bash_config.get("allowed_commands"),
-            safety_config=safety_config,
-        ))
+        tools.append(
+            BashTool(
+                timeout=bash_config.get("timeout", 60),
+                allowed_commands=bash_config.get("allowed_commands"),
+                safety_config=safety_config,
+            )
+        )
 
     if "read_file" in enabled:
         tools.append(ReadFileTool(safety_config=safety_config))
@@ -173,10 +186,12 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
 
     if "memory" in enabled:
         from .tools.memory import MemoryTool
+
         tools.append(MemoryTool())
 
     if "notes" in enabled:
         from .tools.notes import PersonalNotesTool
+
         tools.append(PersonalNotesTool())
 
     return tools
@@ -184,8 +199,12 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
 
 def print_welcome():
     console.print("\n[bold blue]╭───────────────────────────────────────╮[/bold blue]")
-    console.print("[bold blue]│[/bold blue]     [bold]Agent Framework[/bold]              [bold blue]│[/bold blue]")
-    console.print("[bold blue]│[/bold blue]     Type 'help' for commands       [bold blue]│[/bold blue]")
+    console.print(
+        "[bold blue]│[/bold blue]     [bold]Agent Framework[/bold]              [bold blue]│[/bold blue]"
+    )
+    console.print(
+        "[bold blue]│[/bold blue]     Type 'help' for commands       [bold blue]│[/bold blue]"
+    )
     console.print("[bold blue]╰───────────────────────────────────────╯[/bold blue]\n")
 
 
@@ -193,6 +212,7 @@ RECOMMENDED_MODELS = [
     ("qwen3:4b-instruct", "Best for following instructions and tool calling (default)"),
     ("qwen2.5-coder:3b", "Best for strict tool calling and coding"),
     ("qwen3:4b", "General purpose with strong reasoning"),
+    ("qwen3.5:4b", "Latest Qwen with improved reasoning"),
     ("llama3.2", "Meta's lightweight model, great reasoning"),
     ("phi3.5", "Microsoft's highly stable model"),
 ]
@@ -224,20 +244,24 @@ async def chat_session(agent: Agent, session_name: str | None = None):
         try:
             # Use better readline compatibility input() for
             user_input = input("\n> ")
-            
+
             if not user_input.strip():
                 continue
 
             # Handle commands
             if user_input.strip().startswith("/"):
                 cmd = user_input.strip().split()[0].lower()
-                args = user_input.strip().split(maxsplit=1)[1] if len(user_input.strip().split()) > 1 else ""
-                
+                args = (
+                    user_input.strip().split(maxsplit=1)[1]
+                    if len(user_input.strip().split()) > 1
+                    else ""
+                )
+
                 if cmd in ("/exit", "/quit"):
                     agent.save_session()
                     console.print("[dim]Chat saved. Goodbye![/dim]")
                     return
-                
+
                 elif cmd == "/new":
                     agent.save_session()
                     agent.messages.clear()
@@ -245,13 +269,13 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     print_welcome()
                     console.print("[dim]Started new chat[/dim]\n")
                     continue
-                
+
                 elif cmd == "/save":
                     name = args.strip() if args.strip() else None
                     result = agent.save_session(name)
                     console.print(f"[cyan]{result}[/cyan]")
                     continue
-                
+
                 elif cmd == "/load":
                     if args.strip():
                         agent.load_session(args.strip())
@@ -259,7 +283,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     else:
                         console.print("[yellow]Usage: /load <name>[/yellow]")
                     continue
-                
+
                 elif cmd == "/chats":
                     sessions = agent.list_sessions()
                     if sessions:
@@ -269,69 +293,79 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     else:
                         console.print("[dim]No saved chats[/dim]")
                     continue
-                
+
                 elif cmd == "/undo":
                     result = agent.undo()
                     console.print(f"[cyan]{result}[/cyan]")
                     continue
-                
+
                 elif cmd == "/redo":
                     result = agent.redo()
                     console.print(f"[cyan]{result}[/cyan]")
                     continue
-                
+
                 elif cmd == "/clear":
                     console.clear()
                     print_welcome()
                     continue
-                
+
                 elif cmd == "/help":
                     print_help()
                     continue
-                
+
                 elif cmd == "/models":
                     console.print("\n[bold]Recommended Models (4GB VRAM):[/bold]")
                     for model_name, description in RECOMMENDED_MODELS:
                         console.print(f"  [cyan]{model_name}[/cyan] - {description}")
                     console.print("\n[dim]Use /model <name> to switch[/dim]\n")
                     continue
-                
+
                 elif cmd == "/model":
                     if not args.strip():
                         console.print("[yellow]Usage: /model <model_name>[/yellow]")
-                        console.print("[dim]Use /models to see available models[/dim]\n")
+                        console.print(
+                            "[dim]Use /models to see available models[/dim]\n"
+                        )
                         continue
-                    
+
                     old_model = agent.config.model
-                    
+
                     try:
                         # Get existing provider settings
                         provider_name = agent.config.provider
                         base_url = agent.config.base_url
-                        
+
                         # Create new provider with new model
                         new_provider = get_provider(
                             name=provider_name,
                             model=args.strip(),
                             base_url=base_url,
                         )
-                        
+
                         # Update agent
                         agent.llm = new_provider
                         agent.config.model = args.strip()
-                        
-                        console.print(f"[green]Model successfully switched to {args.strip()}[/green]\n")
+
+                        console.print(
+                            f"[green]Model successfully switched to {args.strip()}[/green]\n"
+                        )
                     except Exception as e:
                         console.print(f"[red]Failed to switch model: {e}[/red]")
-                        console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
+                        console.print(
+                            f"[dim]Current model remains: {old_model}[/dim]\n"
+                        )
                     continue
-                
+
                 elif cmd == "/temperature":
                     if not args.strip():
-                        console.print(f"[cyan]Current temperature: {agent.config.temperature}[/cyan]")
-                        console.print("[dim]Use /temperature <0.0-1.0> to change[/dim]\n")
+                        console.print(
+                            f"[cyan]Current temperature: {agent.config.temperature}[/cyan]"
+                        )
+                        console.print(
+                            "[dim]Use /temperature <0.0-1.0> to change[/dim]\n"
+                        )
                         continue
-                    
+
                     try:
                         new_temp = float(args.strip())
                         if not 0.0 <= new_temp <= 2.0:
@@ -340,71 +374,83 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         console.print(f"[green]Temperature set to {new_temp}[/green]\n")
                     except ValueError as e:
                         console.print(f"[red]Invalid temperature: {e}[/red]")
-                        console.print("[dim]Temperature must be between 0.0 and 2.0[/dim]\n")
+                        console.print(
+                            "[dim]Temperature must be between 0.0 and 2.0[/dim]\n"
+                        )
                     continue
 
                 elif cmd == "/undo":
                     result = agent.undo()
                     console.print(f"[cyan]{result}[/cyan]")
                     continue
-                
+
                 elif cmd == "/redo":
                     result = agent.redo()
                     console.print(f"[cyan]{result}[/cyan]")
                     continue
-                
+
                 elif cmd == "/clear":
                     console.clear()
                     print_welcome()
                     continue
-                
+
                 elif cmd == "/help":
                     print_help()
                     continue
-                
+
                 elif cmd == "/models":
                     console.print("\n[bold]Recommended Models (4GB VRAM):[/bold]")
                     for model_name, description in RECOMMENDED_MODELS:
                         console.print(f"  [cyan]{model_name}[/cyan] - {description}")
                     console.print("\n[dim]Use /model <name> to switch[/dim]\n")
                     continue
-                
+
                 elif cmd == "/model":
                     if not args.strip():
                         console.print("[yellow]Usage: /model <model_name>[/yellow]")
-                        console.print("[dim]Use /models to see available models[/dim]\n")
+                        console.print(
+                            "[dim]Use /models to see available models[/dim]\n"
+                        )
                         continue
-                    
+
                     old_model = agent.config.model
-                    
+
                     try:
                         # Get existing provider settings
                         provider_name = agent.config.provider
                         base_url = agent.config.base_url
-                        
+
                         # Create new provider with new model
                         new_provider = get_provider(
                             name=provider_name,
                             model=args.strip(),
                             base_url=base_url,
                         )
-                        
+
                         # Update agent
                         agent.llm = new_provider
                         agent.config.model = args.strip()
-                        
-                        console.print(f"[green]Model successfully switched to {args.strip()}[/green]\n")
+
+                        console.print(
+                            f"[green]Model successfully switched to {args.strip()}[/green]\n"
+                        )
                     except Exception as e:
                         console.print(f"[red]Failed to switch model: {e}[/red]")
-                        console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
+                        console.print(
+                            f"[dim]Current model remains: {old_model}[/dim]\n"
+                        )
                     continue
 
                 elif cmd == "/temperature":
                     if not args.strip():
-                        console.print(f"[cyan]Current temperature: {agent.config.temperature}[/cyan]")
-                        console.print("[dim]Use /temperature <0.0-1.0> to change[/dim]\n")
+                        console.print(
+                            f"[cyan]Current temperature: {agent.config.temperature}[/cyan]"
+                        )
+                        console.print(
+                            "[dim]Use /temperature <0.0-1.0> to change[/dim]\n"
+                        )
                         continue
-                    
+
                     try:
                         new_temp = float(args.strip())
                         if not 0.0 <= new_temp <= 2.0:
@@ -413,174 +459,216 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         console.print(f"[green]Temperature set to {new_temp}[/green]\n")
                     except ValueError as e:
                         console.print(f"[red]Invalid temperature: {e}[/red]")
-                        console.print("[dim]Temperature must be between 0.0 and 2.0[/dim]\n")
+                        console.print(
+                            "[dim]Temperature must be between 0.0 and 2.0[/dim]\n"
+                        )
                     continue
-                    
+
                     new_model = args.strip()
                     old_model = agent.config.model
-                    
+
                     try:
                         # Get existing provider settings
                         provider_name = agent.config.provider
                         base_url = agent.config.base_url
-                        
+
                         # Create new provider with new model
                         new_provider = get_provider(
                             name=provider_name,
                             model=new_model,
                             base_url=base_url,
                         )
-                        
+
                         # Update agent
                         agent.llm = new_provider
                         agent.config.model = new_model
-                        
-                        console.print(f"[green]Model successfully switched to {new_model}[/green]\n")
+
+                        console.print(
+                            f"[green]Model successfully switched to {new_model}[/green]\n"
+                        )
                     except Exception as e:
                         console.print(f"[red]Failed to switch model: {e}[/red]")
-                        console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
+                        console.print(
+                            f"[dim]Current model remains: {old_model}[/dim]\n"
+                        )
                     continue
-            
+
             # Regular message - stream output with Rich
             console.print("[dim]Thinking...[/dim]", end="\r")
-            
+
             in_thinking = False
-            
+
             def on_chunk(chunk: str):
                 nonlocal in_thinking
-                
-                if '__THINKING__' in chunk:
+
+                if "__THINKING__" in chunk:
                     in_thinking = True
-                    chunk = chunk.replace('__THINKING__', '')
+                    chunk = chunk.replace("__THINKING__", "")
                     if not chunk:
                         return
-                if '__THINKING_END__' in chunk:
+                if "__THINKING_END__" in chunk:
                     in_thinking = False
-                    chunk = chunk.replace('__THINKING_END__', '')
+                    chunk = chunk.replace("__THINKING_END__", "")
                     if not chunk:
                         return
-                
+
                 # Use stdout directly for unbuffered streaming
                 import sys
+
                 if in_thinking:
-                    sys.stdout.write('\033[90m' + chunk + '\033[0m')
+                    sys.stdout.write("\033[90m" + chunk + "\033[0m")
                 else:
                     sys.stdout.write(chunk)
                 sys.stdout.flush()
-            
+
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
-            
+
             import sys
-            sys.stdout.write('\n')
-            
+
+            sys.stdout.write("\n")
+
             # Extract and display clickable links from the response
             clean_response = strip_ansi(response)
-            
+
             # Only show sources if this query had web search/fetch tool calls
             # Check tool messages between the last two user messages (current query)
             has_web_tool = False
-            user_messages = [i for i, m in enumerate(agent.messages) if m.role == "user"]
-            
+            user_messages = [
+                i for i, m in enumerate(agent.messages) if m.role == "user"
+            ]
+
             if len(user_messages) >= 2:
                 # Check messages between last two user messages
-                for msg in agent.messages[user_messages[-2] + 1:user_messages[-1]]:
-                    if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
+                for msg in agent.messages[user_messages[-2] + 1 : user_messages[-1]]:
+                    if msg.role == "tool" and msg.tool_name in (
+                        "web_search",
+                        "web_fetch",
+                    ):
                         has_web_tool = True
                         break
             elif len(user_messages) == 1:
                 # First query - check all tool messages
                 for msg in agent.messages:
-                    if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
+                    if msg.role == "tool" and msg.tool_name in (
+                        "web_search",
+                        "web_fetch",
+                    ):
                         has_web_tool = True
                         break
-            
+
             if has_web_tool:
                 # Find markdown links [text](url)
-                links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', clean_response)
-                
+                links = re.findall(r"\[([^\]]+)\]\(([^)]+)\)", clean_response)
+
                 # Extract URLs from tool results in current query
                 tool_urls = set()
-                user_messages = [i for i, m in enumerate(agent.messages) if m.role == "user"]
-                
+                user_messages = [
+                    i for i, m in enumerate(agent.messages) if m.role == "user"
+                ]
+
                 if len(user_messages) >= 2:
-                    for msg in agent.messages[user_messages[-2] + 1:user_messages[-1]]:
-                        if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
-                            found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
+                    for msg in agent.messages[
+                        user_messages[-2] + 1 : user_messages[-1]
+                    ]:
+                        if msg.role == "tool" and msg.tool_name in (
+                            "web_search",
+                            "web_fetch",
+                        ):
+                            found = re.findall(
+                                r'(https?://[^\s\)"\']+)', msg.content or ""
+                            )
                             tool_urls.update(found)
                 elif len(user_messages) == 1:
                     for msg in agent.messages:
-                        if msg.role == "tool" and msg.tool_name in ("web_search", "web_fetch"):
-                            found = re.findall(r'(https?://[^\s\)"\']+)', msg.content or "")
+                        if msg.role == "tool" and msg.tool_name in (
+                            "web_search",
+                            "web_fetch",
+                        ):
+                            found = re.findall(
+                                r'(https?://[^\s\)"\']+)', msg.content or ""
+                            )
                             tool_urls.update(found)
-                
+
                 # Also extract plain URLs from AI response
-                url_only = re.findall(r'\((https?://[^)]+)\)', clean_response)
-                
+                url_only = re.findall(r"\((https?://[^)]+)\)", clean_response)
+
                 # Combine and deduplicate
                 all_urls = list(links)
                 seen_urls = set(pair[1] for pair in links)
-                
+
                 for url in url_only:
                     if url not in seen_urls:
                         all_urls.append((url, url))
                         seen_urls.add(url)
-                
+
                 for url in tool_urls:
                     if url not in seen_urls:
-                        name = url.split('/')[2] if len(url.split('/')) > 2 else url
+                        name = url.split("/")[2] if len(url.split("/")) > 2 else url
                         all_urls.append((name, url))
                         seen_urls.add(url)
-                
+
                 if all_urls:
                     # Fetch titles for URLs
                     async def fetch_titles():
                         titles = {}
-                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+                        async with aiohttp.ClientSession(
+                            timeout=aiohttp.ClientTimeout(total=3)
+                        ) as session:
                             for name, url in all_urls:
                                 try:
                                     async with session.get(url, ssl=False) as resp:
                                         if resp.status == 200:
                                             html = await resp.text()
-                                            match = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE)
+                                            match = re.search(
+                                                r"<title[^>]*>([^<]+)</title>",
+                                                html,
+                                                re.IGNORECASE,
+                                            )
                                             if match:
-                                                titles[url] = match.group(1).strip()[:60]
+                                                titles[url] = match.group(1).strip()[
+                                                    :60
+                                                ]
                                 except Exception:
                                     pass
                         return titles
-                    
+
                     titles = await fetch_titles()
-                    
+
                     console.print("[dim]Sources:[/dim]")
                     for name, url in all_urls:
                         display_name = titles.get(url, name)
                         clickable = f"\033]8;;{url}\007{display_name}\033]8;;\007"
                         print(f"  {clickable}")
-            
+
             # Print which tools were used in this query only
             tool_usages = []
-            user_messages = [i for i, m in enumerate(agent.messages) if m.role == "user"]
-            
+            user_messages = [
+                i for i, m in enumerate(agent.messages) if m.role == "user"
+            ]
+
             if len(user_messages) >= 2:
-                for msg in agent.messages[user_messages[-2] + 1:user_messages[-1]]:
+                for msg in agent.messages[user_messages[-2] + 1 : user_messages[-1]]:
                     if msg.role == "tool" and msg.tool_name:
                         tool_usages.append((msg.tool_name, msg.tool_arguments))
             elif len(user_messages) == 1:
                 for msg in agent.messages:
                     if msg.role == "tool" and msg.tool_name:
                         tool_usages.append((msg.tool_name, msg.tool_arguments))
-            
+
             if tool_usages:
                 parts = []
                 for name, args in tool_usages:
                     if args:
-                        args_str = ", ".join(f"{k}={repr(v)[:30]}" for k, v in args.items())
+                        args_str = ", ".join(
+                            f"{k}={repr(v)[:30]}" for k, v in args.items()
+                        )
                         parts.append(f"{name}({args_str})")
                     else:
                         parts.append(name)
                 print(f"\033[90mUsed: {', '.join(parts)}\033[0m")
-            
+
             sys.stdout.flush()
-            
+
         except Exception as e:
             console.print(f"[red]Error:[/red] {e}")
 

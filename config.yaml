@@ -46,6 +46,7 @@ tools:
       - ssh
       - pytest
       - uv
+      - date
     timeout: 60
 
 safety:

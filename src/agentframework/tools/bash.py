@@ -1,6 +1,8 @@
 """Bash tool for executing shell commands with safety measures."""
 
 import asyncio
+import os
+import signal
 from typing import Any
 
 from ..safety import SafetyConfig, SecurityValidator
@@ -20,11 +22,15 @@ class BashTool(Tool):
             name="bash",
             description="Execute shell commands in the terminal. Use for running programs, git commands, etc.",
         )
-        self.timeout = min(timeout, safety_config.max_execution_time if safety_config else 60)
+        self.timeout = min(
+            timeout, safety_config.max_execution_time if safety_config else 60
+        )
         self.allowed_commands = allowed_commands
-        
+
         if safety_config:
-            safety_config.allowed_commands = allowed_commands or safety_config.allowed_commands
+            safety_config.allowed_commands = (
+                allowed_commands or safety_config.allowed_commands
+            )
             self.validator = SecurityValidator(safety_config)
         else:
             config = SafetyConfig(allowed_commands=allowed_commands or ["*"])
@@ -58,13 +64,19 @@ class BashTool(Tool):
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                preexec_fn=os.setsid,
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(), timeout=self.timeout
                 )
             except asyncio.TimeoutError:
-                proc.kill()
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except OSError:
+                    proc.kill()
                 await proc.wait()
                 return ToolResult(error=f"Command timed out after {self.timeout}s")
 

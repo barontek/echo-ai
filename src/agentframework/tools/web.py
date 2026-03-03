@@ -1,68 +1,72 @@
 """Web tools for fetching and searching with network restrictions."""
 
 import httpx
-from typing import Any
 
 from bs4 import BeautifulSoup
+from pydantic import BaseModel
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
 
+class WebFetchParams(BaseModel):
+    """Parameters for WebFetchTool."""
+
+    url: str
+
+
+class WebSearchParams(BaseModel):
+    """Parameters for WebSearchTool."""
+
+    query: str
+
+
 class WebFetchTool(Tool):
     """Fetch web page content with network restrictions."""
+
+    parameters_model = WebFetchParams
 
     def __init__(self, safety_config: SafetyConfig | None = None):
         super().__init__(
             name="web_fetch",
             description="Fetch content from a URL and extract readable text.",
         )
-        
+
         if safety_config:
             self.validator = SecurityValidator(safety_config)
         else:
             # Default to allowing network if no config provided
             self.validator = SecurityValidator(SafetyConfig(allow_network=True))
 
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "The URL to fetch",
-                },
-            },
-            "required": ["url"],
-        }
-
     def _extract_readable_text(self, html: str, max_length: int = 10000) -> str:
         """Parse HTML and extract readable text using BeautifulSoup."""
         try:
             soup = BeautifulSoup(html, "html.parser")
-            
+
             # Remove script, style, nav, header, footer elements
-            for tag in soup(["script", "style", "nav", "header", "footer", "aside", "iframe"]):
+            for tag in soup(
+                ["script", "style", "nav", "header", "footer", "aside", "iframe"]
+            ):
                 tag.decompose()
-            
+
             # Get text from body or entire document
             body = soup.find("body")
             if body:
                 text = body.get_text(separator="\n", strip=True)
             else:
                 text = soup.get_text(separator="\n", strip=True)
-            
+
             # Clean up whitespace
             lines = [line.strip() for line in text.split("\n")]
             lines = [line for line in lines if line]
             text = "\n".join(lines)
-            
+
             # Truncate to max length
             if len(text) > max_length:
                 text = text[:max_length] + "\n... (truncated)"
-            
+
             return text if text else "No readable content found"
-            
+
         except Exception:
             # Fallback to raw text if parsing fails
             return html[:10000]
@@ -88,7 +92,7 @@ class WebFetchTool(Tool):
             ) as client:
                 response = await client.get(url)
                 response.raise_for_status()
-                
+
                 # Extract readable text from HTML
                 content = self._extract_readable_text(response.text)
                 return ToolResult(content=content)
@@ -103,28 +107,18 @@ class WebFetchTool(Tool):
 class WebSearchTool(Tool):
     """Search the web with network restrictions."""
 
+    parameters_model = WebSearchParams
+
     def __init__(self, safety_config: SafetyConfig | None = None):
         super().__init__(
             name="web_search",
             description="Search the web for information.",
         )
-        
+
         if safety_config:
             self.validator = SecurityValidator(safety_config)
         else:
             self.validator = SecurityValidator(SafetyConfig(allow_network=False))
-
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The search query",
-                },
-            },
-            "required": ["query"],
-        }
 
     async def execute(self, query: str, **kwargs) -> ToolResult:
         """Search the web with safety checks."""
@@ -140,7 +134,7 @@ class WebSearchTool(Tool):
             import io
             import sys
             from ddgs import DDGS
-            
+
             old_stdout = sys.stdout
             old_stderr = sys.stderr
             try:
@@ -151,41 +145,56 @@ class WebSearchTool(Tool):
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
-            
+
             if not results:
                 return ToolResult(content="No results found.")
-            
+
             formatted = []
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 for r in results:
-                    url = r.get('href', '')
-                    title = r.get('title', '')
-                    
+                    url = r.get("href", "")
+                    title = r.get("title", "")
+
                     # Fetch full page content
                     content = ""
                     try:
                         resp = await client.get(url)
                         if resp.status_code == 200:
-                            soup = BeautifulSoup(resp.text, 'html.parser')
-                            
+                            soup = BeautifulSoup(resp.text, "html.parser")
+
                             # Remove script, style, nav, header, footer elements
-                            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript']):
+                            for tag in soup(
+                                [
+                                    "script",
+                                    "style",
+                                    "nav",
+                                    "header",
+                                    "footer",
+                                    "aside",
+                                    "iframe",
+                                    "noscript",
+                                ]
+                            ):
                                 tag.decompose()
-                            
+
                             # Get text from main content areas
-                            main = soup.find('main') or soup.find('article') or soup.find('body')
+                            main = (
+                                soup.find("main")
+                                or soup.find("article")
+                                or soup.find("body")
+                            )
                             if main:
-                                text = main.get_text(separator=' ', strip=True)
+                                text = main.get_text(separator=" ", strip=True)
                             else:
-                                text = soup.get_text(separator=' ', strip=True)
-                            
+                                text = soup.get_text(separator=" ", strip=True)
+
                             # Clean up whitespace
-                            content = ' '.join(text.split())[:2000]
+                            content = " ".join(text.split())[:2000]
                     except Exception:
-                        content = r.get('body', '')[:500]
-                    
+                        content = r.get("body", "")[:500]
+
                     formatted.append(f"- {title}: {url}\n  {content}")
-            
+
             return ToolResult(content="\n\n".join(formatted))
         except Exception as e:
             return ToolResult(error=f"Search failed: {e}")

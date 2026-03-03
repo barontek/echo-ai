@@ -2,7 +2,9 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Type
+
+from pydantic import BaseModel
 
 
 @dataclass
@@ -21,6 +23,8 @@ class ToolResult:
 class Tool(ABC):
     """Base class for tools."""
 
+    parameters_model: Type[BaseModel] | None = None
+
     def __init__(self, name: str, description: str):
         self.name = name
         self.description = description
@@ -37,10 +41,11 @@ class Tool(ABC):
             },
         }
 
-    @abstractmethod
     def _get_parameters(self) -> dict[str, Any]:
-        """Get the parameters schema."""
-        pass
+        """Get the parameters schema. Override or define parameters_model."""
+        if self.parameters_model:
+            return self.parameters_model.model_json_schema()
+        return {"type": "object", "properties": {}}
 
     @abstractmethod
     async def execute(self, *args: Any, **kwargs: Any) -> ToolResult:

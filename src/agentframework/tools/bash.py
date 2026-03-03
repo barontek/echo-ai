@@ -3,14 +3,23 @@
 import asyncio
 import os
 import signal
-from typing import Any
+
+from pydantic import BaseModel
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
 
+class BashParams(BaseModel):
+    """Parameters for BashTool."""
+
+    command: str
+
+
 class BashTool(Tool):
     """Execute shell commands with security controls."""
+
+    parameters_model = BashParams
 
     def __init__(
         self,
@@ -35,18 +44,6 @@ class BashTool(Tool):
         else:
             config = SafetyConfig(allowed_commands=allowed_commands or ["*"])
             self.validator = SecurityValidator(config)
-
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to execute",
-                },
-            },
-            "required": ["command"],
-        }
 
     async def execute(self, command: str, **kwargs) -> ToolResult:
         """Execute the shell command with safety checks."""

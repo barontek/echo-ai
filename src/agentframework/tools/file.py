@@ -1,14 +1,36 @@
 """File tools for reading, writing, and listing files with safety."""
 
 from pathlib import Path
-from typing import Any
+
+from pydantic import BaseModel
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
 
+class ReadFileParams(BaseModel):
+    """Parameters for ReadFileTool."""
+
+    path: str
+
+
+class WriteFileParams(BaseModel):
+    """Parameters for WriteFileTool."""
+
+    path: str
+    content: str
+
+
+class ListDirParams(BaseModel):
+    """Parameters for ListDirTool."""
+
+    path: str = "."
+
+
 class ReadFileTool(Tool):
     """Read file contents with workspace confinement."""
+
+    parameters_model = ReadFileParams
 
     def __init__(self, base_dir: str = ".", safety_config: SafetyConfig | None = None):
         super().__init__(
@@ -16,24 +38,14 @@ class ReadFileTool(Tool):
             description="Read the contents of a file from the filesystem.",
         )
         self.base_dir = Path(base_dir).resolve()
-        
+
         if safety_config:
             safety_config.workspace = str(self.base_dir)
             self.validator = SecurityValidator(safety_config)
         else:
-            self.validator = SecurityValidator(SafetyConfig(workspace=str(self.base_dir)))
-
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The path to the file to read",
-                },
-            },
-            "required": ["path"],
-        }
+            self.validator = SecurityValidator(
+                SafetyConfig(workspace=str(self.base_dir))
+            )
 
     async def execute(self, path: str, **kwargs) -> ToolResult:
         """Read the file with safety checks."""
@@ -47,7 +59,7 @@ class ReadFileTool(Tool):
             return ToolResult(error="Cannot read blocked path")
 
         full_path = (self.base_dir / path).resolve()
-        
+
         file_size_info = ""
         try:
             if full_path.exists() and full_path.is_file():
@@ -57,7 +69,9 @@ class ReadFileTool(Tool):
             pass
 
         if self.validator.requires_approval("read_file", path=str(full_path)):
-            approved = self.validator.get_approval("read_file", f"read: {path}{file_size_info}")
+            approved = self.validator.get_approval(
+                "read_file", f"read: {path}{file_size_info}"
+            )
             if not approved:
                 return ToolResult(error="Read requires approval")
 
@@ -83,34 +97,22 @@ class ReadFileTool(Tool):
 class WriteFileTool(Tool):
     """Write file contents with workspace confinement."""
 
+    parameters_model = WriteFileParams
+
     def __init__(self, base_dir: str = ".", safety_config: SafetyConfig | None = None):
         super().__init__(
             name="write_file",
             description="Create or overwrite a file with the given content.",
         )
         self.base_dir = Path(base_dir).resolve()
-        
+
         if safety_config:
             safety_config.workspace = str(self.base_dir)
             self.validator = SecurityValidator(safety_config)
         else:
-            self.validator = SecurityValidator(SafetyConfig(workspace=str(self.base_dir)))
-
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The path to the file to write",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "The content to write to the file",
-                },
-            },
-            "required": ["path", "content"],
-        }
+            self.validator = SecurityValidator(
+                SafetyConfig(workspace=str(self.base_dir))
+            )
 
     async def execute(self, path: str, content: str, **kwargs) -> ToolResult:
         """Write the file with safety checks."""
@@ -132,8 +134,12 @@ class WriteFileTool(Tool):
             size = full_path.stat().st_size
             file_status = f"existing ({size} bytes)"
 
-        if self.validator.requires_approval("write_file", path=str(full_path), content=content):
-            approved = self.validator.get_approval("write_file", f"write: {path} - {file_status}")
+        if self.validator.requires_approval(
+            "write_file", path=str(full_path), content=content
+        ):
+            approved = self.validator.get_approval(
+                "write_file", f"write: {path} - {file_status}"
+            )
             if not approved:
                 return ToolResult(error="Write requires approval")
 
@@ -148,30 +154,22 @@ class WriteFileTool(Tool):
 class ListDirTool(Tool):
     """List directory contents with workspace confinement."""
 
+    parameters_model = ListDirParams
+
     def __init__(self, base_dir: str = ".", safety_config: SafetyConfig | None = None):
         super().__init__(
             name="list_dir",
             description="List the contents of a directory.",
         )
         self.base_dir = Path(base_dir).resolve()
-        
+
         if safety_config:
             safety_config.workspace = str(self.base_dir)
             self.validator = SecurityValidator(safety_config)
         else:
-            self.validator = SecurityValidator(SafetyConfig(workspace=str(self.base_dir)))
-
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The path to list, relative to the workspace (e.g., 'src' or '.')",
-                },
-            },
-            "required": ["path"],
-        }
+            self.validator = SecurityValidator(
+                SafetyConfig(workspace=str(self.base_dir))
+            )
 
     async def execute(self, path: str = ".", **kwargs) -> ToolResult:
         """List the directory with safety checks."""

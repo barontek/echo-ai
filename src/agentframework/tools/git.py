@@ -2,22 +2,56 @@
 
 import asyncio
 import os
-from typing import Any
+
+from pydantic import BaseModel
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
 
 SAFE_GIT_COMMANDS = [
-    "status", "diff", "log", "show", "branch", "fetch", "clone", "init",
-    "add", "commit", "push", "pull", "merge", "rebase", "stash", "checkout",
-    "reset", "cherry-pick", "tag", "describe", "rev-parse", "ls-files",
-    "ls-tree", "cat-file", "rev-list", "shortlog", "config", "status",
+    "status",
+    "diff",
+    "log",
+    "show",
+    "branch",
+    "fetch",
+    "clone",
+    "init",
+    "add",
+    "commit",
+    "push",
+    "pull",
+    "merge",
+    "rebase",
+    "stash",
+    "checkout",
+    "reset",
+    "cherry-pick",
+    "tag",
+    "describe",
+    "rev-parse",
+    "ls-files",
+    "ls-tree",
+    "cat-file",
+    "rev-list",
+    "shortlog",
+    "config",
+    "status",
 ]
+
+
+class GitParams(BaseModel):
+    """Parameters for GitTool."""
+
+    command: str
+    args: str = ""
 
 
 class GitTool(Tool):
     """Execute git commands safely."""
+
+    parameters_model = GitParams
 
     def __init__(self, base_dir: str = ".", safety_config: SafetyConfig | None = None):
         super().__init__(
@@ -31,49 +65,33 @@ class GitTool(Tool):
             config = SafetyConfig(workspace=base_dir, allowed_commands=["git"])
             self.validator = SecurityValidator(config)
 
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The git command to execute (e.g., 'status', 'diff')",
-                },
-                "args": {
-                    "type": "string",
-                    "description": "Additional arguments for the command",
-                },
-            },
-            "required": ["command"],
-        }
-
     def _build_non_interactive_command(self, command: str, args: str) -> str:
         """Build a non-interactive git command with appropriate flags."""
         base_cmd = f"git {command}"
-        
+
         # Add --no-pager to prevent pager from blocking
         if command not in ["clone"]:
             base_cmd = f"git --no-pager {command}"
-        
+
         # Add --no-edit for commands that might open editor
         no_edit_commands = ["commit", "merge", "rebase"]
         if command in no_edit_commands:
             base_cmd += " --no-edit"
-        
+
         # For commit, also add --allow-empty-message if needed
         if command == "commit":
             base_cmd += " --allow-empty-message"
-        
+
         # Add any user-provided args
         if args:
             base_cmd += f" {args}"
-        
+
         return base_cmd.strip()
 
     async def execute(self, command: str, args: str = "", **kwargs) -> ToolResult:
         """Execute a git command in non-interactive mode."""
         full_command = self._build_non_interactive_command(command, args)
-        
+
         safe, reason = self.validator.check_command_safety(f"git {command}")
         if not safe:
             return ToolResult(error=f"Git command blocked: {reason}")

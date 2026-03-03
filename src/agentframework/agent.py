@@ -288,8 +288,14 @@ class Agent:
         return msgs
 
     def _estimate_tokens(self, text: str) -> int:
-        """Estimate token count. Uses ~4 chars = 1 token as a rough approximation."""
-        return len(text) // 4
+        """Count tokens using tiktoken with cl100k_base encoding."""
+        try:
+            import tiktoken
+
+            enc = tiktoken.get_encoding("cl100k_base")
+            return len(enc.encode(text))
+        except Exception:
+            return len(text) // 4
 
     def _apply_context_window(self) -> list["Message"]:
         """Apply sliding window to messages based on configured limits."""

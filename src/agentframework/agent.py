@@ -361,9 +361,17 @@ class Agent:
 
         return result
 
-    def _get_tool_schemas(self) -> list[dict[str, Any]]:
-        """Get tool schemas for the LLM."""
-        return [tool.schema for tool in self.config.tools]
+    @staticmethod
+    def _sanitize_json(json_str: str) -> str:
+        """Sanitize JSON string by removing markdown code blocks and trailing commas."""
+        import re
+
+        json_str = json_str.strip()
+        json_str = re.sub(r"^```json\s*", "", json_str)
+        json_str = re.sub(r"^```\s*", "", json_str)
+        json_str = re.sub(r"```$", "", json_str)
+        json_str = re.sub(r",(\s*[}\]])", r"\1", json_str)
+        return json_str
 
     async def _execute_tool(self, tool_call: LLMToolCall) -> ToolResult:
         """Execute a tool call."""
@@ -375,7 +383,7 @@ class Agent:
             args = tool_call.arguments
             if isinstance(args, str):
                 try:
-                    args = json.loads(args)
+                    args = json.loads(self._sanitize_json(args))
                 except json.JSONDecodeError:
                     return ToolResult(error=f"Invalid JSON in arguments: {args}")
 

@@ -33,7 +33,9 @@ class AgentConfig:
     temperature: float = 0.3
     max_iterations: int = 50
     max_context_messages: int = 50  # Max messages to keep in context (0 = unlimited)
-    max_context_chars: int = 64000  # Max tokens in context (~16k tokens, 4 chars = 1 token)
+    max_context_chars: int = (
+        64000  # Max tokens in context (~16k tokens, 4 chars = 1 token)
+    )
     system_prompt: str = ""
     tools: list[Tool] = field(default_factory=list)
     base_url: str | None = None
@@ -60,12 +62,12 @@ class Agent:
         self.llm = llm_provider
         self.messages: list[Message] = []
         self.tool_map: dict[str, Tool] = {t.name: t for t in config.tools}
-        
+
         # Session management
         self.session_manager = None
         self.change_tracker = ChangeTracker()
         self.sub_agents: dict[str, SubAgentConfig] = {}
-        
+
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
             self.session_manager.create_session()
@@ -78,7 +80,14 @@ class Agent:
         """Add a user message to the conversation."""
         self.messages.append(Message(role="user", content=content))
 
-    def register_sub_agent(self, name: str, description: str = "", model: str | None = None, tools: list[str] | None = None, system_prompt: str = ""):
+    def register_sub_agent(
+        self,
+        name: str,
+        description: str = "",
+        model: str | None = None,
+        tools: list[str] | None = None,
+        system_prompt: str = "",
+    ):
         """Register a sub-agent."""
         self.sub_agents[name] = SubAgentConfig(
             name=name,
@@ -87,10 +96,11 @@ class Agent:
             tools=tools or [],
             system_prompt=system_prompt,
         )
-        
+
         # Add delegate tool if not already present
         if "delegate" not in self.tool_map:
             from .tools.delegate import DelegateTool
+
             delegate_tool = DelegateTool(agent=self)
             self.tool_map["delegate"] = delegate_tool
             # Also add to config.tools if it exists there
@@ -100,35 +110,37 @@ class Agent:
     async def run(self, user_input: str) -> str:
         """Run the agent with user input and return the response."""
         self.add_user_message(user_input)
-        
+
         if self.session_manager:
             self.session_manager.add_message("user", user_input)
-        
+
         response = await self._run_loop()
-        
+
         if self.session_manager:
             self.session_manager.add_message("assistant", response)
-        
+
         return response
 
-    async def run_streaming(self, user_input: str, on_chunk: Callable[[str], None] | None = None) -> str:
+    async def run_streaming(
+        self, user_input: str, on_chunk: Callable[[str], None] | None = None
+    ) -> str:
         """Run the agent with streaming output."""
         self.add_user_message(user_input)
-        
+
         if self.session_manager:
             self.session_manager.add_message("user", user_input)
-        
+
         response = await self._run_loop_streaming(on_chunk)
-        
+
         if self.session_manager:
             self.session_manager.add_message("assistant", response)
-        
+
         return response
 
     async def _run_loop(self) -> str:
         """Main agent loop - get response, execute tools, repeat."""
         has_thinking = False
-        
+
         for iteration in range(self.config.max_iterations):
             response = await self.llm.chat(
                 messages=self._prepare_messages(),
@@ -140,59 +152,27 @@ class Agent:
                 final_content = response.content or ""
                 if has_thinking:
                     final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{final_content}"
-                self.messages.append(
-                    Message(role="assistant", content=final_content)
-                )
+                self.messages.append(Message(role="assistant", content=final_content))
                 return final_content
 
             # Mark that we have thinking content before tool execution
             if iteration == 0 and response.content:
                 has_thinking = True
 
-            # Execute tool calls concurrently using asyncio.gather()
-            async def execute_and_message(tool_call: LLMToolCall) -> Message:
-                result = await self._execute_tool(tool_call)
-                # Include error in content if present - make failures very explicit
-                if result.error:
-                    content = f"FAILED - Operation was denied by user: {result.error}"
-                else:
-                    content = result.content or ""
-                return Message(
-                    role="tool",
-                    content=content,
-                    tool_call_id=tool_call.id,
-                    tool_name=tool_call.name,
-                    tool_arguments=tool_call.arguments,
-                )
-
-            tool_messages = await asyncio.gather(
-                *[execute_and_message(tc) for tc in response.tool_calls]
-            )
-            self.messages.extend(tool_messages)
-
-            # Always prompt for response after tool execution
-            if tool_messages:
-                # Include tool results in the prompt for clarity
-                tool_results = "\n".join(
-                    f"Tool '{msg.tool_name}' returned: {msg.content[:200]}"
-                    for msg in tool_messages if msg.content
-                )
-                self.messages.append(
-                    Message(
-                        role="user",
-                        content=f"System Note: Tools executed.\n{tool_results}\n\nProvide a final response to the user summarizing these results."
-                    )
-                )
+            # Execute tool calls
+            await self._execute_tool_calls(response.tool_calls)
 
         return "Max iterations reached. The agent could not complete the task."
 
-    async def _run_loop_streaming(self, on_chunk: Callable[[str], None] | None = None) -> str:
+    async def _run_loop_streaming(
+        self, on_chunk: Callable[[str], None] | None = None
+    ) -> str:
         """Main agent loop with streaming output."""
         has_thinking = False
-        
+
         for iteration in range(self.config.max_iterations):
             # Check if provider supports streaming
-            if hasattr(self.llm, 'chat_streaming'):
+            if hasattr(self.llm, "chat_streaming"):
                 response = await self.llm.chat_streaming(
                     messages=self._prepare_messages(),
                     tools=self._get_tool_schemas(),
@@ -210,56 +190,59 @@ class Agent:
                 final_content = response.content or ""
                 if has_thinking:
                     final_content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{final_content}"
-                self.messages.append(
-                    Message(role="assistant", content=final_content)
-                )
+                self.messages.append(Message(role="assistant", content=final_content))
                 return final_content
 
             # Mark that we have thinking content before tool execution
             if iteration == 0 and response.content:
                 has_thinking = True
 
-            # Execute tool calls concurrently using asyncio.gather()
-            async def execute_and_message(tool_call: LLMToolCall) -> Message:
-                result = await self._execute_tool(tool_call)
-                # Make failures very explicit
-                if result.error:
-                    content = f"FAILED - Operation was denied by user: {result.error}"
-                else:
-                    content = result.content or ""
-                return Message(
-                    role="tool",
-                    content=content,
-                    tool_call_id=tool_call.id,
-                    tool_name=tool_call.name,
-                    tool_arguments=tool_call.arguments,
-                )
-
-            tool_messages = await asyncio.gather(
-                *[execute_and_message(tc) for tc in response.tool_calls]
-            )
-            self.messages.extend(tool_messages)
-
-            # Always prompt for response after tool execution
-            if tool_messages:
-                # Include tool results in the prompt for clarity
-                tool_results = "\n".join(
-                    f"Tool '{msg.tool_name}' returned: {msg.content[:200]}"
-                    for msg in tool_messages if msg.content
-                )
-                self.messages.append(
-                    Message(
-                        role="user",
-                        content=f"System Note: Tools executed.\n{tool_results}\n\nProvide a final response to the user summarizing these results."
-                    )
-                )
+            # Execute tool calls
+            await self._execute_tool_calls(response.tool_calls)
 
         return "Max iterations reached. The agent could not complete the task."
+
+    async def _execute_tool_calls(self, tool_calls: list[LLMToolCall]) -> list[Message]:
+        """Execute tool calls and format results as messages."""
+
+        async def execute_and_message(tool_call: LLMToolCall) -> Message:
+            result = await self._execute_tool(tool_call)
+            if result.error:
+                content = f"FAILED - Operation was denied by user: {result.error}"
+            else:
+                content = result.content or ""
+            return Message(
+                role="tool",
+                content=content,
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                tool_arguments=tool_call.arguments,
+            )
+
+        tool_messages = await asyncio.gather(
+            *[execute_and_message(tc) for tc in tool_calls]
+        )
+        self.messages.extend(tool_messages)
+
+        if tool_messages:
+            tool_results = "\n".join(
+                f"Tool '{msg.tool_name}' returned: {msg.content[:200]}"
+                for msg in tool_messages
+                if msg.content
+            )
+            self.messages.append(
+                Message(
+                    role="user",
+                    content=f"System Note: Tools executed.\n{tool_results}\n\nProvide a final response to the user summarizing these results.",
+                )
+            )
+
+        return tool_messages
 
     def _prepare_messages(self) -> list[dict[str, str]]:
         """Prepare messages for the LLM with sliding window to prevent context overflow."""
         msgs = []
-        
+
         # Add sub-agents info to system prompt
         if self.sub_agents:
             sub_agents_info = "\n\nAvailable sub-agents:\n"
@@ -274,32 +257,36 @@ class Agent:
 
         # Apply sliding window to messages
         filtered_messages = self._apply_context_window()
-        
+
         # Track tool_call_id -> tool_name mapping for tool messages
         tool_call_names = {}
-        
+
         for msg in filtered_messages:
             if msg.role == "tool":
-                msgs.append({
-                    "role": msg.role,
-                    "content": msg.content,
-                    "tool_call_id": msg.tool_call_id,
-                    "name": msg.tool_name,
-                })
+                msgs.append(
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                        "tool_call_id": msg.tool_call_id,
+                        "name": msg.tool_name,
+                    }
+                )
                 if msg.tool_call_id and msg.tool_name:
                     tool_call_names[msg.tool_call_id] = msg.tool_name
             elif msg.role == "assistant" and msg.tool_call_id:
                 # Include assistant tool call messages
-                msgs.append({
-                    "role": msg.role,
-                    "content": msg.content,
-                    "tool_call_id": msg.tool_call_id,
-                })
+                msgs.append(
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                        "tool_call_id": msg.tool_call_id,
+                    }
+                )
             else:
                 msgs.append({"role": msg.role, "content": msg.content})
 
         return msgs
-    
+
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count. Uses ~4 chars = 1 token as a rough approximation."""
         return len(text) // 4
@@ -308,41 +295,46 @@ class Agent:
         """Apply sliding window to messages based on configured limits."""
         if not self.messages:
             return []
-        
+
         max_msgs = self.config.max_context_messages
         max_chars = self.config.max_context_chars
-        
+
         # If both are unlimited, return all
         if max_msgs <= 0 and max_chars <= 0:
             return self.messages
-        
+
         # If only messages limit is set
         if max_msgs > 0 and max_chars <= 0:
             return self.messages[-max_msgs:]
-        
+
         # If only chars limit is set
         if max_chars > 0 and max_msgs <= 0:
             return self._trim_by_tokens(self.messages, max_chars)
-        
+
         # Both limits set - first trim by chars, then by count
         trimmed = self._trim_by_tokens(self.messages, max_chars)
         return trimmed[-max_msgs:] if max_msgs > 0 else trimmed
-    
-    def _trim_by_tokens(self, messages: list["Message"], max_tokens: int) -> list["Message"]:
+
+    def _trim_by_tokens(
+        self, messages: list["Message"], max_tokens: int
+    ) -> list["Message"]:
         """Trim messages to fit within token limit, keeping most recent."""
         if max_tokens <= 0:
             return messages
-        
+
         result: list[Message] = []
         total_tokens = 0
-        
+
         # Go through messages in reverse order
         for msg in reversed(messages):
             # Truncate tool outputs that are too long
             content = msg.content
             if msg.role == "tool" and len(content) > 10000:
-                content = content[:10000] + f"\n\n[Output truncated - was {len(content)} chars]"
-            
+                content = (
+                    content[:10000]
+                    + f"\n\n[Output truncated - was {len(content)} chars]"
+                )
+
             msg_tokens = self._estimate_tokens(content)
             if total_tokens + msg_tokens > max_tokens:
                 break
@@ -351,19 +343,22 @@ class Agent:
             # Replace content with truncated version
             if content != msg.content:
                 msg.content = content
-        
+
         # If we trimmed anything, add a notice
         if result != messages and result:
             # Try to keep at least the last user message for context
             if result[0].role == "tool":
                 # Find the corresponding assistant message
                 for i, m in enumerate(messages):
-                    if m.role == "assistant" and m.tool_call_id == result[0].tool_call_id:
-                        if i > 0 and messages[i-1].role == "user":
+                    if (
+                        m.role == "assistant"
+                        and m.tool_call_id == result[0].tool_call_id
+                    ):
+                        if i > 0 and messages[i - 1].role == "user":
                             # Insert user message at the start
-                            result.insert(0, messages[i-1])
+                            result.insert(0, messages[i - 1])
                         break
-        
+
         return result
 
     def _get_tool_schemas(self) -> list[dict[str, Any]]:
@@ -389,11 +384,12 @@ class Agent:
                 return ToolResult(error=validation_error)
 
             result = await tool.execute(**args)
-            
+
             # Track file changes for undo
             if tool_call.name == "write_file" and "path" in args:
                 try:
                     from pathlib import Path
+
                     old_content = None
                     if Path(args["path"]).exists():
                         old_content = Path(args["path"]).read_text()
@@ -402,7 +398,7 @@ class Agent:
                     )
                 except Exception:
                     pass
-            
+
             return result
         except TypeError as e:
             error_msg = str(e)
@@ -455,14 +451,15 @@ class Agent:
         """Undo the last file change."""
         if not self.change_tracker.can_undo():
             return "Nothing to undo."
-        
+
         change = self.change_tracker.undo()
         if change is None:
             return "Nothing to undo."
-        
+
         if change["old_content"] is not None:
             try:
                 from pathlib import Path
+
                 Path(change["path"]).write_text(change["old_content"])
                 return f"Undid write to {change['path']}"
             except Exception as e:
@@ -473,14 +470,15 @@ class Agent:
         """Redo the last undone change."""
         if not self.change_tracker.can_redo():
             return "Nothing to redo."
-        
+
         change = self.change_tracker.redo()
         if change is None:
             return "Nothing to redo."
-        
+
         if change["new_content"] is not None:
             try:
                 from pathlib import Path
+
                 Path(change["path"]).write_text(change["new_content"])
                 return f"Redid write to {change['path']}"
             except Exception as e:
@@ -491,13 +489,19 @@ class Agent:
         """Save current session."""
         if not self.session_manager or not self.session_manager.current_session:
             return "Session management not enabled."
-        
+
         if session_id:
             self.session_manager.current_session.id = session_id
-        
+
         # Save messages
         self.session_manager.current_session.messages = [
-            {"role": m.role, "content": m.content, "tool_call_id": m.tool_call_id, "tool_name": m.tool_name, "tool_arguments": m.tool_arguments}
+            {
+                "role": m.role,
+                "content": m.content,
+                "tool_call_id": m.tool_call_id,
+                "tool_name": m.tool_name,
+                "tool_arguments": m.tool_arguments,
+            }
             for m in self.messages
         ]
         self.session_manager.save_session()
@@ -507,13 +511,19 @@ class Agent:
         """Load a session."""
         if not self.session_manager:
             return "Session management not enabled."
-        
+
         session = self.session_manager.load_session(session_id)
         if not session:
             return f"Session not found: {session_id}"
-        
+
         self.messages = [
-            Message(role=m["role"], content=m["content"], tool_call_id=m.get("tool_call_id"), tool_name=m.get("tool_name"), tool_arguments=m.get("tool_arguments"))
+            Message(
+                role=m["role"],
+                content=m["content"],
+                tool_call_id=m.get("tool_call_id"),
+                tool_name=m.get("tool_name"),
+                tool_arguments=m.get("tool_arguments"),
+            )
             for m in session.messages
         ]
         return f"Session loaded: {session_id}"

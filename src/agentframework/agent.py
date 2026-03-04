@@ -41,6 +41,7 @@ class AgentConfig:
     base_url: str | None = None
     session_enabled: bool = True
     session_dir: str = ".agent_sessions"
+    parallel_tool_execution: bool = False  # Execute tools sequentially by default
 
 
 @dataclass
@@ -219,9 +220,16 @@ class Agent:
                 tool_arguments=tool_call.arguments,
             )
 
-        tool_messages = await asyncio.gather(
-            *[execute_and_message(tc) for tc in tool_calls]
-        )
+        # Execute tools sequentially or in parallel based on config
+        if self.config.parallel_tool_execution:
+            tool_messages = await asyncio.gather(
+                *[execute_and_message(tc) for tc in tool_calls]
+            )
+        else:
+            tool_messages = []
+            for tc in tool_calls:
+                tool_messages.append(await execute_and_message(tc))
+
         self.messages.extend(tool_messages)
 
         if tool_messages:

@@ -397,14 +397,18 @@ class Agent:
                 except json.JSONDecodeError:
                     return ToolResult(error=f"Invalid JSON in arguments: {args}")
 
-            validation_error = self._validate_tool_args(tool, args)
+            validation_error, validated_args = self._validate_tool_args(tool, args)
             if validation_error:
                 return ToolResult(error=validation_error)
 
-            result = await tool.execute(**args)
+            result = await tool.execute(**validated_args)
 
             # Track file changes for undo
-            if tool_call.name == "write_file" and "path" in args:
+            if (
+                tool_call.name == "write_file"
+                and validated_args
+                and "path" in validated_args
+            ):
                 try:
                     from pathlib import Path
 
@@ -429,16 +433,18 @@ class Agent:
             logger.exception(f"Tool {tool_call.name} failed")
             return ToolResult(error=str(e))
 
-    def _validate_tool_args(self, tool: Tool, args: dict) -> str | None:
-        """Validate tool arguments using Pydantic. Returns error message or None if valid."""
+    def _validate_tool_args(
+        self, tool: Tool, args: dict
+    ) -> tuple[str | None, dict | None]:
+        """Validate tool arguments using Pydantic. Returns (error, validated_args)."""
         if not tool.parameters_model:
-            return None
+            return None, args
 
         try:
-            tool.parameters_model.model_validate(args)
-            return None
+            validated = tool.parameters_model.model_validate(args)
+            return None, validated.model_dump()
         except Exception as e:
-            return f"Validation error: {e}"
+            return f"Validation error: {e}", None
 
     def undo(self) -> str:
         """Undo the last file change."""

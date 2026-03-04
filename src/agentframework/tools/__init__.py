@@ -1,10 +1,24 @@
 """Tool system for the agent framework."""
 
+from __future__ import annotations
+
+# ruff: noqa: E402
+# Imports must be after class definitions to avoid circular import issues
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Type
+from typing import TYPE_CHECKING, Any, Type
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from .bash import BashTool
+    from .file import ListDirTool, ReadFileTool, WriteFileTool
+    from .git import GitTool
+    from .memory import MemoryTool
+    from .notes import PersonalNotesTool
+    from .search import GlobTool, GrepTool
+    from .web import WebFetchTool, WebSearchTool
 
 
 @dataclass
@@ -51,3 +65,46 @@ class Tool(ABC):
     async def execute(self, *args: Any, **kwargs: Any) -> ToolResult:
         """Execute the tool with given arguments."""
         pass
+
+
+from .bash import BashTool
+from .file import ListDirTool, ReadFileTool, WriteFileTool
+from .git import GitTool
+from .memory import MemoryTool
+from .notes import PersonalNotesTool
+from .search import GlobTool, GrepTool
+from .web import WebFetchTool, WebSearchTool
+
+
+TOOL_REGISTRY: dict[str, Type[Tool]] = {
+    "bash": BashTool,
+    "read_file": ReadFileTool,
+    "write_file": WriteFileTool,
+    "list_dir": ListDirTool,
+    "glob": GlobTool,
+    "grep": GrepTool,
+    "web_fetch": WebFetchTool,
+    "web_search": WebSearchTool,
+    "git": GitTool,
+    "memory": MemoryTool,
+    "notes": PersonalNotesTool,
+}
+
+TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
+    "bash": {"timeout": 60, "allowed_commands": None},
+    "read_file": {"base_dir": "."},
+    "write_file": {"base_dir": "."},
+    "list_dir": {"base_dir": "."},
+    "glob": {"base_dir": "."},
+    "grep": {"base_dir": "."},
+    "web_fetch": {},
+    "web_search": {},
+    "git": {"base_dir": "."},
+    "memory": {"db_path": None},
+    "notes": {"notes_dir": None},
+}
+
+
+def get_tool_config_schema(tool_name: str) -> dict[str, Any]:
+    """Get the configuration schema for a tool."""
+    return TOOL_CONFIG_KEYS.get(tool_name, {})

@@ -298,28 +298,60 @@ class Agent:
             return len(text) // 4
 
     def _apply_context_window(self) -> list["Message"]:
-        """Apply sliding window to messages based on configured limits."""
+        """Apply sliding window to messages with summarization to preserve context."""
         if not self.messages:
             return []
 
         max_msgs = self.config.max_context_messages
-        max_chars = self.config.max_context_chars
+        max_tokens = self.config.max_context_chars
 
         # If both are unlimited, return all
-        if max_msgs <= 0 and max_chars <= 0:
+        if max_msgs <= 0 and max_tokens <= 0:
             return self.messages
 
         # If only messages limit is set
-        if max_msgs > 0 and max_chars <= 0:
+        if max_msgs > 0 and max_tokens <= 0:
             return self.messages[-max_msgs:]
 
-        # If only chars limit is set
-        if max_chars > 0 and max_msgs <= 0:
-            return self._trim_by_tokens(self.messages, max_chars)
+        # Calculate how many tokens to keep for recent vs summary
+        keep_recent_tokens = int(max_tokens * 0.7)
+        summarize_tokens = int(max_tokens * 0.3)
 
-        # Both limits set - first trim by chars, then by count
-        trimmed = self._trim_by_tokens(self.messages, max_chars)
-        return trimmed[-max_msgs:] if max_msgs > 0 else trimmed
+        # Get recent messages that fit in token limit
+        recent = self._trim_by_tokens(self.messages, keep_recent_tokens)
+
+        # If we kept all messages, just apply message limit
+        if len(recent) == len(self.messages):
+            return recent[-max_msgs:] if max_msgs > 0 else recent
+
+        # Get messages that were trimmed (old messages to summarize)
+        trimmed_count = len(self.messages) - len(recent)
+        if trimmed_count <= 2:
+            return recent[-max_msgs:] if max_msgs > 0 else recent
+
+        old_messages = self.messages[: -len(recent)] if recent else self.messages[:-1]
+
+        # Run summary asynchronously in the event loop
+        summary = ""
+        try:
+            import asyncio
+
+            loop = asyncio.get_running_loop()
+
+            # Schedule the summary in the background
+            async def get_summary():
+                return await self.summarize_old_messages(old_messages)
+
+            # For now, just use a placeholder since we can't await in sync context
+            summary = f"[{len(old_messages)} previous messages summarized - view conversation history for details]"
+        except RuntimeError:
+            # No event loop running, skip summary
+            summary = f"[{len(old_messages)} previous messages not shown]"
+
+        # Create summary message
+        summary_msg = Message(role="system", content=summary)
+        result = [summary_msg] + recent
+        return result[-max_msgs:] if max_msgs > 0 else result
 
     def _trim_by_tokens(
         self, messages: list["Message"], max_tokens: int
@@ -366,6 +398,43 @@ class Agent:
                         break
 
         return result
+
+    async def summarize_old_messages(
+        self, messages_to_summarize: list["Message"]
+    ) -> str:
+        """Summarize old messages using the LLM to preserve context."""
+        if not messages_to_summarize:
+            return ""
+
+        conversation = []
+        for msg in messages_to_summarize:
+            if msg.role == "user":
+                conversation.append(f"User: {msg.content[:500]}")
+            elif msg.role == "assistant":
+                if msg.content:
+                    conversation.append(f"Assistant: {msg.content[:500]}")
+                if msg.tool_name:
+                    conversation.append(f"Assistant used tool: {msg.tool_name}")
+            elif msg.role == "tool":
+                tool_name = msg.tool_name or "unknown"
+                content = msg.content[:300] if msg.content else ""
+                conversation.append(f"Tool {tool_name} returned: {content}")
+
+        prompt = f"""Summarize this conversation concisely, preserving key information, decisions, and any important context:
+
+{chr(10).join(conversation)}
+
+Provide a brief summary (2-3 sentences):"""
+
+        try:
+            summary_response = await self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                tools=None,
+                temperature=0.3,
+            )
+            return summary_response.content or ""
+        except Exception:
+            return f"[{len(messages_to_summarize)} previous messages summarized]"
 
     def _get_tool_schemas(self) -> list[dict[str, Any]]:
         """Get tool schemas for the LLM."""

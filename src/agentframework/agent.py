@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Literal, Callable
+from typing import Literal, Callable
 
 from .providers import LLMProvider, get_provider, LLMToolCall
 from .tools import Tool, ToolResult

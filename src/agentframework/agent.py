@@ -144,7 +144,7 @@ class Agent:
 
         for iteration in range(self.config.max_iterations):
             response = await self.llm.chat(
-                messages=self._prepare_messages(),
+                messages=await self._prepare_messages(),
                 tools=self._get_tool_schemas(),
                 temperature=self.config.temperature,
             )
@@ -175,14 +175,14 @@ class Agent:
             # Check if provider supports streaming
             if hasattr(self.llm, "chat_streaming"):
                 response = await self.llm.chat_streaming(
-                    messages=self._prepare_messages(),
+                    messages=await self._prepare_messages(),
                     tools=self._get_tool_schemas(),
                     temperature=self.config.temperature,
                     on_chunk=on_chunk,
                 )
             else:
                 response = await self.llm.chat(
-                    messages=self._prepare_messages(),
+                    messages=await self._prepare_messages(),
                     tools=self._get_tool_schemas(),
                     temperature=self.config.temperature,
                 )
@@ -247,7 +247,7 @@ class Agent:
 
         return tool_messages
 
-    def _prepare_messages(self) -> list[dict[str, str]]:
+    async def _prepare_messages(self) -> list[dict[str, str]]:
         """Prepare messages for the LLM with sliding window to prevent context overflow."""
         msgs = []
 
@@ -264,7 +264,7 @@ class Agent:
             msgs.append({"role": "system", "content": system_prompt})
 
         # Apply sliding window to messages
-        filtered_messages = self._apply_context_window()
+        filtered_messages = await self._apply_context_window()
 
         # Track tool_call_id -> tool_name mapping for tool messages
         tool_call_names = {}
@@ -305,7 +305,7 @@ class Agent:
         except Exception:
             return len(text) // 4
 
-    def _apply_context_window(self) -> list["Message"]:
+    async def _apply_context_window(self) -> list["Message"]:
         """Apply sliding window to messages with summarization to preserve context."""
         if not self.messages:
             return []
@@ -323,7 +323,6 @@ class Agent:
 
         # Calculate how many tokens to keep for recent vs summary
         keep_recent_tokens = int(max_tokens * 0.7)
-        summarize_tokens = int(max_tokens * 0.3)
 
         # Get recent messages that fit in token limit
         recent = self._trim_by_tokens(self.messages, keep_recent_tokens)
@@ -339,22 +338,8 @@ class Agent:
 
         old_messages = self.messages[: -len(recent)] if recent else self.messages[:-1]
 
-        # Run summary asynchronously in the event loop
-        summary = ""
-        try:
-            import asyncio
-
-            loop = asyncio.get_running_loop()
-
-            # Schedule the summary in the background
-            async def get_summary():
-                return await self.summarize_old_messages(old_messages)
-
-            # For now, just use a placeholder since we can't await in sync context
-            summary = f"[{len(old_messages)} previous messages summarized - view conversation history for details]"
-        except RuntimeError:
-            # No event loop running, skip summary
-            summary = f"[{len(old_messages)} previous messages not shown]"
+        # Summarize old messages asynchronously
+        summary = await self.summarize_old_messages(old_messages)
 
         # Create summary message
         summary_msg = Message(role="system", content=summary)

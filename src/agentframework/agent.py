@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Literal, Callable
+from typing import Any, Literal, Callable
 
 from .providers import LLMProvider, get_provider, LLMToolCall
 from .tools import Tool, ToolResult
@@ -366,6 +366,10 @@ class Agent:
                         break
 
         return result
+
+    def _get_tool_schemas(self) -> list[dict[str, Any]]:
+        """Get tool schemas for the LLM."""
+        return [tool.schema for tool in self.config.tools]
 
     @staticmethod
     def _sanitize_json(json_str: str) -> str:

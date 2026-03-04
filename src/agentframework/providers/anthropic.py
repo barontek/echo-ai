@@ -4,6 +4,12 @@ import os
 from typing import Any
 
 from anthropic import AsyncAnthropic
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 from . import LLMProvider, LLMResponse, LLMToolCall
 
@@ -15,6 +21,11 @@ class AnthropicProvider(LLMProvider):
         self.model = model
         self.client = AsyncAnthropic(api_key=api_key or os.getenv("ANTHROPIC_API_KEY"))
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
     async def chat(
         self,
         messages: list[dict[str, str]],
@@ -53,10 +64,12 @@ class AnthropicProvider(LLMProvider):
             if block.type == "text":
                 content += block.text
             elif block.type == "tool_use":
-                tool_calls.append(LLMToolCall(
-                    id=block.id,
-                    name=block.name,
-                    arguments=block.input,
-                ))
+                tool_calls.append(
+                    LLMToolCall(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input,
+                    )
+                )
 
         return LLMResponse(content=content, tool_calls=tool_calls)

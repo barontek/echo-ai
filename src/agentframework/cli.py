@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import logging
 import sys
 from pathlib import Path
 
@@ -19,21 +20,26 @@ from .tools.git import GitTool
 console = Console(color_system="256")
 
 
+def find_config_path(path: str | None = None) -> Path | None:
+    if path is not None:
+        config_path = Path(path)
+        return config_path if config_path.exists() else None
+
+    script_dir = Path(__file__).parent.parent.parent
+    search_paths = [
+        Path.cwd() / "config.yaml",
+        script_dir / "config.yaml",
+        Path.home() / "vibe-ai" / "config.yaml",
+    ]
+    for config_path in search_paths:
+        if config_path.exists():
+            return config_path
+    return None
+
+
 def load_config(path: str | None = None) -> dict:
-    if path is None:
-        script_dir = Path(__file__).parent.parent.parent
-        search_paths = [
-            Path.cwd() / "config.yaml",
-            script_dir / "config.yaml",
-            Path.home() / "vibe-ai" / "config.yaml",
-        ]
-        for config_path in search_paths:
-            if config_path.exists():
-                with open(config_path) as f:
-                    return yaml.safe_load(f)
-        return {}
-    config_path = Path(path)
-    if config_path.exists():
+    config_path = find_config_path(path)
+    if config_path:
         with open(config_path) as f:
             return yaml.safe_load(f)
     return {}
@@ -58,7 +64,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
         allowed_domains=safety.get("allowed_domains", []),
         max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
         max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", []),
+        require_approval_for=safety.get("require_approval_for", ["bash", "write_file"]),
         approval_callback=approval_callback,
     )
 
@@ -193,11 +199,8 @@ async def interactive_mode(agent: Agent):
                     sys.stdout.write(chunk)
                 sys.stdout.flush()
             
-            response = await agent.run_streaming(user_input, on_chunk=on_chunk)
-            # Print final response if not already printed via streaming
-            if response:
-                print(response)
-            # Add newline after response
+            await agent.run_streaming(user_input, on_chunk=on_chunk)
+            # Add newline after streaming response
             sys.stdout.write('\n')
             sys.stdout.flush()
         except KeyboardInterrupt:
@@ -240,11 +243,16 @@ async def run_single(agent: Agent, task: str):
 
 def main():
     """Main entry point."""
+    debug_enabled = "--debug" in sys.argv
+    if debug_enabled:
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
     config = load_config()
+    config_path = find_config_path()
     safety_config = get_safety_config(config)
 
     agent_config = AgentConfig(
-        provider=config.get("model", {}).get("provider", "anthropic"),
+        provider=config.get("model", {}).get("provider", "ollama"),
         model=config.get("model", {}).get("name", "qwen3:4b-instruct"),
         temperature=config.get("model", {}).get("temperature", 0.3),
         max_iterations=config.get("agent", {}).get("max_iterations", 50),
@@ -259,8 +267,11 @@ def main():
 
     agent = create_agent(agent_config, api_key)
 
-    if len(sys.argv) > 1:
-        task = " ".join(sys.argv[1:])
+    console.print(f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]")
+
+    args = [a for a in sys.argv[1:] if a != "--debug"]
+    if args:
+        task = " ".join(args)
         asyncio.run(run_single(agent, task))
     else:
         asyncio.run(interactive_mode(agent))

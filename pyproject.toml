@@ -33,3 +33,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentframework"]
+
+[tool.pytest.ini_options]
+markers = [
+    "asyncio: mark tests as asynchronous",
+]

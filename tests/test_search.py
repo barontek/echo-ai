@@ -3,7 +3,6 @@
 import pytest
 import tempfile
 from pathlib import Path
-import asyncio
 
 from src.agentframework.tools.search import GlobTool, GrepTool
 from src.agentframework.safety import SafetyConfig

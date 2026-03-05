@@ -5,11 +5,16 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Literal, Callable
+from uuid import uuid4
 
 from .providers import LLMProvider, get_provider, LLMToolCall
 from .tools import Tool, ToolResult
 from .session import SessionManager, ChangeTracker
+from .conversation import apply_context_window, create_assistant_message, format_messages_for_llm, estimate_tokens
+from .tool_runtime import execute_tool_calls as runtime_execute_tool_calls, create_tool_result_notice
+from .session_runtime import undo_change, redo_change, serialize_messages, deserialize_messages
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +28,7 @@ class Message:
     tool_call_id: str | None = None
     tool_name: str | None = None
     tool_arguments: dict | None = None
+    error_category: str | None = None
 
 
 @dataclass
@@ -455,8 +461,10 @@ class Agent:
     ) -> tuple[str, list[Message]]:
         """Main agent loop - get response, execute tools, repeat. Returns (response, updated_messages)."""
         current_messages = list(messages)
+        request_id = str(uuid4())
 
         for iteration in range(self.config.max_iterations):
+            logger.debug("agent_stream_iteration_start", extra={"request_id": request_id, "iteration": iteration})
             llm_messages = await self._prepare_messages(current_messages)
 
             response = await self.llm.chat(
@@ -466,6 +474,7 @@ class Agent:
             )
 
             if not response.tool_calls:
+                logger.debug("agent_iteration_final", extra={"request_id": request_id, "iteration": iteration})
                 final_content = response.content or ""
                 assistant_msg = create_assistant_message(final_content, has_thinking)
                 current_messages.append(assistant_msg)
@@ -492,8 +501,10 @@ class Agent:
     ) -> tuple[str, list[Message]]:
         """Main agent loop with streaming output. Returns (response, updated_messages)."""
         current_messages = list(messages)
+        request_id = str(uuid4())
 
         for iteration in range(self.config.max_iterations):
+            logger.debug("agent_iteration_start", extra={"request_id": request_id, "iteration": iteration})
             llm_messages = await self._prepare_messages(current_messages)
 
             if hasattr(self.llm, "chat_streaming"):
@@ -511,6 +522,7 @@ class Agent:
                 )
 
             if not response.tool_calls:
+                logger.debug("agent_iteration_final", extra={"request_id": request_id, "iteration": iteration})
                 final_content = response.content or ""
                 assistant_msg = create_assistant_message(final_content, has_thinking)
                 current_messages.append(assistant_msg)
@@ -541,12 +553,16 @@ class Agent:
         else:
             use_old_api = False
 
-        tool_messages = await execute_tool_calls(
+        tool_messages, timings = await runtime_execute_tool_calls(
             tool_calls,
             self.tool_map,
             parallel=self.config.parallel_tool_execution,
             change_tracker=self.change_tracker,
         )
+
+        if timings:
+            total_latency = sum(timings.values())
+            logger.debug("tool_execution", extra={"timings": timings, "total_latency": total_latency})
 
         new_messages = current_messages + tool_messages
 
@@ -560,11 +576,15 @@ class Agent:
 
     async def _execute_tool(self, tool_call: LLMToolCall) -> ToolResult:
         """Execute a single tool call (backward compatibility wrapper)."""
-        msg = await execute_single_tool(tool_call, self.tool_map, self.change_tracker)
+        msgs, _timings = await runtime_execute_tool_calls(
+            [tool_call], self.tool_map, parallel=False, change_tracker=self.change_tracker
+        )
+        msg = msgs[0]
         if msg.content.startswith("FAILED"):
-            return ToolResult(
-                error=msg.content.replace("FAILED - Operation was denied by user: ", "")
-            )
+            error = msg.content
+            if ": " in error:
+                error = error.split(": ", 1)[1]
+            return ToolResult(error=error)
         return ToolResult(content=msg.content)
 
     @staticmethod
@@ -574,12 +594,14 @@ class Agent:
 
     async def _prepare_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Prepare messages for the LLM with sliding window to prevent context overflow."""
+        before_count = len(messages)
         filtered_messages = await apply_context_window(
             messages,
             self.config.max_context_messages,
             self.config.max_context_chars,
             summarize_fn=self._summarize_old_messages,
         )
+        logger.debug("context_window", extra={"before": before_count, "after": len(filtered_messages), "max_messages": self.config.max_context_messages, "max_chars": self.config.max_context_chars})
 
         return format_messages_for_llm(
             filtered_messages,
@@ -639,41 +661,11 @@ Provide a brief summary (2-3 sentences):"""
 
     def undo(self) -> str:
         """Undo the last file change."""
-        if not self.change_tracker.can_undo():
-            return "Nothing to undo."
-
-        change = self.change_tracker.undo()
-        if change is None:
-            return "Nothing to undo."
-
-        if change["old_content"] is not None:
-            try:
-                from pathlib import Path
-
-                Path(change["path"]).write_text(change["old_content"])
-                return f"Undid write to {change['path']}"
-            except Exception as e:
-                return f"Undo failed: {e}"
-        return f"Undid {change['operation']} on {change['path']}"
+        return undo_change(self.change_tracker)
 
     def redo(self) -> str:
         """Redo the last undone change."""
-        if not self.change_tracker.can_redo():
-            return "Nothing to redo."
-
-        change = self.change_tracker.redo()
-        if change is None:
-            return "Nothing to redo."
-
-        if change["new_content"] is not None:
-            try:
-                from pathlib import Path
-
-                Path(change["path"]).write_text(change["new_content"])
-                return f"Redid write to {change['path']}"
-            except Exception as e:
-                return f"Redo failed: {e}"
-        return f"Redid {change['operation']} on {change['path']}"
+        return redo_change(self.change_tracker)
 
     def save_session(self, session_id: str | None = None) -> str:
         """Save current session."""
@@ -683,16 +675,7 @@ Provide a brief summary (2-3 sentences):"""
         if session_id:
             self.session_manager.current_session.id = session_id
 
-        self.session_manager.current_session.messages = [
-            {
-                "role": m.role,
-                "content": m.content,
-                "tool_call_id": m.tool_call_id,
-                "tool_name": m.tool_name,
-                "tool_arguments": m.tool_arguments,
-            }
-            for m in self.messages
-        ]
+        self.session_manager.current_session.messages = serialize_messages(self.messages)
         self.session_manager.save_session()
         return f"Session saved: {self.session_manager.current_session.id}"
 
@@ -705,16 +688,7 @@ Provide a brief summary (2-3 sentences):"""
         if not session:
             return f"Session not found: {session_id}"
 
-        self.messages = [
-            Message(
-                role=m["role"],
-                content=m["content"],
-                tool_call_id=m.get("tool_call_id"),
-                tool_name=m.get("tool_name"),
-                tool_arguments=m.get("tool_arguments"),
-            )
-            for m in session.messages
-        ]
+        self.messages = deserialize_messages(session.messages)
         return f"Session loaded: {session_id}"
 
     def list_sessions(self) -> list:

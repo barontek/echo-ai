@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import logging
 import re
 import sys
 from pathlib import Path
@@ -134,7 +135,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
         allowed_domains=safety.get("allowed_domains", []),
         max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
         max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", []),
+        require_approval_for=safety.get("require_approval_for", ["bash", "write_file"]),
         approval_callback=approval_callback,
         audit_log_path=safety.get("audit_log_path"),
         read_requires_approval=safety.get("read_requires_approval", False),
@@ -538,11 +539,16 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 
 
 def main():
+    debug_enabled = "--debug" in sys.argv
+    if debug_enabled:
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
     config = load_config()
+    config_path = find_config_path()
     safety_config = get_safety_config(config)
 
     agent_config = AgentConfig(
-        provider=config.get("model", {}).get("provider", "anthropic"),
+        provider=config.get("model", {}).get("provider", "ollama"),
         model=config.get("model", {}).get("name", "qwen3:4b-instruct"),
         temperature=config.get("model", {}).get("temperature", 0.3),
         max_iterations=config.get("agent", {}).get("max_iterations", 50),
@@ -555,6 +561,8 @@ def main():
 
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     agent = create_agent(agent_config, api_key)
+
+    console.print(f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]")
 
     # Load sub-agents from config
     sub_agents_config = config.get("agent", {}).get("sub_agents", {})
@@ -569,12 +577,13 @@ def main():
 
     # Check for session to load
     session_name = None
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--load" and len(sys.argv) > 2:
-            session_name = sys.argv[2]
-        elif not sys.argv[1].startswith("-"):
+    args = [a for a in sys.argv[1:] if a != "--debug"]
+    if args:
+        if args[0] == "--load" and len(args) > 1:
+            session_name = args[1]
+        elif not args[0].startswith("-"):
             try:
-                asyncio.run(agent.run(" ".join(sys.argv[1:])))
+                asyncio.run(agent.run(" ".join(args)))
             except KeyboardInterrupt:
                 pass
             agent.save_session()

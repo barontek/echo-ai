@@ -27,16 +27,17 @@ class ListDirParams(BaseModel):
     path: str = "."
 
 
-class ReadFileTool(Tool):
-    """Read file contents with workspace confinement."""
+class FileSystemTool(Tool):
+    """Base class for file system tools with workspace confinement."""
 
-    parameters_model = ReadFileParams
-
-    def __init__(self, base_dir: str = ".", safety_config: SafetyConfig | None = None):
-        super().__init__(
-            name="read_file",
-            description="Read the contents of a file from the filesystem.",
-        )
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        base_dir: str = ".",
+        safety_config: SafetyConfig | None = None,
+    ):
+        super().__init__(name=name, description=description)
         self.base_dir = Path(base_dir).resolve()
 
         if safety_config:
@@ -46,6 +47,24 @@ class ReadFileTool(Tool):
             self.validator = SecurityValidator(
                 SafetyConfig(workspace=str(self.base_dir))
             )
+
+    def _resolve_path(self, path: str) -> Path:
+        """Resolve a relative path against the base directory."""
+        return (self.base_dir / path).resolve()
+
+
+class ReadFileTool(FileSystemTool):
+    """Read file contents with workspace confinement."""
+
+    parameters_model = ReadFileParams
+
+    def __init__(self, base_dir: str = ".", safety_config: SafetyConfig | None = None):
+        super().__init__(
+            name="read_file",
+            description="Read the contents of a file from the filesystem.",
+            base_dir=base_dir,
+            safety_config=safety_config,
+        )
 
     async def execute(self, path: str, **kwargs) -> ToolResult:
         """Read the file with safety checks."""
@@ -58,7 +77,7 @@ class ReadFileTool(Tool):
         if self.validator.is_blocked_path(path):
             return ToolResult(error="Cannot read blocked path")
 
-        full_path = (self.base_dir / path).resolve()
+        full_path = self._resolve_path(path)
 
         file_size_info = ""
         try:
@@ -94,7 +113,7 @@ class ReadFileTool(Tool):
             return ToolResult(error=str(e))
 
 
-class WriteFileTool(Tool):
+class WriteFileTool(FileSystemTool):
     """Write file contents with workspace confinement."""
 
     parameters_model = WriteFileParams
@@ -103,16 +122,9 @@ class WriteFileTool(Tool):
         super().__init__(
             name="write_file",
             description="Create or overwrite a file with the given content.",
+            base_dir=base_dir,
+            safety_config=safety_config,
         )
-        self.base_dir = Path(base_dir).resolve()
-
-        if safety_config:
-            safety_config.workspace = str(self.base_dir)
-            self.validator = SecurityValidator(safety_config)
-        else:
-            self.validator = SecurityValidator(
-                SafetyConfig(workspace=str(self.base_dir))
-            )
 
     async def execute(self, path: str, content: str, **kwargs) -> ToolResult:
         """Write the file with safety checks."""
@@ -128,7 +140,7 @@ class WriteFileTool(Tool):
         if not self.validator.check_file_size(content=content):
             return ToolResult(error="Content too large")
 
-        full_path = (self.base_dir / path).resolve()
+        full_path = self._resolve_path(path)
         file_status = "new file"
         if full_path.exists():
             size = full_path.stat().st_size
@@ -151,7 +163,7 @@ class WriteFileTool(Tool):
             return ToolResult(error=str(e))
 
 
-class ListDirTool(Tool):
+class ListDirTool(FileSystemTool):
     """List directory contents with workspace confinement."""
 
     parameters_model = ListDirParams
@@ -160,16 +172,9 @@ class ListDirTool(Tool):
         super().__init__(
             name="list_dir",
             description="List the contents of a directory.",
+            base_dir=base_dir,
+            safety_config=safety_config,
         )
-        self.base_dir = Path(base_dir).resolve()
-
-        if safety_config:
-            safety_config.workspace = str(self.base_dir)
-            self.validator = SecurityValidator(safety_config)
-        else:
-            self.validator = SecurityValidator(
-                SafetyConfig(workspace=str(self.base_dir))
-            )
 
     async def execute(self, path: str = ".", **kwargs) -> ToolResult:
         """List the directory with safety checks."""
@@ -177,7 +182,7 @@ class ListDirTool(Tool):
             return ToolResult(error="Path traversal blocked")
 
         try:
-            full_path = (self.base_dir / path).resolve()
+            full_path = self._resolve_path(path)
             if not full_path.exists():
                 return ToolResult(error=f"Directory not found: {path}")
             if not full_path.is_dir():

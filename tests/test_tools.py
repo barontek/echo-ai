@@ -1,7 +1,6 @@
 """Tests for tool system."""
 
 import pytest
-import asyncio
 from pathlib import Path
 import tempfile
 

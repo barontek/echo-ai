@@ -1,10 +1,8 @@
 """Tests for session management."""
 
-import json
 import pytest
 import tempfile
 from datetime import datetime
-from pathlib import Path
 
 from src.agentframework.session import (
     Session,

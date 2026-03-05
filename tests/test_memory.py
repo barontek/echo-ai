@@ -2,7 +2,6 @@
 
 import pytest
 import tempfile
-import asyncio
 from pathlib import Path
 
 from src.agentframework.tools.memory import MemoryTool

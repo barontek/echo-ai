@@ -1,8 +1,6 @@
 """Tests for Agent class."""
 
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.agentframework.agent import Agent, AgentConfig
 from src.agentframework.tools import Tool, ToolResult
@@ -55,49 +53,41 @@ class TestSanitizeJson:
     """Tests for _sanitize_json method."""
 
     def test_strips_json_code_block(self):
-        agent = Agent.__new__(Agent)
         json_str = '```json\n{"key": "value"}\n```'
         result = Agent._sanitize_json(json_str)
         assert '{"key": "value"}' in result
 
     def test_strips_plain_code_block(self):
-        agent = Agent.__new__(Agent)
         json_str = '```\n{"key": "value"}\n```'
         result = Agent._sanitize_json(json_str)
         assert '{"key": "value"}' in result
 
     def test_strips_leading_code_block(self):
-        agent = Agent.__new__(Agent)
         json_str = '```json{"key": "value"}'
         result = Agent._sanitize_json(json_str)
         assert '{"key": "value"}' in result
 
     def test_strips_trailing_code_block(self):
-        agent = Agent.__new__(Agent)
         json_str = '{"key": "value"}```'
         result = Agent._sanitize_json(json_str)
         assert result.strip("`") == '{"key": "value"}'
 
     def test_removes_trailing_comma_before_brace(self):
-        agent = Agent.__new__(Agent)
         json_str = '{"key": "value",}'
         result = Agent._sanitize_json(json_str)
         assert result == '{"key": "value"}'
 
     def test_removes_trailing_comma_before_bracket(self):
-        agent = Agent.__new__(Agent)
         json_str = '{"items": ["a", "b",],}'
         result = Agent._sanitize_json(json_str)
         assert result == '{"items": ["a", "b"]}'
 
     def test_preserves_valid_json(self):
-        agent = Agent.__new__(Agent)
         json_str = '{"key": "value", "num": 123}'
         result = Agent._sanitize_json(json_str)
         assert result == '{"key": "value", "num": 123}'
 
     def test_complex_malformed_json(self):
-        agent = Agent.__new__(Agent)
         json_str = '```json\n{"command": "test", "count": 5, }\n```'
         result = Agent._sanitize_json(json_str)
         # Should strip code blocks and remove trailing comma
@@ -138,6 +128,7 @@ class TestParallelExecution:
 
         # Verify both tools were executed
         tool = agent.tool_map["mock"]
+        assert isinstance(tool, MockTool)
         assert tool.executed is True
 
     @pytest.mark.asyncio
@@ -163,6 +154,7 @@ class TestParallelExecution:
 
         # Verify both tools were executed
         tool = agent.tool_map["mock"]
+        assert isinstance(tool, MockTool)
         assert tool.executed is True
 
 
@@ -259,12 +251,13 @@ class TestSanitizeJsonIntegration:
         tool_call = LLMToolCall(
             id="1",
             name="mock",
-            arguments='```json\n{"command": "test", "count": 1}\n```',
+            arguments={"command": "test", "count": 1},
         )
+        tool_call.arguments = "```json\n{\"command\": \"test\", \"count\": 1}\n```"  # type: ignore[assignment]
 
         # The sanitization happens inside _execute_tool when parsing JSON
         # This test verifies the flow works end-to-end
-        result = await agent._execute_tool(tool_call)
+        await agent._execute_tool(tool_call)
 
         # Note: The arguments are already parsed by the provider before reaching _execute_tool
         # This test documents expected behavior

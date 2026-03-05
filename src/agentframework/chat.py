@@ -20,6 +20,23 @@ from .tools import TOOL_REGISTRY, TOOL_CONFIG_KEYS
 console = Console(color_system="256")
 
 
+def find_config_path(path: str | None = None) -> Path | None:
+    if path is not None:
+        config_path = Path(path)
+        return config_path if config_path.exists() else None
+
+    script_dir = Path(__file__).parent.parent.parent
+    search_paths = [
+        Path.cwd() / "config.yaml",
+        script_dir / "config.yaml",
+        Path.home() / "vibe-ai" / "config.yaml",
+    ]
+    for config_path in search_paths:
+        if config_path.exists():
+            return config_path
+    return None
+
+
 def make_clickable_links(text: str) -> str:
     """Convert markdown links [text](url) to clickable terminal links."""
 
@@ -56,21 +73,8 @@ except ImportError:
 
 
 def load_config(path: str | None = None) -> dict:
-    if path is None:
-        # Try to find config.yaml in common locations
-        script_dir = Path(__file__).parent.parent.parent
-        search_paths = [
-            Path.cwd() / "config.yaml",
-            script_dir / "config.yaml",
-            Path.home() / "vibe-ai" / "config.yaml",
-        ]
-        for config_path in search_paths:
-            if config_path.exists():
-                with open(config_path) as f:
-                    return yaml.safe_load(f)
-        return {}
-    config_path = Path(path)
-    if config_path.exists():
+    config_path = find_config_path(path)
+    if config_path:
         with open(config_path) as f:
             return yaml.safe_load(f)
     return {}

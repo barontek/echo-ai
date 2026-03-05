@@ -161,7 +161,7 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
             elif default_value is not None:
                 kwargs[key] = default_value
 
-        if "safety_config" not in kwargs:
+        if "safety_config" in config_defaults and "safety_config" not in kwargs:
             kwargs["safety_config"] = safety_config
 
         tools.append(tool_class(**kwargs))

@@ -91,15 +91,15 @@ TOOL_REGISTRY: dict[str, Type[Tool]] = {
 }
 
 TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
-    "bash": {"timeout": 60, "allowed_commands": None},
-    "read_file": {"base_dir": "."},
-    "write_file": {"base_dir": "."},
-    "list_dir": {"base_dir": "."},
-    "glob": {"base_dir": "."},
-    "grep": {"base_dir": "."},
-    "web_fetch": {},
-    "web_search": {},
-    "git": {"base_dir": "."},
+    "bash": {"timeout": 60, "allowed_commands": None, "safety_config": None},
+    "read_file": {"base_dir": ".", "safety_config": None},
+    "write_file": {"base_dir": ".", "safety_config": None},
+    "list_dir": {"base_dir": ".", "safety_config": None},
+    "glob": {"base_dir": ".", "safety_config": None},
+    "grep": {"base_dir": ".", "safety_config": None},
+    "web_fetch": {"safety_config": None},
+    "web_search": {"safety_config": None},
+    "git": {"base_dir": ".", "safety_config": None},
     "memory": {"db_path": None},
     "notes": {"notes_dir": None},
 }

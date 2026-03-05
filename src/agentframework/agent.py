@@ -608,9 +608,22 @@ class Agent:
                 content = msg.content[:300] if msg.content else ""
                 conversation.append(f"Tool {tool_name} returned: {content}")
 
+        conversation_str = chr(10).join(conversation)
+        token_count = estimate_tokens(conversation_str)
+
+        if token_count > 8000:
+            chars_to_keep = 8000 * 4
+            if len(conversation_str) > chars_to_keep:
+                half = chars_to_keep // 2
+                conversation_str = (
+                    conversation_str[:half]
+                    + "\n[...conversation truncated for summarization...]\n"
+                    + conversation_str[-half:]
+                )
+
         prompt = f"""Summarize this conversation concisely, preserving key information, decisions, and any important context:
 
-{chr(10).join(conversation)}
+{conversation_str}
 
 Provide a brief summary (2-3 sentences):"""
 

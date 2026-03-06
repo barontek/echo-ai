@@ -76,11 +76,13 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
 
     if "bash" in enabled:
         bash_config = config.get("tools", {}).get("bash", {})
-        tools.append(BashTool(
-            timeout=bash_config.get("timeout", 60),
-            allowed_commands=bash_config.get("allowed_commands"),
-            safety_config=safety_config,
-        ))
+        tools.append(
+            BashTool(
+                timeout=bash_config.get("timeout", 60),
+                allowed_commands=bash_config.get("allowed_commands"),
+                safety_config=safety_config,
+            )
+        )
 
     if "read_file" in enabled:
         tools.append(ReadFileTool(safety_config=safety_config))
@@ -108,10 +110,12 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
 
     if "memory" in enabled:
         from .tools.memory import MemoryTool
+
         tools.append(MemoryTool())
 
     if "notes" in enabled:
         from .tools.notes import PersonalNotesTool
+
         tools.append(PersonalNotesTool())
 
     return tools
@@ -125,12 +129,16 @@ async def interactive_mode(agent: Agent):
     while True:
         try:
             user_input = console.input("[bold green]>[/bold green] ")
-            
+
             # Handle commands
             if user_input.strip().startswith("/"):
                 cmd = user_input.strip().split()[0].lower()
-                args = user_input.strip().split(maxsplit=1)[1] if len(user_input.strip().split()) > 1 else ""
-                
+                args = (
+                    user_input.strip().split(maxsplit=1)[1]
+                    if len(user_input.strip().split()) > 1
+                    else ""
+                )
+
                 if cmd == "/exit" or cmd == "/quit":
                     break
                 elif cmd == "/save":
@@ -170,38 +178,38 @@ async def interactive_mode(agent: Agent):
                     console.print("  /redo        - Redo last undone change")
                     console.print("  /exit        - Exit")
                     continue
-            
+
             if not user_input.strip():
                 continue
 
             # Streaming output
             in_thinking = False
-            
+
             def on_chunk(chunk: str):
                 nonlocal in_thinking
-                
+
                 # Handle thinking markers
-                if '__THINKING__' in chunk:
+                if "__THINKING__" in chunk:
                     in_thinking = True
-                    chunk = chunk.replace('__THINKING__', '')
+                    chunk = chunk.replace("__THINKING__", "")
                     if not chunk:
                         return
-                if '__THINKING_END__' in chunk:
+                if "__THINKING_END__" in chunk:
                     in_thinking = False
-                    chunk = chunk.replace('__THINKING_END__', '')
+                    chunk = chunk.replace("__THINKING_END__", "")
                     if not chunk:
                         return
-                
+
                 # Use stdout.write for immediate output
                 if in_thinking:
-                    sys.stdout.write('\033[90m' + chunk + '\033[0m')
+                    sys.stdout.write("\033[90m" + chunk + "\033[0m")
                 else:
                     sys.stdout.write(chunk)
                 sys.stdout.flush()
-            
+
             await agent.run_streaming(user_input, on_chunk=on_chunk)
             # Add newline after streaming response
-            sys.stdout.write('\n')
+            sys.stdout.write("\n")
             sys.stdout.flush()
         except KeyboardInterrupt:
             break
@@ -216,36 +224,38 @@ async def interactive_mode(agent: Agent):
 async def run_single(agent: Agent, task: str):
     """Run a single task with streaming output."""
     in_thinking = False
-    
+
     def on_chunk(chunk: str):
         nonlocal in_thinking
-        
-        if '__THINKING__' in chunk:
+
+        if "__THINKING__" in chunk:
             in_thinking = True
-            chunk = chunk.replace('__THINKING__', '')
+            chunk = chunk.replace("__THINKING__", "")
             if not chunk:
                 return
-        if '__THINKING_END__' in chunk:
+        if "__THINKING_END__" in chunk:
             in_thinking = False
-            chunk = chunk.replace('__THINKING_END__', '')
+            chunk = chunk.replace("__THINKING_END__", "")
             if not chunk:
                 return
-        
+
         if in_thinking:
-            sys.stdout.write('\033[90m' + chunk + '\033[0m')
+            sys.stdout.write("\033[90m" + chunk + "\033[0m")
         else:
             sys.stdout.write(chunk)
         sys.stdout.flush()
-    
+
     await agent.run_streaming(task, on_chunk=on_chunk)
-    sys.stdout.write('\n')
+    sys.stdout.write("\n")
 
 
 def main():
     """Main entry point."""
     debug_enabled = "--debug" in sys.argv
     if debug_enabled:
-        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+        )
 
     config = load_config()
     config_path = find_config_path()
@@ -263,11 +273,24 @@ def main():
         session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
     )
 
+    # Inject environment info into system prompt
+    workspace = safety_config.workspace or "."
+    cwd = os.getcwd()
+    env_info = f"\n\n## Environment\n- Current working directory: {cwd}\n- Workspace (file operations confined to): {workspace}\n"
+    if agent_config.system_prompt:
+        agent_config.system_prompt += env_info
+    else:
+        agent_config.system_prompt = (
+            f"You are an AI assistant with access to various tools.{env_info}"
+        )
+
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
 
     agent = create_agent(agent_config, api_key)
 
-    console.print(f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]")
+    console.print(
+        f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]"
+    )
 
     args = [a for a in sys.argv[1:] if a != "--debug"]
     if args:

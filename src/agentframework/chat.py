@@ -563,6 +563,17 @@ def main():
         session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
     )
 
+    # Inject environment info into system prompt
+    workspace = safety_config.workspace or "."
+    cwd = os.getcwd()
+    env_info = f"\n\n## Environment\n- Current working directory: {cwd}\n- Workspace (file operations confined to): {workspace}\n"
+    if agent_config.system_prompt:
+        agent_config.system_prompt += env_info
+    else:
+        agent_config.system_prompt = (
+            f"You are an AI assistant with access to various tools.{env_info}"
+        )
+
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     agent = create_agent(agent_config, api_key)
 

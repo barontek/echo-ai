@@ -7,58 +7,7 @@ on:
     branches: [master, main]
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          
-      - name: Install dependencies
-        run: pip install ruff
-        
-      - name: Run ruff
-        run: ruff check src/
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          
-      - name: Install dependencies
-        run: pip install pyright
-        
-      - name: Run pyright
-        run: pyright src/
-
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          
-      - name: Install dependencies
-        run: pip install safety bandit
-        
-      - name: Run safety check
-        run: safety check || true
-        
-      - name: Run bandit
-        run: bandit -r src/ -f json || true
-
-  test:
+  verify:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -66,16 +15,36 @@ jobs:
         python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          
+
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -e .
-          pip install pytest pytest-asyncio
-          
-      - name: Run tests
-        run: pytest tests/ -v
+          pip install pytest pytest-asyncio ruff pyright
+
+      - name: Run verify
+        run: make verify
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install safety bandit
+
+      - name: Run safety check
+        run: safety check || true
+
+      - name: Run bandit
+        run: bandit -r src/ -f json || true

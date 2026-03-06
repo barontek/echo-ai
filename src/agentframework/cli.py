@@ -2,19 +2,20 @@
 
 import asyncio
 import os
-import logging
 import sys
 from pathlib import Path
 
 from rich.console import Console
 
 from .agent import Agent, AgentConfig, create_agent
+from .chat_commands import normalize_command
 from .config import (
     find_config_path as shared_find_config_path,
     get_safety_config as shared_get_safety_config,
     get_tools as shared_get_tools,
     load_config as shared_load_config,
 )
+from .logging_utils import configure_logging
 
 console = Console(color_system="256")
 
@@ -39,6 +40,20 @@ def get_tools(config: dict, safety_config):
     return shared_get_tools(config, safety_config)
 
 
+def ensure_provider_credentials(provider: str, api_key: str | None) -> None:
+    """Validate required credentials for hosted providers."""
+    if provider == "anthropic" and not (api_key or os.getenv("ANTHROPIC_API_KEY")):
+        raise SystemExit(
+            "ANTHROPIC_API_KEY is required for provider='anthropic'. Set it or use provider='ollama'."
+        )
+    if provider == "openai" and not (api_key or os.getenv("OPENAI_API_KEY")):
+        raise SystemExit(
+            "OPENAI_API_KEY is required for provider='openai'. Set it or use provider='ollama'."
+        )
+
+
+
+
 async def interactive_mode(agent: Agent):
     """Run the agent in interactive mode."""
     console.print("[bold blue]Agent Framework[/bold blue]")
@@ -50,14 +65,14 @@ async def interactive_mode(agent: Agent):
 
             # Handle commands
             if user_input.strip().startswith("/"):
-                cmd = user_input.strip().split()[0].lower()
+                cmd = normalize_command(user_input.strip().split()[0].lower())
                 args = (
                     user_input.strip().split(maxsplit=1)[1]
                     if len(user_input.strip().split()) > 1
                     else ""
                 )
 
-                if cmd == "/exit" or cmd == "/quit":
+                if cmd == "/exit":
                     break
                 elif cmd == "/save":
                     result = agent.save_session(args if args else None)
@@ -70,7 +85,7 @@ async def interactive_mode(agent: Agent):
                     else:
                         console.print("[yellow]Usage: /load <session_id>[/yellow]")
                     continue
-                elif cmd == "/chats" or cmd == "/sessions":
+                elif cmd == "/chats":
                     sessions = agent.list_sessions()
                     if sessions:
                         console.print("[cyan]Saved sessions:[/cyan]")
@@ -173,10 +188,8 @@ def main():
         console.print("[red]Python 3.11+ is required to run Vibe AI.[/red]")
         raise SystemExit(1)
     debug_enabled = "--debug" in sys.argv
-    if debug_enabled:
-        logging.basicConfig(
-            level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-        )
+    debug_json = "--debug-json" in sys.argv
+    configure_logging(debug_enabled, debug_json)
 
     config = load_config()
     config_path = find_config_path()
@@ -207,13 +220,14 @@ def main():
 
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
 
+    ensure_provider_credentials(agent_config.provider, api_key)
     agent = create_agent(agent_config, api_key)
 
     console.print(
         f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]"
     )
 
-    args = [a for a in sys.argv[1:] if a != "--debug"]
+    args = [a for a in sys.argv[1:] if a not in {"--debug", "--debug-json"}]
     if args:
         task = " ".join(args)
         asyncio.run(run_single(agent, task))

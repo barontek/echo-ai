@@ -102,10 +102,38 @@ Chat mode:
 - Approval prompts for sensitive operations
 - Network access controls
 
+## Compatibility Policy
+
+- **Python**: 3.11+ is required at runtime.
+- **Providers**:
+  - `ollama` works without cloud API keys (requires local Ollama server).
+  - `anthropic` requires `ANTHROPIC_API_KEY`.
+  - `openai` requires `OPENAI_API_KEY`.
+- **Tooling**: `make verify` is the baseline quality gate for local and CI checks.
+
+## Troubleshooting
+
+- **Error: Python 3.11+ is required**
+  - Use `python3.11` (or newer) and recreate your environment.
+- **Provider key errors for Anthropic/OpenAI**
+  - Export the required key (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) or switch to `ollama`.
+- **Ollama connection failures**
+  - Ensure Ollama is running and `model.base_url` in `config.yaml` is correct.
+- **Need full diagnostics**
+  - Run with `--debug` for detailed logs, or `--debug-json` for machine-readable logs.
+
 ## Requirements
 
 - Python 3.11+
 - Ollama (for local models) or API keys for Anthropic/OpenAI
+
+## Changelog
+
+- See [`CHANGELOG.md`](./CHANGELOG.md) for release notes and the unreleased change log.
+
+## Benchmarks
+
+- Basic benchmark harness: `python scripts/benchmarks/basic_benchmark.py --iterations 50`
 
 ## Development
 

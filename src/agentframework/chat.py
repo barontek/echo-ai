@@ -60,6 +60,7 @@ def strip_ansi(text: str) -> str:
 # Enable command history with readline
 try:
     import readline
+    from rlcompleter import Completer
 
     histfile = Path.home() / ".cache" / "agentframework" / "history"
     histfile.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +69,39 @@ try:
     import atexit
 
     atexit.register(readline.write_history_file, str(histfile))
+
+    # Define slash commands for tab completion
+    SLASH_COMMANDS = [
+        "/exit",
+        "/quit",
+        "/new",
+        "/save",
+        "/load",
+        "/chats",
+        "/undo",
+        "/redo",
+        "/clear",
+        "/help",
+        "/models",
+        "/model",
+        "/temperature",
+        "/context",
+        "/tokens",
+    ]
+
+    class CommandCompleter(Completer):
+        def complete(self, text, state):
+            if not text.startswith("/"):
+                return None
+            matches = [cmd for cmd in SLASH_COMMANDS if cmd.startswith(text)]
+            if matches:
+                return matches[state] if state < len(matches) else None
+            return None
+
+    readline.set_completer(CommandCompleter().complete)
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer_delims("")
+
 except ImportError:
     pass  # readline not available on all platforms
 

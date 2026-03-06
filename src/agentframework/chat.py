@@ -9,9 +9,6 @@ from pathlib import Path
 
 import aiohttp
 import yaml
-from prompt_toolkit import PromptSession
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 from rich.prompt import Prompt
 
@@ -79,12 +76,11 @@ SLASH_COMMANDS = [
     "/tokens",
 ]
 
-# Create prompt_toolkit session with autocomplete
-command_completer = WordCompleter(SLASH_COMMANDS)
-prompt_session = PromptSession(
-    auto_suggest=AutoSuggestFromHistory(),
-    completer=command_completer,
-)
+
+# Fallback to simple input if prompt_toolkit fails
+def get_input(prompt_text: str = "\n> ") -> str:
+    """Get user input."""
+    return input(prompt_text)
 
 
 def load_config(path: str | None = None) -> dict:
@@ -234,7 +230,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 
     while True:
         try:
-            user_input = prompt_session.prompt("\n> ")
+            user_input = get_input("\n> ")
 
             if not user_input.strip():
                 continue

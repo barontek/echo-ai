@@ -8,7 +8,7 @@ if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment..."
     python3 -m venv "$VENV_DIR"
     source "$VENV_DIR/bin/activate"
-    pip install -e . anthropic openai httpx pyyaml rich >/dev/null 2>&1
+    pip install -e . anthropic openai httpx pyyaml rich prompt-toolkit >/dev/null 2>&1
 else
     source "$VENV_DIR/bin/activate"
 fi

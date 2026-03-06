@@ -100,6 +100,8 @@ class WebFetchTool(Tool):
             return ToolResult(error="Request timed out")
         except httpx.HTTPStatusError as e:
             return ToolResult(error=f"HTTP error: {e.response.status_code}")
+        except httpx.RequestError as e:
+            return ToolResult(error=f"Request failed: {e}")
         except Exception as e:
             return ToolResult(error=str(e))
 
@@ -190,7 +192,7 @@ class WebSearchTool(Tool):
 
                             # Clean up whitespace
                             content = " ".join(text.split())[:2000]
-                    except Exception:
+                    except (httpx.RequestError, Exception):
                         content = r.get("body", "")[:500]
 
                     formatted.append(f"- {title}: {url}\n  {content}")

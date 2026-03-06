@@ -528,9 +528,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                 parts = []
                 for name, args in tool_usages:
                     if args:
-                        args_str = ", ".join(
-                            f"{k}={repr(v)[:30]}" for k, v in args.items()
-                        )
+                        args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
                         parts.append(f"{name}({args_str})")
                     else:
                         parts.append(name)
@@ -545,7 +543,9 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 def main():
     debug_enabled = "--debug" in sys.argv
     if debug_enabled:
-        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+        )
 
     config = load_config()
     config_path = find_config_path()
@@ -566,7 +566,9 @@ def main():
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     agent = create_agent(agent_config, api_key)
 
-    console.print(f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]")
+    console.print(
+        f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]"
+    )
 
     # Load sub-agents from config
     sub_agents_config = config.get("agent", {}).get("sub_agents", {})

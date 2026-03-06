@@ -164,7 +164,7 @@ class Agent:
                 has_thinking = True
 
             tool_messages, updated_messages = await self._execute_tool_calls(
-                response.tool_calls, current_messages
+                response.tool_calls, current_messages, request_id=request_id, iteration=iteration
             )
             current_messages = updated_messages
 
@@ -212,7 +212,7 @@ class Agent:
                 has_thinking = True
 
             tool_messages, updated_messages = await self._execute_tool_calls(
-                response.tool_calls, current_messages
+                response.tool_calls, current_messages, request_id=request_id, iteration=iteration
             )
             current_messages = updated_messages
 
@@ -227,6 +227,8 @@ class Agent:
         self,
         tool_calls: list[LLMToolCall],
         current_messages: None = None,
+        request_id: str | None = None,
+        iteration: int | None = None,
     ) -> list[Message]: ...
 
     @overload
@@ -234,12 +236,16 @@ class Agent:
         self,
         tool_calls: list[LLMToolCall],
         current_messages: list[Message],
+        request_id: str | None = None,
+        iteration: int | None = None,
     ) -> tuple[list[Message], list[Message]]: ...
 
     async def _execute_tool_calls(
         self,
         tool_calls: list[LLMToolCall],
         current_messages: list[Message] | None = None,
+        request_id: str | None = None,
+        iteration: int | None = None,
     ) -> list[Message] | tuple[list[Message], list[Message]]:
         """Execute tool calls and return (tool_messages, updated_messages)."""
         if current_messages is None:
@@ -257,7 +263,30 @@ class Agent:
 
         if timings:
             total_latency = sum(timings.values())
-            logger.debug("tool_execution", extra={"timings": timings, "total_latency": total_latency})
+            logger.debug(
+                "tool_execution",
+                extra={
+                    "request_id": request_id,
+                    "iteration": iteration,
+                    "timings": timings,
+                    "total_latency": total_latency,
+                    "latency_ms": round(total_latency * 1000, 2),
+                },
+            )
+            for tool_call in tool_calls:
+                elapsed = timings.get(tool_call.id)
+                if elapsed is None:
+                    continue
+                logger.debug(
+                    "tool_call_latency",
+                    extra={
+                        "request_id": request_id,
+                        "iteration": iteration,
+                        "tool_name": tool_call.name,
+                        "tool_call_id": tool_call.id,
+                        "latency_ms": round(elapsed * 1000, 2),
+                    },
+                )
 
         new_messages = current_messages + tool_messages
 
@@ -296,7 +325,7 @@ class Agent:
             self.config.max_context_chars,
             summarize_fn=self._summarize_old_messages,
         )
-        logger.debug("context_window", extra={"before": before_count, "after": len(filtered_messages), "max_messages": self.config.max_context_messages, "max_chars": self.config.max_context_chars})
+        logger.debug("context_window", extra={"context_before": before_count, "context_after": len(filtered_messages), "max_messages": self.config.max_context_messages, "max_chars": self.config.max_context_chars})
 
         return format_messages_for_llm(
             filtered_messages,

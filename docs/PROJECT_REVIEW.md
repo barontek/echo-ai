@@ -1,192 +1,144 @@
-# Vibe AI Project Review (March 2026)
+# Vibe AI Project Review (Re-evaluation)
 
 ## Executive Summary
 
-Vibe AI has a clean, understandable core and a practical feature set (multi-provider LLM support, a useful tool suite, session persistence, and safety controls). The project is in a good prototype-to-early-product state.
+Vibe AI is in a healthier state than the previous review: several high-priority quality recommendations have already been implemented, including shared config bootstrap logic, safer defaults, a unified local verification command, and cleaner lint/type/test baselines.
 
-The biggest improvement opportunities are:
+Current local verification snapshot:
 
-1. **Reliability of test execution** (async test setup and CI reproducibility).
-2. **Config consistency and secure defaults** (approval behavior and default provider alignment).
-3. **Agent/runtime UX correctness** (streaming output duplication and error semantics).
-4. **Maintainability** (large orchestration module and weak observability around failures).
+- **Tests:** `134 passed` via `pytest tests/ -q`
+- **Lint:** clean via `ruff check src/ tests/`
+- **Types:** clean via `pyright src/`
 
----
-
-## Strengths
-
-- **Good modular shape**: providers, tools, safety, session, and chat are separated into focused modules.
-- **Safety design exists from day one**: command filtering, blocked paths/extensions, approvals, and network allowlists are all present.
-- **Reasonable context management strategy**: sliding window + optional summarization helps keep long chats viable.
-- **Pragmatic feature coverage**: includes file operations, shell, git, web, memory, and notes; enough to solve many real tasks.
+Overall assessment: **strong early-product CLI agent**, with the next improvements concentrated in **operational hardening**, **CI simplification**, and **continued modularization of large runtime/UI files**.
 
 ---
 
-## Key Improvement Areas (Prioritized)
+## What Improved Since the Last Review
 
-## P0 — Reliability & Correctness
+1. **Config/bootstrap duplication was reduced**
+   - CLI and chat now route through shared config helpers for path resolution, loading, safety config, and tool bootstrap.
 
-### 1) Async tests are not reliably runnable in baseline environments
+2. **Secure defaults were corrected**
+   - Approval defaults now preserve `bash` and `write_file` protection when keys are omitted.
 
-**What I found**
-- The test suite uses `@pytest.mark.asyncio` heavily.
-- Pytest marker registration is now present, but async test execution still depends on `pytest-asyncio` being installed in every environment.
-- Running `pytest -q` in this environment still produced widespread async execution failures because `pytest-asyncio` is unavailable.
+3. **Developer quality workflow improved**
+   - A one-shot `make verify` target now runs test + lint + typecheck together.
 
-**Why this matters**
-- CI or contributor environments that do not install dev extras exactly right will show noisy failures.
-- This creates false negatives and slows development.
+4. **Baseline quality signal is currently clean**
+   - Tests/lint/types all pass in local evaluation.
 
-**Recommended action**
-- Ensure CI and contributor setup always install `pytest-asyncio` (or include a fail-fast check in test bootstrap).
-- Optionally add a tiny `tests/conftest.py` smoke check that fails fast with a clear message if `pytest-asyncio` is missing.
-- Add a simple CI workflow to run tests on Python 3.11 and 3.12.
+5. **Some UX and diagnostics were improved**
+   - Runtime guardrails for Python version were added.
+   - Tool-execution logs include request/iteration context.
 
 ---
 
-### 2) Streaming responses can be duplicated in interactive chat
+## Current Strengths
 
-**What I found**
-- `interactive_mode()` previously streamed chunks and then printed the full response again, duplicating output (fixed in this patch).
-
-**Why this matters**
-- Users may see duplicated assistant output, degrading UX quality.
-
-**Recommended action**
-- Keep the current behavior that only streams chunks and emits a trailing newline.
+- **Good feature coverage:** multi-provider support, useful built-in tools, sessions, safety controls.
+- **Reasonable architecture direction:** conversation/tool/session runtimes are separated from provider/tool implementations.
+- **Testing discipline is solid for current size:** broad suite with passing baseline and meaningful integration coverage.
+- **Practical CLI + chat usability:** command support and interactive ergonomics are good for day-to-day use.
 
 ---
 
-### 3) Tool error messaging collapses many failures into “denied by user”
+## Top Improvement Opportunities (Now)
 
-**What I found**
-- Tool exceptions and validation failures are returned as: `FAILED - Operation was denied by user: ...` even when the issue is parse/runtime/validation related.
+## P0 — High-Impact, Low-Risk
 
-**Why this matters**
-- Misleading error semantics hurt debugging and model behavior (the model may infer policy denial when it was actually malformed args).
+### 1) Consolidate CI workflows and ensure parity with local `make verify`
 
-**Recommended action**
-- Introduce structured error categories:
-  - `validation_error`
-  - `policy_denied`
-  - `execution_error`
-  - `tool_not_found`
-- Keep user-friendly text, but preserve machine-readable category for agent loop and logs.
+There are currently **two test workflows** (`ci.yml` and `tests.yml`) with overlapping responsibilities. This can cause duplicate runs, drift, and slower feedback.
+
+**Recommendation**
+- Merge to a single canonical CI workflow.
+- Make CI run the same checks as local `make verify` (including `ruff check src/ tests/`, not only `src/`).
+- Keep test matrix (3.11/3.12 at minimum; 3.13 optional) in one place.
 
 ---
 
-## P1 — Security & Configuration
+### 2) Reduce the size and responsibility load of `chat.py`
 
-### 4) Security defaults are weakened when config keys are absent
+`chat.py` remains the largest module and still combines input handling, command routing, rendering, URL metadata retrieval, model switching, and bootstrap concerns.
 
-**What I found**
-- `SafetyConfig` default requires approvals for `bash` and `write_file`.
-- CLI’s `get_safety_config()` currently defaults `require_approval_for` to `[]` when key is absent.
-
-**Why this matters**
-- Silent downgrade of safety posture if config is incomplete/minimal.
-
-**Recommended action**
-- Preserve secure default by using `safety.get("require_approval_for", ["bash", "write_file"])`.
-- Add tests around missing/partial `safety` config.
-
----
-
-### 5) Default provider mismatch can surprise first-time users
-
-**What I found**
-- README and `config.yaml` emphasize `ollama` as default.
-- CLI fallback default provider is `anthropic` if config is missing.
-
-**Why this matters**
-- Startup behavior differs from documentation expectations and can fail without API keys.
-
-**Recommended action**
-- Align CLI fallback provider with documented default (`ollama`).
-- Add startup diagnostics explaining exactly which provider/model/config path were loaded.
-
----
-
-## P2 — Maintainability & Productization
-
-### 6) `agent.py` is carrying too many responsibilities
-
-**What I found**
-- `agent.py` handles message models, JSON sanitization, context trimming/summarization, tool execution orchestration, session interactions, undo/redo glue, and formatting.
-
-**Why this matters**
-- Higher cognitive load and greater regression risk when changing behavior.
-
-**Recommended action**
+**Recommendation**
 - Split into focused modules:
-  - `conversation.py` (message shaping, context trimming)
-  - `tool_runtime.py` (validation/execution/error categorization)
-  - `session_runtime.py` (persistence + undo/redo integration)
-- Keep `Agent` as thin orchestration façade.
+  - `chat_commands.py` (dispatch + command semantics)
+  - `chat_render.py` (ANSI/link formatting + output helpers)
+  - `chat_runtime.py` (session loop + stream handling)
+- Keep `chat.py` as composition/entrypoint glue.
 
 ---
 
-### 7) Observability/logging is minimal for runtime analysis
+### 3) Normalize command vocabulary and source of truth
 
-**What I found**
-- Logging exists but is sparse for key lifecycle events (iteration number, token estimates, tool timing, truncation occurrences).
+`/chats` vs `/sessions` aliasing is now better, but command definitions/help/autocomplete are still mostly hand-maintained in multiple places.
 
-**Why this matters**
-- Hard to debug model loops, context blowups, or slow tools.
-
-**Recommended action**
-- Add structured debug logs:
-  - request id/session id
-  - iteration count
-  - total tool latency and per-tool latency
-  - context trim/summarize events
-- Provide a `--debug` CLI mode to surface these.
+**Recommendation**
+- Create a single command registry data structure.
+- Generate help text and autocomplete options from that registry.
+- Keep aliases explicit in one place.
 
 ---
 
-### 8) Test coverage is broad but could be made more confidence-weighted
+## P1 — Reliability and Observability
 
-**What I found**
-- Many tool and safety tests exist, which is excellent.
-- There are fewer clear end-to-end behavior tests for full agent loops with mocked providers.
+### 4) Expand confidence-weighted integration scenarios
 
-**Why this matters**
-- Integration regressions can pass unit tests.
+Coverage is good, but high-leverage scenarios can still be strengthened.
 
-**Recommended action**
-- Add integration tests for:
-  - multi-step tool use then final answer
-  - context summarization path under constrained token budget
-  - session save/load + undo/redo flows
-  - delegate tool behavior and tool constraints per sub-agent
+**Recommendation**
+Add tests for:
+1. safety denial + retry/recovery behavior in the loop,
+2. failure-category propagation (`validation_error`, `execution_error`, etc.),
+3. longer conversation context trimming/summarization correctness,
+4. provider fallback or clear error surface when credentials are missing.
 
 ---
 
-## Suggested 30/60/90-Day Improvement Plan
+### 5) Add structured debug logging mode
 
-### 0–30 days (stability first)
-- Fix async pytest configuration and CI baseline.
-- Fix streaming duplicate output behavior.
-- Align provider and approval defaults.
-- Add startup diagnostics for config source/provider/model.
+Current logging improvements are useful, but not yet uniform/structured enough for easy machine analysis.
 
-### 31–60 days (quality hardening)
-- Introduce structured tool error categories.
-- Expand integration tests for agent loop and summarization.
-- Add structured debug logging and `--debug` flag.
-
-### 61–90 days (architecture & growth)
-- Refactor `agent.py` into smaller runtime modules.
-- Add benchmark scripts (latency, token usage, tool throughput).
-- Consider plugin registration mechanism for tools/providers to simplify extension.
+**Recommendation**
+- Add optional JSON log mode for `--debug`.
+- Standardize fields: `request_id`, `iteration`, `tool_name`, `latency_ms`, `context_before/after`.
 
 ---
 
-## Concrete Quick Wins (Low Effort, High Value)
+## P2 — Product Readiness
 
-1. Add pytest asyncio config and marker registration.
-2. Remove duplicate `print(response)` in interactive streaming path.
-3. Preserve secure approval defaults when config omits `require_approval_for`.
-4. Align CLI provider fallback with documented `ollama` default.
-5. Add one integration test that covers: user -> tool call -> tool result -> assistant final response.
+### 6) Improve release/documentation hygiene
 
+Project status is now documented, but release process and compatibility policy are still implicit.
+
+**Recommendation**
+- Add a lightweight changelog discipline.
+- Document compatibility policy (Python/provider/tooling expectations).
+- Add a short troubleshooting section for common startup/provider/config errors.
+
+---
+
+## Suggested 30/60/90 Plan (Updated)
+
+### 0–30 days
+- Collapse duplicate CI workflows into one.
+- Align CI checks with `make verify` exactly.
+- Add command registry abstraction and generated help/autocomplete.
+
+### 31–60 days
+- Refactor `chat.py` into smaller modules.
+- Add integration tests for safety denials and structured tool-failure paths.
+- Add optional JSON debug logging mode.
+
+### 61–90 days
+- Expand benchmark/diagnostic scripts (latency + token behavior).
+- Formalize release notes/changelog process.
+- Document compatibility/support expectations clearly.
+
+---
+
+## Bottom Line
+
+The project is clearly progressing in the right direction and has already addressed several previously identified priority gaps. The next biggest wins are now **CI simplification**, **chat-module modularization**, and **observability + reliability hardening** rather than broad new features.

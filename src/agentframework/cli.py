@@ -2,129 +2,62 @@
 
 import asyncio
 import os
-import logging
 import sys
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 
 from .agent import Agent, AgentConfig, create_agent
-from .safety import SafetyConfig
-from .tools.bash import BashTool
-from .tools.file import ReadFileTool, WriteFileTool, ListDirTool
-from .tools.search import GlobTool, GrepTool
-from .tools.web import WebFetchTool, WebSearchTool
-from .tools.git import GitTool
+from .chat_commands import normalize_command
+from .config import (
+    find_config_path as shared_find_config_path,
+    get_safety_config as shared_get_safety_config,
+    get_tools as shared_get_tools,
+    load_config as shared_load_config,
+)
+from .logging_utils import configure_logging
 
 console = Console(color_system="256")
 
 
 def find_config_path(path: str | None = None) -> Path | None:
-    if path is not None:
-        config_path = Path(path)
-        return config_path if config_path.exists() else None
-
-    script_dir = Path(__file__).parent.parent.parent
-    search_paths = [
-        Path.cwd() / "config.yaml",
-        script_dir / "config.yaml",
-        Path.home() / "vibe-ai" / "config.yaml",
-    ]
-    for config_path in search_paths:
-        if config_path.exists():
-            return config_path
-    return None
+    """Proxy to shared config path lookup."""
+    return shared_find_config_path(path)
 
 
 def load_config(path: str | None = None) -> dict:
-    config_path = find_config_path(path)
-    if config_path:
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
+    """Proxy to shared YAML config loader."""
+    return shared_load_config(path)
 
 
-def get_safety_config(config: dict) -> SafetyConfig:
-    """Create safety config from YAML config."""
-    safety = config.get("safety", {})
-    tools_config = config.get("tools", {})
-
-    def approval_callback(tool: str, details: str) -> bool:
-        """Ask user for approval."""
-        console.print(f"[yellow]Approval required for {tool}:[/yellow] {details}")
-        response = console.input("[bold]Allow? (y/N): [/bold]")
-        return response.lower() in ("y", "yes")
-
-    return SafetyConfig(
-        workspace=safety.get("workspace", "."),
-        allowed_commands=tools_config.get("bash", {}).get("allowed_commands", ["*"]),
-        blocked_commands=safety.get("blocked_commands", []),
-        allow_network=safety.get("allow_network", False),
-        allowed_domains=safety.get("allowed_domains", []),
-        max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
-        max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", ["bash", "write_file"]),
-        approval_callback=approval_callback,
-    )
+def get_safety_config(config: dict):
+    """Proxy to shared safety configuration builder."""
+    return shared_get_safety_config(config)
 
 
-def get_tools(config: dict, safety_config: SafetyConfig) -> list:
-    """Get enabled tools based on config."""
-    tools = []
-    enabled = config.get("tools", {}).get("enabled", [])
+def get_tools(config: dict, safety_config):
+    """Proxy to shared tool bootstrap."""
+    return shared_get_tools(config, safety_config)
 
-    if "bash" in enabled:
-        bash_config = config.get("tools", {}).get("bash", {})
-        tools.append(
-            BashTool(
-                timeout=bash_config.get("timeout", 60),
-                allowed_commands=bash_config.get("allowed_commands"),
-                safety_config=safety_config,
-            )
+
+def ensure_provider_credentials(provider: str, api_key: str | None) -> None:
+    """Validate required credentials for hosted providers."""
+    if provider == "anthropic" and not (api_key or os.getenv("ANTHROPIC_API_KEY")):
+        raise SystemExit(
+            "ANTHROPIC_API_KEY is required for provider='anthropic'. Set it or use provider='ollama'."
+        )
+    if provider == "openai" and not (api_key or os.getenv("OPENAI_API_KEY")):
+        raise SystemExit(
+            "OPENAI_API_KEY is required for provider='openai'. Set it or use provider='ollama'."
         )
 
-    if "read_file" in enabled:
-        tools.append(ReadFileTool(safety_config=safety_config))
 
-    if "write_file" in enabled:
-        tools.append(WriteFileTool(safety_config=safety_config))
-
-    if "list_dir" in enabled:
-        tools.append(ListDirTool(safety_config=safety_config))
-
-    if "glob" in enabled:
-        tools.append(GlobTool(safety_config=safety_config))
-
-    if "grep" in enabled:
-        tools.append(GrepTool(safety_config=safety_config))
-
-    if "web_fetch" in enabled:
-        tools.append(WebFetchTool(safety_config=safety_config))
-
-    if "web_search" in enabled:
-        tools.append(WebSearchTool(safety_config=safety_config))
-
-    if "git" in enabled:
-        tools.append(GitTool(safety_config=safety_config))
-
-    if "memory" in enabled:
-        from .tools.memory import MemoryTool
-
-        tools.append(MemoryTool())
-
-    if "notes" in enabled:
-        from .tools.notes import PersonalNotesTool
-
-        tools.append(PersonalNotesTool())
-
-    return tools
 
 
 async def interactive_mode(agent: Agent):
     """Run the agent in interactive mode."""
     console.print("[bold blue]Agent Framework[/bold blue]")
-    console.print("[dim]Commands: /save, /load, /sessions, /undo, /redo, /exit[/dim]\n")
+    console.print("[dim]Commands: /save, /load, /chats, /undo, /redo, /exit[/dim]\n")
 
     while True:
         try:
@@ -132,14 +65,14 @@ async def interactive_mode(agent: Agent):
 
             # Handle commands
             if user_input.strip().startswith("/"):
-                cmd = user_input.strip().split()[0].lower()
+                cmd = normalize_command(user_input.strip().split()[0].lower())
                 args = (
                     user_input.strip().split(maxsplit=1)[1]
                     if len(user_input.strip().split()) > 1
                     else ""
                 )
 
-                if cmd == "/exit" or cmd == "/quit":
+                if cmd == "/exit":
                     break
                 elif cmd == "/save":
                     result = agent.save_session(args if args else None)
@@ -152,7 +85,7 @@ async def interactive_mode(agent: Agent):
                     else:
                         console.print("[yellow]Usage: /load <session_id>[/yellow]")
                     continue
-                elif cmd == "/sessions":
+                elif cmd == "/chats":
                     sessions = agent.list_sessions()
                     if sessions:
                         console.print("[cyan]Saved sessions:[/cyan]")
@@ -173,7 +106,7 @@ async def interactive_mode(agent: Agent):
                     console.print("[cyan]Commands:[/cyan]")
                     console.print("  /save [name] - Save current session")
                     console.print("  /load <name> - Load a session")
-                    console.print("  /sessions    - List saved sessions")
+                    console.print("  /chats       - List saved sessions")
                     console.print("  /undo        - Undo last file change")
                     console.print("  /redo        - Redo last undone change")
                     console.print("  /exit        - Exit")
@@ -251,11 +184,12 @@ async def run_single(agent: Agent, task: str):
 
 def main():
     """Main entry point."""
+    if sys.version_info < (3, 11):
+        console.print("[red]Python 3.11+ is required to run Vibe AI.[/red]")
+        raise SystemExit(1)
     debug_enabled = "--debug" in sys.argv
-    if debug_enabled:
-        logging.basicConfig(
-            level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-        )
+    debug_json = "--debug-json" in sys.argv
+    configure_logging(debug_enabled, debug_json)
 
     config = load_config()
     config_path = find_config_path()
@@ -286,13 +220,14 @@ def main():
 
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
 
+    ensure_provider_credentials(agent_config.provider, api_key)
     agent = create_agent(agent_config, api_key)
 
     console.print(
         f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]"
     )
 
-    args = [a for a in sys.argv[1:] if a != "--debug"]
+    args = [a for a in sys.argv[1:] if a not in {"--debug", "--debug-json"}]
     if args:
         task = " ".join(args)
         asyncio.run(run_single(agent, task))

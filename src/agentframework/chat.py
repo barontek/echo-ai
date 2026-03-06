@@ -2,211 +2,30 @@
 
 import asyncio
 import os
-import logging
-import re
 import sys
 from pathlib import Path
 
-import aiohttp
-import yaml
-from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
-from rich.prompt import Prompt
 
 from .agent import Agent, AgentConfig, create_agent
+from .chat_commands import normalize_command
+from .chat_render import print_help, print_welcome, strip_ansi
+from .chat_runtime import (
+    current_query_tool_messages,
+    extract_urls,
+    fetch_titles,
+    get_input,
+)
+from .config import (
+    find_config_path as shared_find_config_path,
+    get_safety_config as shared_get_safety_config,
+    get_tools as shared_get_tools,
+    load_config as shared_load_config,
+)
+from .logging_utils import configure_logging
 from .providers import get_provider
-from .safety import SafetyConfig, SecurityValidator
-from .tools import TOOL_REGISTRY, TOOL_CONFIG_KEYS
 
 console = Console(color_system="256")
-
-
-def find_config_path(path: str | None = None) -> Path | None:
-    if path is not None:
-        config_path = Path(path)
-        return config_path if config_path.exists() else None
-
-    script_dir = Path(__file__).parent.parent.parent
-    search_paths = [
-        Path.cwd() / "config.yaml",
-        script_dir / "config.yaml",
-        Path.home() / "vibe-ai" / "config.yaml",
-    ]
-    for config_path in search_paths:
-        if config_path.exists():
-            return config_path
-    return None
-
-
-def make_clickable_links(text: str) -> str:
-    """Convert markdown links [text](url) to clickable terminal links."""
-
-    def replace_link(match):
-        name = match.group(1)
-        url = match.group(2)
-        return f"\033]8;;{url}\007{name}\033]8;;\007"
-
-    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, text)
-
-    text = re.sub(r"\[(https?://[^]]+)\]\((https?://[^)]+)\)", replace_link, text)
-
-    return text
-
-
-def strip_ansi(text: str) -> str:
-    """Remove ANSI escape codes from text."""
-    return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
-
-
-# Slash commands for autocomplete
-SLASH_COMMANDS = [
-    "/exit",
-    "/quit",
-    "/new",
-    "/save",
-    "/load",
-    "/chats",
-    "/undo",
-    "/redo",
-    "/clear",
-    "/help",
-    "/models",
-    "/model",
-    "/temperature",
-    "/context",
-    "/tokens",
-]
-
-# Create prompt_toolkit session with autocomplete
-command_completer = WordCompleter(
-    SLASH_COMMANDS,
-    ignore_case=True,
-    pattern=re.compile(r"[\w/]+"),
-)
-prompt_session = PromptSession(completer=command_completer)
-
-
-async def get_input(prompt_text: str = "\n> ") -> str:
-    """Get user input with autocomplete support (async)."""
-    try:
-        return await prompt_session.prompt_async(prompt_text)
-    except Exception:
-        return await asyncio.to_thread(input, prompt_text)
-
-
-def load_config(path: str | None = None) -> dict:
-    config_path = find_config_path(path)
-    if config_path:
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
-
-
-def get_safety_config(config: dict) -> SafetyConfig:
-    safety = config.get("safety", {})
-    tools_config = config.get("tools", {})
-
-    validator = SecurityValidator(
-        SafetyConfig(
-            workspace=safety.get("workspace", "."),
-        )
-    )
-
-    def approval_callback(tool: str, details: str) -> bool:
-        warning_msg = ""
-
-        if tool == "bash":
-            destructive = validator.check_destructive_keywords(details)
-            if destructive:
-                warning_msg = f" [red]⚠️ DESTRUCTIVE keywords detected: {', '.join(destructive)}[/red]"
-
-        if tool == "write_file":
-            try:
-                from pathlib import Path
-
-                path = details.replace("write: ", "")
-                file_path = Path(path)
-                if file_path.exists():
-                    warning_msg = " [red]⚠️ File exists - will overwrite![/red]"
-            except Exception:
-                pass
-
-        if tool == "read_file":
-            try:
-                from pathlib import Path
-
-                path = details.replace("read: ", "")
-                file_path = Path(path)
-                if file_path.exists():
-                    size = file_path.stat().st_size
-                    threshold = safety.get("read_size_threshold", 102400)
-                    if size > threshold:
-                        warning_msg = (
-                            f" [yellow]⚠️ Large file ({size // 1024} KB)[/yellow]"
-                        )
-            except Exception:
-                pass
-
-        console.print(
-            f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}"
-        )
-        response = Prompt.ask("[bold]Allow? (y/N)[/bold]", default="n")
-        return response.lower() in ("y", "yes")
-
-    return SafetyConfig(
-        workspace=safety.get("workspace", "."),
-        allowed_commands=tools_config.get("bash", {}).get("allowed_commands", ["*"]),
-        blocked_commands=safety.get("blocked_commands", []),
-        allow_network=safety.get("allow_network", False),
-        allowed_domains=safety.get("allowed_domains", []),
-        max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
-        max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", ["bash", "write_file"]),
-        approval_callback=approval_callback,
-        audit_log_path=safety.get("audit_log_path"),
-        read_requires_approval=safety.get("read_requires_approval", False),
-        read_size_threshold=safety.get("read_size_threshold", 102400),
-    )
-
-
-def get_tools(config: dict, safety_config: SafetyConfig) -> list:
-    tools = []
-    enabled = config.get("tools", {}).get("enabled", [])
-
-    for tool_name in enabled:
-        tool_class = TOOL_REGISTRY.get(tool_name)
-        if tool_class is None:
-            continue
-
-        tool_config = config.get("tools", {}).get(tool_name, {})
-        config_defaults = TOOL_CONFIG_KEYS.get(tool_name, {})
-
-        kwargs = {}
-        for key, default_value in config_defaults.items():
-            if key in tool_config:
-                kwargs[key] = tool_config[key]
-            elif default_value is not None:
-                kwargs[key] = default_value
-
-        if "safety_config" in config_defaults and "safety_config" not in kwargs:
-            kwargs["safety_config"] = safety_config
-
-        tools.append(tool_class(**kwargs))
-
-    return tools
-
-
-def print_welcome():
-    console.print("\n[bold blue]╭───────────────────────────────────────╮[/bold blue]")
-    console.print(
-        "[bold blue]│[/bold blue]     [bold]Agent Framework[/bold]              [bold blue]│[/bold blue]"
-    )
-    console.print(
-        "[bold blue]│[/bold blue]     Type 'help' for commands       [bold blue]│[/bold blue]"
-    )
-    console.print("[bold blue]╰───────────────────────────────────────╯[/bold blue]\n")
-
 
 RECOMMENDED_MODELS = [
     ("qwen3:4b-instruct", "Best for following instructions and tool calling (default)"),
@@ -218,20 +37,36 @@ RECOMMENDED_MODELS = [
 ]
 
 
-def print_help():
-    console.print("\n[bold]Commands:[/bold]")
-    console.print("  [bold]/new[/bold]     - Start a new chat")
-    console.print("  [bold]/save <name>[/bold] - Save current chat")
-    console.print("  [bold]/load <name>[/bold] - Load a saved chat")
-    console.print("  [bold]/chats[/bold]     - List saved chats")
-    console.print("  [bold]/models[/bold]    - List recommended local models")
-    console.print("  [bold]/model <name>[/bold] - Switch to a different model")
-    console.print("  [bold]/temperature <val>[/bold] - Set temperature (0.0-2.0)")
-    console.print("  [bold]/undo[/bold]      - Undo last file change")
-    console.print("  [bold]/redo[/bold]      - Redo last undone change")
-    console.print("  [bold]/clear[/bold]     - Clear screen")
-    console.print("  [bold]/help[/bold]      - Show this help")
-    console.print("  [bold]/exit[/bold]      - Exit\n")
+def find_config_path(path: str | None = None) -> Path | None:
+    """Proxy to shared config path lookup."""
+    return shared_find_config_path(path)
+
+
+def load_config(path: str | None = None) -> dict:
+    """Proxy to shared YAML config loader."""
+    return shared_load_config(path)
+
+
+def get_safety_config(config: dict):
+    """Proxy to shared safety configuration builder."""
+    return shared_get_safety_config(config)
+
+
+def get_tools(config: dict, safety_config):
+    """Proxy to shared tool bootstrap."""
+    return shared_get_tools(config, safety_config)
+
+
+def ensure_provider_credentials(provider: str, api_key: str | None) -> None:
+    """Validate required credentials for hosted providers."""
+    if provider == "anthropic" and not (api_key or os.getenv("ANTHROPIC_API_KEY")):
+        raise SystemExit(
+            "ANTHROPIC_API_KEY is required for provider='anthropic'. Set it or use provider='ollama'."
+        )
+    if provider == "openai" and not (api_key or os.getenv("OPENAI_API_KEY")):
+        raise SystemExit(
+            "OPENAI_API_KEY is required for provider='openai'. Set it or use provider='ollama'."
+        )
 
 
 async def chat_session(agent: Agent, session_name: str | None = None):
@@ -243,155 +78,108 @@ async def chat_session(agent: Agent, session_name: str | None = None):
     while True:
         try:
             user_input = await get_input("\n> ")
-
             if not user_input.strip():
                 continue
 
-            # Handle commands
             if user_input.strip().startswith("/"):
-                cmd = user_input.strip().split()[0].lower()
+                cmd = normalize_command(user_input.strip().split()[0].lower())
                 args = (
                     user_input.strip().split(maxsplit=1)[1]
                     if len(user_input.strip().split()) > 1
                     else ""
                 )
 
-                # Handle commands with structural pattern matching
                 match cmd, args:
-                    case "/exit" | "/quit", _:
+                    case "/exit", _:
                         agent.save_session()
                         console.print("[dim]Chat saved. Goodbye![/dim]")
                         return
-
                     case "/new", _:
                         agent.save_session()
                         agent.messages.clear()
                         console.clear()
-                        print_welcome()
+                        print_welcome(console)
                         console.print("[dim]Started new chat[/dim]\n")
                         continue
-
                     case "/save", name:
-                        name = name.strip() if name and name.strip() else None
-                        result = agent.save_session(name)
+                        result = agent.save_session(name.strip() if name and name.strip() else None)
                         console.print(f"[cyan]{result}[/cyan]")
                         continue
-
                     case "/load", name if name and name.strip():
                         agent.load_session(name.strip())
                         console.print(f"[dim]Loaded: {name.strip()}[/dim]\n")
                         continue
-
                     case "/load", _:
                         console.print("[yellow]Usage: /load <name>[/yellow]")
                         continue
-
                     case "/chats", _:
                         sessions = agent.list_sessions()
                         if sessions:
                             console.print("[cyan]Saved chats:[/cyan]")
-                            for s in sessions:
-                                console.print(f"  • {s}")
+                            for session in sessions:
+                                console.print(f"  • {session}")
                         else:
                             console.print("[dim]No saved chats[/dim]")
                         continue
-
                     case "/undo", _:
-                        result = agent.undo()
-                        console.print(f"[cyan]{result}[/cyan]")
+                        console.print(f"[cyan]{agent.undo()}[/cyan]")
                         continue
-
                     case "/redo", _:
-                        result = agent.redo()
-                        console.print(f"[cyan]{result}[/cyan]")
+                        console.print(f"[cyan]{agent.redo()}[/cyan]")
                         continue
-
                     case "/clear", _:
                         console.clear()
-                        print_welcome()
+                        print_welcome(console)
                         continue
-
                     case "/help", _:
-                        print_help()
+                        print_help(console)
                         continue
-
                     case "/models", _:
                         console.print("\n[bold]Recommended Models (4GB VRAM):[/bold]")
                         for model_name, description in RECOMMENDED_MODELS:
-                            console.print(
-                                f"  [cyan]{model_name}[/cyan] - {description}"
-                            )
+                            console.print(f"  [cyan]{model_name}[/cyan] - {description}")
                         console.print("\n[dim]Use /model <name> to switch[/dim]\n")
                         continue
-
                     case "/model", model_name if model_name and model_name.strip():
                         old_model = agent.config.model
-
                         try:
-                            provider_name = agent.config.provider
-                            base_url = agent.config.base_url
-
                             new_provider = get_provider(
-                                name=provider_name,
+                                name=agent.config.provider,
                                 model=model_name.strip(),
-                                base_url=base_url,
+                                base_url=agent.config.base_url,
                             )
-
                             agent.llm = new_provider
                             agent.config.model = model_name.strip()
-
-                            console.print(
-                                f"[green]Model successfully switched to {model_name.strip()}[/green]\n"
-                            )
+                            console.print(f"[green]Model successfully switched to {model_name.strip()}[/green]\n")
                         except Exception as e:
                             console.print(f"[red]Failed to switch model: {e}[/red]")
-                            console.print(
-                                f"[dim]Current model remains: {old_model}[/dim]\n"
-                            )
+                            console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
                         continue
-
                     case "/model", _:
                         console.print("[yellow]Usage: /model <model_name>[/yellow]")
-                        console.print(
-                            "[dim]Use /models to see available models[/dim]\n"
-                        )
+                        console.print("[dim]Use /models to see available models[/dim]\n")
                         continue
-
                     case "/temperature", value if value and value.strip():
                         try:
                             new_temp = float(value.strip())
                             if not 0.0 <= new_temp <= 2.0:
-                                raise ValueError(
-                                    "Temperature must be between 0.0 and 2.0"
-                                )
+                                raise ValueError("Temperature must be between 0.0 and 2.0")
                             agent.config.temperature = new_temp
-                            console.print(
-                                f"[green]Temperature set to {new_temp}[/green]\n"
-                            )
+                            console.print(f"[green]Temperature set to {new_temp}[/green]\n")
                         except ValueError as e:
                             console.print(f"[red]Invalid temperature: {e}[/red]")
-                            console.print(
-                                "[dim]Temperature must be between 0.0 and 2.0[/dim]\n"
-                            )
+                            console.print("[dim]Temperature must be between 0.0 and 2.0[/dim]\n")
                         continue
-
                     case "/temperature", _:
-                        console.print(
-                            f"[cyan]Current temperature: {agent.config.temperature}[/cyan]"
-                        )
-                        console.print(
-                            "[dim]Use /temperature <0.0-2.0> to change[/dim]\n"
-                        )
+                        console.print(f"[cyan]Current temperature: {agent.config.temperature}[/cyan]")
+                        console.print("[dim]Use /temperature <0.0-2.0> to change[/dim]\n")
                         continue
 
-            # Regular message - stream output with Rich
             console.print("[dim]Thinking...[/dim]", end="\r")
-
             in_thinking = False
 
             def on_chunk(chunk: str):
                 nonlocal in_thinking
-
                 if "__THINKING__" in chunk:
                     in_thinking = True
                     chunk = chunk.replace("__THINKING__", "")
@@ -403,9 +191,6 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     if not chunk:
                         return
 
-                # Use stdout directly for unbuffered streaming
-                import sys
-
                 if in_thinking:
                     sys.stdout.write("\033[90m" + chunk + "\033[0m")
                 else:
@@ -413,141 +198,31 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                 sys.stdout.flush()
 
             response = await agent.run_streaming(user_input, on_chunk=on_chunk)
-
-            import sys
-
             sys.stdout.write("\n")
 
-            # Extract and display clickable links from the response
             clean_response = strip_ansi(response)
+            web_tool_messages = current_query_tool_messages(
+                agent.messages, tool_names={"web_search", "web_fetch"}
+            )
 
-            # Only show sources if this query had web search/fetch tool calls
-            # Check tool messages between the last two user messages (current query)
-            has_web_tool = False
-            user_messages = [
-                i for i, m in enumerate(agent.messages) if m.role == "user"
-            ]
-
-            if len(user_messages) >= 2:
-                # Check messages between last two user messages
-                for msg in agent.messages[user_messages[-2] + 1 : user_messages[-1]]:
-                    if msg.role == "tool" and msg.tool_name in (
-                        "web_search",
-                        "web_fetch",
-                    ):
-                        has_web_tool = True
-                        break
-            elif len(user_messages) == 1:
-                # First query - check all tool messages
-                for msg in agent.messages:
-                    if msg.role == "tool" and msg.tool_name in (
-                        "web_search",
-                        "web_fetch",
-                    ):
-                        has_web_tool = True
-                        break
-
-            if has_web_tool:
-                # Find markdown links [text](url)
-                links = re.findall(r"\[([^\]]+)\]\(([^)]+)\)", clean_response)
-
-                # Extract URLs from tool results in current query
-                tool_urls = set()
-                user_messages = [
-                    i for i, m in enumerate(agent.messages) if m.role == "user"
-                ]
-
-                if len(user_messages) >= 2:
-                    for msg in agent.messages[
-                        user_messages[-2] + 1 : user_messages[-1]
-                    ]:
-                        if msg.role == "tool" and msg.tool_name in (
-                            "web_search",
-                            "web_fetch",
-                        ):
-                            found = re.findall(
-                                r'(https?://[^\s\)"\']+)', msg.content or ""
-                            )
-                            tool_urls.update(found)
-                elif len(user_messages) == 1:
-                    for msg in agent.messages:
-                        if msg.role == "tool" and msg.tool_name in (
-                            "web_search",
-                            "web_fetch",
-                        ):
-                            found = re.findall(
-                                r'(https?://[^\s\)"\']+)', msg.content or ""
-                            )
-                            tool_urls.update(found)
-
-                # Also extract plain URLs from AI response
-                url_only = re.findall(r"\((https?://[^)]+)\)", clean_response)
-
-                # Combine and deduplicate
-                all_urls = list(links)
-                seen_urls = set(pair[1] for pair in links)
-
-                for url in url_only:
-                    if url not in seen_urls:
-                        all_urls.append((url, url))
-                        seen_urls.add(url)
-
-                for url in tool_urls:
-                    if url not in seen_urls:
-                        name = url.split("/")[2] if len(url.split("/")) > 2 else url
-                        all_urls.append((name, url))
-                        seen_urls.add(url)
-
+            if web_tool_messages:
+                all_urls = extract_urls(clean_response, web_tool_messages)
                 if all_urls:
-                    # Fetch titles for URLs
-                    async def fetch_titles():
-                        titles = {}
-                        async with aiohttp.ClientSession(
-                            timeout=aiohttp.ClientTimeout(total=3)
-                        ) as session:
-                            for name, url in all_urls:
-                                try:
-                                    async with session.get(url, ssl=False) as resp:
-                                        if resp.status == 200:
-                                            html = await resp.text()
-                                            match = re.search(
-                                                r"<title[^>]*>([^<]+)</title>",
-                                                html,
-                                                re.IGNORECASE,
-                                            )
-                                            if match:
-                                                titles[url] = match.group(1).strip()[
-                                                    :60
-                                                ]
-                                except Exception:
-                                    pass
-                        return titles
-
-                    titles = await fetch_titles()
-
+                    titles = await fetch_titles(all_urls)
                     console.print("[dim]Sources:[/dim]")
                     for name, url in all_urls:
                         display_name = titles.get(url, name)
                         clickable = f"\033]8;;{url}\007{display_name}\033]8;;\007"
                         print(f"  {clickable}")
 
-            # Print which tools were used in this query only
-            tool_usages = []
-            user_messages = [
-                i for i, m in enumerate(agent.messages) if m.role == "user"
+            tool_messages = current_query_tool_messages(agent.messages)
+            tool_usages = [
+                (message.tool_name, message.tool_arguments)
+                for message in tool_messages
+                if message.tool_name
             ]
-
-            if len(user_messages) >= 2:
-                for msg in agent.messages[user_messages[-2] + 1 : user_messages[-1]]:
-                    if msg.role == "tool" and msg.tool_name:
-                        tool_usages.append((msg.tool_name, msg.tool_arguments))
-            elif len(user_messages) == 1:
-                for msg in agent.messages:
-                    if msg.role == "tool" and msg.tool_name:
-                        tool_usages.append((msg.tool_name, msg.tool_arguments))
-
             if tool_usages:
-                parts = []
+                parts: list[str] = []
                 for name, args in tool_usages:
                     if args:
                         args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
@@ -563,11 +238,13 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 
 
 def main():
+    if sys.version_info < (3, 11):
+        console.print("[red]Python 3.11+ is required to run Vibe AI.[/red]")
+        raise SystemExit(1)
+
     debug_enabled = "--debug" in sys.argv
-    if debug_enabled:
-        logging.basicConfig(
-            level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-        )
+    debug_json = "--debug-json" in sys.argv
+    configure_logging(debug_enabled, debug_json)
 
     config = load_config()
     config_path = find_config_path()
@@ -585,7 +262,6 @@ def main():
         session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
     )
 
-    # Inject environment info into system prompt
     workspace = safety_config.workspace or "."
     cwd = os.getcwd()
     env_info = f"\n\n## Environment\n- Current working directory: {cwd}\n- Workspace (file operations confined to): {workspace}\n"
@@ -597,13 +273,13 @@ def main():
         )
 
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
-    agent = create_agent(agent_config, api_key)
+    ensure_provider_credentials(agent_config.provider, api_key)
 
+    agent = create_agent(agent_config, api_key)
     console.print(
         f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]"
     )
 
-    # Load sub-agents from config
     sub_agents_config = config.get("agent", {}).get("sub_agents", {})
     for name, sub_cfg in sub_agents_config.items():
         agent.register_sub_agent(
@@ -614,9 +290,8 @@ def main():
             system_prompt=sub_cfg.get("system_prompt", ""),
         )
 
-    # Check for session to load
     session_name = None
-    args = [a for a in sys.argv[1:] if a != "--debug"]
+    args = [a for a in sys.argv[1:] if a not in {"--debug", "--debug-json"}]
     if args:
         if args[0] == "--load" and len(args) > 1:
             session_name = args[1]
@@ -629,7 +304,7 @@ def main():
             return
 
     console.clear()
-    print_welcome()
+    print_welcome(console)
     try:
         asyncio.run(chat_session(agent, session_name))
     except KeyboardInterrupt:

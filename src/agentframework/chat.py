@@ -9,6 +9,9 @@ from pathlib import Path
 
 import aiohttp
 import yaml
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 from rich.prompt import Prompt
 
@@ -57,53 +60,31 @@ def strip_ansi(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
 
 
-# Enable command history with readline
-try:
-    import readline
-    from rlcompleter import Completer
+# Slash commands for autocomplete
+SLASH_COMMANDS = [
+    "/exit",
+    "/quit",
+    "/new",
+    "/save",
+    "/load",
+    "/chats",
+    "/undo",
+    "/redo",
+    "/clear",
+    "/help",
+    "/models",
+    "/model",
+    "/temperature",
+    "/context",
+    "/tokens",
+]
 
-    histfile = Path.home() / ".cache" / "agentframework" / "history"
-    histfile.parent.mkdir(parents=True, exist_ok=True)
-    if histfile.exists():
-        readline.read_history_file(str(histfile))
-    import atexit
-
-    atexit.register(readline.write_history_file, str(histfile))
-
-    # Define slash commands for tab completion
-    SLASH_COMMANDS = [
-        "/exit",
-        "/quit",
-        "/new",
-        "/save",
-        "/load",
-        "/chats",
-        "/undo",
-        "/redo",
-        "/clear",
-        "/help",
-        "/models",
-        "/model",
-        "/temperature",
-        "/context",
-        "/tokens",
-    ]
-
-    class CommandCompleter(Completer):
-        def complete(self, text, state):
-            if not text.startswith("/"):
-                return None
-            matches = [cmd for cmd in SLASH_COMMANDS if cmd.startswith(text)]
-            if matches:
-                return matches[state] if state < len(matches) else None
-            return None
-
-    readline.set_completer(CommandCompleter().complete)
-    readline.parse_and_bind("tab: complete")
-    readline.set_completer_delims("")
-
-except ImportError:
-    pass  # readline not available on all platforms
+# Create prompt_toolkit session with autocomplete
+command_completer = WordCompleter(SLASH_COMMANDS)
+prompt_session = PromptSession(
+    auto_suggest=AutoSuggestFromHistory(),
+    completer=command_completer,
+)
 
 
 def load_config(path: str | None = None) -> dict:
@@ -253,8 +234,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 
     while True:
         try:
-            # Use better readline compatibility input() for
-            user_input = input("\n> ")
+            user_input = prompt_session.prompt("\n> ")
 
             if not user_input.strip():
                 continue

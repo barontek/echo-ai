@@ -1,192 +1,176 @@
-# Vibe AI Project Review (March 2026)
+# Vibe AI Project Review (Current State)
 
 ## Executive Summary
 
-Vibe AI has a clean, understandable core and a practical feature set (multi-provider LLM support, a useful tool suite, session persistence, and safety controls). The project is in a good prototype-to-early-product state.
+Vibe AI is in a strong **early-product** state: it has a broad built-in toolset, multi-provider model support, session persistence, and working safety controls. The codebase shows good momentum, and test coverage is materially better than many projects at a similar stage.
 
-The biggest improvement opportunities are:
+Current status from local verification:
 
-1. **Reliability of test execution** (async test setup and CI reproducibility).
-2. **Config consistency and secure defaults** (approval behavior and default provider alignment).
-3. **Agent/runtime UX correctness** (streaming output duplication and error semantics).
-4. **Maintainability** (large orchestration module and weak observability around failures).
+- Test suite: **132 passed** (`pytest tests/ -q`)
+- Type checking: **clean** (`pyright src/`)
+- Linting: **2 warnings in tests** (`ruff check src/ tests/`)
 
----
-
-## Strengths
-
-- **Good modular shape**: providers, tools, safety, session, and chat are separated into focused modules.
-- **Safety design exists from day one**: command filtering, blocked paths/extensions, approvals, and network allowlists are all present.
-- **Reasonable context management strategy**: sliding window + optional summarization helps keep long chats viable.
-- **Pragmatic feature coverage**: includes file operations, shell, git, web, memory, and notes; enough to solve many real tasks.
+The highest-value improvements now are less about adding features and more about **hardening maintainability, reducing duplication, and improving operability at scale**.
 
 ---
 
-## Key Improvement Areas (Prioritized)
+## What’s Working Well
 
-## P0 — Reliability & Correctness
+1. **Feature completeness for a standalone agent CLI**
+   - Useful tooling primitives are already present (bash, files, git, web, search, memory, notes, delegation).
+   - Both one-shot CLI and interactive chat flows exist.
 
-### 1) Async tests are not reliably runnable in baseline environments
+2. **Good safety foundations**
+   - Workspace confinement, blocked command patterns, and approval workflows are in place.
+   - Safety configuration is explicitly modeled and passed through tool execution paths.
 
-**What I found**
-- The test suite uses `@pytest.mark.asyncio` heavily.
-- Pytest marker registration is now present, but async test execution still depends on `pytest-asyncio` being installed in every environment.
-- Running `pytest -q` in this environment still produced widespread async execution failures because `pytest-asyncio` is unavailable.
+3. **Healthy baseline quality signals**
+   - All tests pass in the current snapshot.
+   - Type checking is already clean across `src/`, which is a strong sign of engineering discipline.
 
-**Why this matters**
-- CI or contributor environments that do not install dev extras exactly right will show noisy failures.
-- This creates false negatives and slows development.
-
-**Recommended action**
-- Ensure CI and contributor setup always install `pytest-asyncio` (or include a fail-fast check in test bootstrap).
-- Optionally add a tiny `tests/conftest.py` smoke check that fails fast with a clear message if `pytest-asyncio` is missing.
-- Add a simple CI workflow to run tests on Python 3.11 and 3.12.
+4. **Separation into runtime concerns has started**
+   - The introduction of modules like `conversation.py`, `tool_runtime.py`, and `session_runtime.py` shows good architectural direction.
 
 ---
 
-### 2) Streaming responses can be duplicated in interactive chat
+## Priority Recommendations
 
-**What I found**
-- `interactive_mode()` previously streamed chunks and then printed the full response again, duplicating output (fixed in this patch).
+## P0 — Fast, Low-Risk Quality Wins (Do Now)
 
-**Why this matters**
-- Users may see duplicated assistant output, degrading UX quality.
+### 1) Make lint output fully green (currently 2 test warnings)
 
-**Recommended action**
-- Keep the current behavior that only streams chunks and emits a trailing newline.
+`ruff` reports two unused imports in `tests/test_agent_e2e.py`. This is small, but keeping lint consistently green prevents “warning fatigue” and keeps CI signal high.
 
----
-
-### 3) Tool error messaging collapses many failures into “denied by user”
-
-**What I found**
-- Tool exceptions and validation failures are returned as: `FAILED - Operation was denied by user: ...` even when the issue is parse/runtime/validation related.
-
-**Why this matters**
-- Misleading error semantics hurt debugging and model behavior (the model may infer policy denial when it was actually malformed args).
-
-**Recommended action**
-- Introduce structured error categories:
-  - `validation_error`
-  - `policy_denied`
-  - `execution_error`
-  - `tool_not_found`
-- Keep user-friendly text, but preserve machine-readable category for agent loop and logs.
+**Recommendation**
+- Remove the unused imports or run `ruff check --fix` and commit the result.
 
 ---
 
-## P1 — Security & Configuration
+### 2) Remove duplicated CLI/chat configuration logic
 
-### 4) Security defaults are weakened when config keys are absent
+Both `src/agentframework/cli.py` and `src/agentframework/chat.py` implement overlapping functions for:
+- locating config,
+- loading YAML,
+- constructing safety config,
+- building tool lists.
 
-**What I found**
-- `SafetyConfig` default requires approvals for `bash` and `write_file`.
-- CLI’s `get_safety_config()` currently defaults `require_approval_for` to `[]` when key is absent.
+This creates avoidable drift risk as behavior evolves.
 
-**Why this matters**
-- Silent downgrade of safety posture if config is incomplete/minimal.
-
-**Recommended action**
-- Preserve secure default by using `safety.get("require_approval_for", ["bash", "write_file"])`.
-- Add tests around missing/partial `safety` config.
-
----
-
-### 5) Default provider mismatch can surprise first-time users
-
-**What I found**
-- README and `config.yaml` emphasize `ollama` as default.
-- CLI fallback default provider is `anthropic` if config is missing.
-
-**Why this matters**
-- Startup behavior differs from documentation expectations and can fail without API keys.
-
-**Recommended action**
-- Align CLI fallback provider with documented default (`ollama`).
-- Add startup diagnostics explaining exactly which provider/model/config path were loaded.
+**Recommendation**
+- Consolidate shared logic into `src/agentframework/config.py` (or a new `runtime_config.py`) and call it from both entry points.
+- Add tests that assert CLI and chat resolve defaults identically.
 
 ---
 
-## P2 — Maintainability & Productization
+### 3) Add explicit Python-version runtime guard
 
-### 6) `agent.py` is carrying too many responsibilities
+`pyproject.toml` requires Python `>=3.11`, but it’s common for users to execute scripts with older system Python by mistake.
 
-**What I found**
-- `agent.py` handles message models, JSON sanitization, context trimming/summarization, tool execution orchestration, session interactions, undo/redo glue, and formatting.
-
-**Why this matters**
-- Higher cognitive load and greater regression risk when changing behavior.
-
-**Recommended action**
-- Split into focused modules:
-  - `conversation.py` (message shaping, context trimming)
-  - `tool_runtime.py` (validation/execution/error categorization)
-  - `session_runtime.py` (persistence + undo/redo integration)
-- Keep `Agent` as thin orchestration façade.
+**Recommendation**
+- Add a clear startup check in entrypoints (CLI/chat scripts) that exits with a friendly error when Python <3.11.
+- Mention this check in README troubleshooting.
 
 ---
 
-### 7) Observability/logging is minimal for runtime analysis
+## P1 — Maintainability and Developer Experience
 
-**What I found**
-- Logging exists but is sparse for key lifecycle events (iteration number, token estimates, tool timing, truncation occurrences).
+### 4) Break down very large modules further (especially `chat.py`)
 
-**Why this matters**
-- Hard to debug model loops, context blowups, or slow tools.
+`src/agentframework/chat.py` is currently one of the largest modules and includes UI rendering, command parsing, model/tool wiring, approvals, and stream formatting.
 
-**Recommended action**
-- Add structured debug logs:
-  - request id/session id
-  - iteration count
-  - total tool latency and per-tool latency
-  - context trim/summarize events
-- Provide a `--debug` CLI mode to surface these.
+**Recommendation**
+- Split into focused units:
+  - `chat_commands.py` (slash-command parsing/dispatch)
+  - `chat_render.py` (terminal formatting, link conversion, ANSI utilities)
+  - `chat_bootstrap.py` (agent/config bootstrap)
+- Keep `chat.py` as a thin orchestrator.
 
 ---
 
-### 8) Test coverage is broad but could be made more confidence-weighted
+### 5) Standardize command names and user-facing command docs
 
-**What I found**
-- Many tool and safety tests exist, which is excellent.
-- There are fewer clear end-to-end behavior tests for full agent loops with mocked providers.
+The docs and command labels are close but not perfectly normalized (`/sessions` vs `/chats` in different places). Small mismatches increase support overhead.
 
-**Why this matters**
-- Integration regressions can pass unit tests.
-
-**Recommended action**
-- Add integration tests for:
-  - multi-step tool use then final answer
-  - context summarization path under constrained token budget
-  - session save/load + undo/redo flows
-  - delegate tool behavior and tool constraints per sub-agent
+**Recommendation**
+- Define one canonical command vocabulary and enforce via constants.
+- Generate/help-text from a single command registry to avoid drift.
 
 ---
 
-## Suggested 30/60/90-Day Improvement Plan
+### 6) Introduce a single “quality” command for contributors
 
-### 0–30 days (stability first)
-- Fix async pytest configuration and CI baseline.
-- Fix streaming duplicate output behavior.
-- Align provider and approval defaults.
-- Add startup diagnostics for config source/provider/model.
+Developers currently run tests/lint/typecheck separately. A single quality target improves consistency.
 
-### 31–60 days (quality hardening)
-- Introduce structured tool error categories.
-- Expand integration tests for agent loop and summarization.
-- Add structured debug logging and `--debug` flag.
-
-### 61–90 days (architecture & growth)
-- Refactor `agent.py` into smaller runtime modules.
-- Add benchmark scripts (latency, token usage, tool throughput).
-- Consider plugin registration mechanism for tools/providers to simplify extension.
+**Recommendation**
+- Add `make verify` that runs:
+  - `pytest tests/ -q`
+  - `ruff check src/ tests/`
+  - `pyright src/`
+- Wire CI to the same command for local/CI parity.
 
 ---
 
-## Concrete Quick Wins (Low Effort, High Value)
+## P2 — Product Hardening & Operability
 
-1. Add pytest asyncio config and marker registration.
-2. Remove duplicate `print(response)` in interactive streaming path.
-3. Preserve secure approval defaults when config omits `require_approval_for`.
-4. Align CLI provider fallback with documented `ollama` default.
-5. Add one integration test that covers: user -> tool call -> tool result -> assistant final response.
+### 7) Improve structured runtime diagnostics
 
+Debugging long agent loops is difficult without request IDs, per-tool timing, and context-window telemetry.
+
+**Recommendation**
+- Emit structured logs for:
+  - iteration number,
+  - tool invocation latency,
+  - context trim/summarization events,
+  - provider/model used per turn.
+- Keep `--debug` but consider optional JSON logging mode for easier ingestion.
+
+---
+
+### 8) Add confidence-weighted integration scenarios
+
+Unit coverage is good, but product reliability hinges on full-loop behavior.
+
+**Recommendation**
+- Add integration scenarios that verify:
+  1. multi-tool chain then final answer,
+  2. context pressure / summarization path,
+  3. session save/load + undo/redo continuity,
+  4. safety policy denial and recovery messaging.
+
+---
+
+### 9) Clarify release posture and roadmap in docs
+
+The repository has strong functionality but would benefit from explicit maturity signaling.
+
+**Recommendation**
+- Add a short “Project Status” section in README:
+  - current maturity (prototype / beta),
+  - supported providers,
+  - known limitations,
+  - upcoming milestones.
+
+---
+
+## Suggested 30/60/90-Day Plan
+
+### 0–30 Days
+- Fix lint warnings and enforce lint-clean policy.
+- Deduplicate CLI/chat config loading and tool bootstrap.
+- Add `make verify` and align CI with it.
+
+### 31–60 Days
+- Refactor chat module into smaller units.
+- Add structured runtime diagnostics and improved debug output.
+- Add cross-entrypoint consistency tests (CLI vs chat defaults).
+
+### 61–90 Days
+- Expand end-to-end integration coverage for realistic agent workflows.
+- Add basic release/versioning policy and changelog discipline.
+- Introduce benchmark scripts (latency, token consumption, tool throughput).
+
+---
+
+## Bottom Line
+
+Vibe AI is already very usable and technically promising. The next leap in quality will come from **operational polish and architecture consolidation** rather than new core features. If the team executes the P0/P1 items, the project can move from “strong prototype” to “trustworthy daily-driver CLI agent” quickly.

@@ -1,6 +1,5 @@
 import pytest
-import asyncio
-from src.agentframework.agent import Agent, AgentConfig, Message
+from src.agentframework.agent import Agent, AgentConfig
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from src.agentframework.tools import Tool, ToolResult
 from pydantic import BaseModel

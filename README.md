@@ -25,6 +25,19 @@ make install
 ./agent "your task"
 ```
 
+
+## Project Status
+
+- **Maturity**: Beta-quality, fast-moving standalone agent framework
+- **Supported providers**: Ollama, Anthropic, OpenAI
+- **Known limitations**:
+  - Terminal/chat runtime is still being modularized
+  - Some advanced observability and CI quality gates are still evolving
+- **Near-term roadmap**:
+  - Unified runtime/config bootstrap across entrypoints
+  - Stronger integration scenarios and contributor verify workflow
+  - Improved structured debug telemetry
+
 ## Configuration
 
 Edit `config.yaml`:

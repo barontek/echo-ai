@@ -8,35 +8,40 @@ import sys
 from pathlib import Path
 
 import aiohttp
-import yaml
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
-from rich.prompt import Prompt
 
 from .agent import Agent, AgentConfig, create_agent
 from .providers import get_provider
-from .safety import SafetyConfig, SecurityValidator
-from .tools import TOOL_REGISTRY, TOOL_CONFIG_KEYS
+from .config import (
+    find_config_path as shared_find_config_path,
+    get_safety_config as shared_get_safety_config,
+    get_tools as shared_get_tools,
+    load_config as shared_load_config,
+)
 
 console = Console(color_system="256")
 
 
 def find_config_path(path: str | None = None) -> Path | None:
-    if path is not None:
-        config_path = Path(path)
-        return config_path if config_path.exists() else None
+    """Proxy to shared config path lookup."""
+    return shared_find_config_path(path)
 
-    script_dir = Path(__file__).parent.parent.parent
-    search_paths = [
-        Path.cwd() / "config.yaml",
-        script_dir / "config.yaml",
-        Path.home() / "vibe-ai" / "config.yaml",
-    ]
-    for config_path in search_paths:
-        if config_path.exists():
-            return config_path
-    return None
+
+def load_config(path: str | None = None) -> dict:
+    """Proxy to shared YAML config loader."""
+    return shared_load_config(path)
+
+
+def get_safety_config(config: dict):
+    """Proxy to shared safety configuration builder."""
+    return shared_get_safety_config(config)
+
+
+def get_tools(config: dict, safety_config):
+    """Proxy to shared tool bootstrap."""
+    return shared_get_tools(config, safety_config)
 
 
 def make_clickable_links(text: str) -> str:
@@ -45,21 +50,18 @@ def make_clickable_links(text: str) -> str:
     def replace_link(match):
         name = match.group(1)
         url = match.group(2)
-        return f"\033]8;;{url}\007{name}\033]8;;\007"
+        return f"]8;;{url}{name}]8;;"
 
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, text)
-
     text = re.sub(r"\[(https?://[^]]+)\]\((https?://[^)]+)\)", replace_link, text)
-
     return text
 
 
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from text."""
-    return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+    return re.sub(r"\[[0-9;]*[a-zA-Z]", "", text)
 
 
-# Slash commands for autocomplete
 SLASH_COMMANDS = [
     "/exit",
     "/quit",
@@ -67,6 +69,7 @@ SLASH_COMMANDS = [
     "/save",
     "/load",
     "/chats",
+    "/sessions",
     "/undo",
     "/redo",
     "/clear",
@@ -78,7 +81,6 @@ SLASH_COMMANDS = [
     "/tokens",
 ]
 
-# Create prompt_toolkit session with autocomplete
 command_completer = WordCompleter(
     SLASH_COMMANDS,
     ignore_case=True,
@@ -93,108 +95,6 @@ async def get_input(prompt_text: str = "\n> ") -> str:
         return await prompt_session.prompt_async(prompt_text)
     except Exception:
         return await asyncio.to_thread(input, prompt_text)
-
-
-def load_config(path: str | None = None) -> dict:
-    config_path = find_config_path(path)
-    if config_path:
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
-
-
-def get_safety_config(config: dict) -> SafetyConfig:
-    safety = config.get("safety", {})
-    tools_config = config.get("tools", {})
-
-    validator = SecurityValidator(
-        SafetyConfig(
-            workspace=safety.get("workspace", "."),
-        )
-    )
-
-    def approval_callback(tool: str, details: str) -> bool:
-        warning_msg = ""
-
-        if tool == "bash":
-            destructive = validator.check_destructive_keywords(details)
-            if destructive:
-                warning_msg = f" [red]⚠️ DESTRUCTIVE keywords detected: {', '.join(destructive)}[/red]"
-
-        if tool == "write_file":
-            try:
-                from pathlib import Path
-
-                path = details.replace("write: ", "")
-                file_path = Path(path)
-                if file_path.exists():
-                    warning_msg = " [red]⚠️ File exists - will overwrite![/red]"
-            except Exception:
-                pass
-
-        if tool == "read_file":
-            try:
-                from pathlib import Path
-
-                path = details.replace("read: ", "")
-                file_path = Path(path)
-                if file_path.exists():
-                    size = file_path.stat().st_size
-                    threshold = safety.get("read_size_threshold", 102400)
-                    if size > threshold:
-                        warning_msg = (
-                            f" [yellow]⚠️ Large file ({size // 1024} KB)[/yellow]"
-                        )
-            except Exception:
-                pass
-
-        console.print(
-            f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}"
-        )
-        response = Prompt.ask("[bold]Allow? (y/N)[/bold]", default="n")
-        return response.lower() in ("y", "yes")
-
-    return SafetyConfig(
-        workspace=safety.get("workspace", "."),
-        allowed_commands=tools_config.get("bash", {}).get("allowed_commands", ["*"]),
-        blocked_commands=safety.get("blocked_commands", []),
-        allow_network=safety.get("allow_network", False),
-        allowed_domains=safety.get("allowed_domains", []),
-        max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
-        max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", ["bash", "write_file"]),
-        approval_callback=approval_callback,
-        audit_log_path=safety.get("audit_log_path"),
-        read_requires_approval=safety.get("read_requires_approval", False),
-        read_size_threshold=safety.get("read_size_threshold", 102400),
-    )
-
-
-def get_tools(config: dict, safety_config: SafetyConfig) -> list:
-    tools = []
-    enabled = config.get("tools", {}).get("enabled", [])
-
-    for tool_name in enabled:
-        tool_class = TOOL_REGISTRY.get(tool_name)
-        if tool_class is None:
-            continue
-
-        tool_config = config.get("tools", {}).get(tool_name, {})
-        config_defaults = TOOL_CONFIG_KEYS.get(tool_name, {})
-
-        kwargs = {}
-        for key, default_value in config_defaults.items():
-            if key in tool_config:
-                kwargs[key] = tool_config[key]
-            elif default_value is not None:
-                kwargs[key] = default_value
-
-        if "safety_config" in config_defaults and "safety_config" not in kwargs:
-            kwargs["safety_config"] = safety_config
-
-        tools.append(tool_class(**kwargs))
-
-    return tools
 
 
 def print_welcome():
@@ -286,7 +186,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         console.print("[yellow]Usage: /load <name>[/yellow]")
                         continue
 
-                    case "/chats", _:
+                    case "/chats" | "/sessions", _:
                         sessions = agent.list_sessions()
                         if sessions:
                             console.print("[cyan]Saved chats:[/cyan]")
@@ -563,6 +463,10 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 
 
 def main():
+    if sys.version_info < (3, 11):
+        console.print("[red]Python 3.11+ is required to run Vibe AI.[/red]")
+        raise SystemExit(1)
+
     debug_enabled = "--debug" in sys.argv
     if debug_enabled:
         logging.basicConfig(

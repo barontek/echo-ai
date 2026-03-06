@@ -164,7 +164,7 @@ class Agent:
                 has_thinking = True
 
             tool_messages, updated_messages = await self._execute_tool_calls(
-                response.tool_calls, current_messages
+                response.tool_calls, current_messages, request_id=request_id, iteration=iteration
             )
             current_messages = updated_messages
 
@@ -212,7 +212,7 @@ class Agent:
                 has_thinking = True
 
             tool_messages, updated_messages = await self._execute_tool_calls(
-                response.tool_calls, current_messages
+                response.tool_calls, current_messages, request_id=request_id, iteration=iteration
             )
             current_messages = updated_messages
 
@@ -227,6 +227,8 @@ class Agent:
         self,
         tool_calls: list[LLMToolCall],
         current_messages: None = None,
+        request_id: str | None = None,
+        iteration: int | None = None,
     ) -> list[Message]: ...
 
     @overload
@@ -234,12 +236,16 @@ class Agent:
         self,
         tool_calls: list[LLMToolCall],
         current_messages: list[Message],
+        request_id: str | None = None,
+        iteration: int | None = None,
     ) -> tuple[list[Message], list[Message]]: ...
 
     async def _execute_tool_calls(
         self,
         tool_calls: list[LLMToolCall],
         current_messages: list[Message] | None = None,
+        request_id: str | None = None,
+        iteration: int | None = None,
     ) -> list[Message] | tuple[list[Message], list[Message]]:
         """Execute tool calls and return (tool_messages, updated_messages)."""
         if current_messages is None:
@@ -257,7 +263,7 @@ class Agent:
 
         if timings:
             total_latency = sum(timings.values())
-            logger.debug("tool_execution", extra={"timings": timings, "total_latency": total_latency})
+            logger.debug("tool_execution", extra={"request_id": request_id, "iteration": iteration, "timings": timings, "total_latency": total_latency})
 
         new_messages = current_messages + tool_messages
 

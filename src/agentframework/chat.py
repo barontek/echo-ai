@@ -79,7 +79,11 @@ SLASH_COMMANDS = [
 ]
 
 # Create prompt_toolkit session with autocomplete
-command_completer = WordCompleter(SLASH_COMMANDS, ignore_case=True)
+command_completer = WordCompleter(
+    SLASH_COMMANDS,
+    ignore_case=True,
+    pattern=re.compile(r"[\w/]+"),
+)
 prompt_session = PromptSession(completer=command_completer)
 
 

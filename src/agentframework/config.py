@@ -1,35 +1,43 @@
 """Configuration management for the agent framework."""
 
-import yaml
 from pathlib import Path
+
+import yaml
 from rich.console import Console
 from rich.prompt import Prompt
 
 from .safety import SafetyConfig, SecurityValidator
-from .tools import TOOL_REGISTRY, TOOL_CONFIG_KEYS
+from .tools import TOOL_CONFIG_KEYS, TOOL_REGISTRY
 
 console = Console(color_system="256")
 
+
+def find_config_path(path: str | None = None) -> Path | None:
+    """Find configuration path from explicit path or common locations."""
+    if path is not None:
+        config_path = Path(path)
+        return config_path if config_path.exists() else None
+
+    script_dir = Path(__file__).parent.parent.parent
+    search_paths = [
+        Path.cwd() / "config.yaml",
+        script_dir / "config.yaml",
+        Path.home() / "vibe-ai" / "config.yaml",
+    ]
+    for config_path in search_paths:
+        if config_path.exists():
+            return config_path
+    return None
+
+
 def load_config(path: str | None = None) -> dict:
-    """Load configuration from a YAML file in common locations."""
-    if path is None:
-        # Try to find config.yaml in common locations
-        script_dir = Path(__file__).parent.parent.parent
-        search_paths = [
-            Path.cwd() / "config.yaml",
-            script_dir / "config.yaml",
-            Path.home() / "vibe-ai" / "config.yaml",
-        ]
-        for config_path in search_paths:
-            if config_path.exists():
-                with open(config_path) as f:
-                    return yaml.safe_load(f)
-        return {}
-    config_path = Path(path)
-    if config_path.exists():
+    """Load configuration from YAML file or return empty config."""
+    config_path = find_config_path(path)
+    if config_path:
         with open(config_path) as f:
             return yaml.safe_load(f)
     return {}
+
 
 def get_safety_config(config: dict) -> SafetyConfig:
     """Create safety configuration from the overall config dictionary."""
@@ -43,18 +51,20 @@ def get_safety_config(config: dict) -> SafetyConfig:
     )
 
     def approval_callback(tool: str, details: str) -> bool:
-        """Callback to request user approval for potentially dangerous operations."""
+        """Request user approval for potentially dangerous operations."""
         warning_msg = ""
 
         if tool == "bash":
             destructive = validator.check_destructive_keywords(details)
             if destructive:
-                warning_msg = f" [red]⚠️ DESTRUCTIVE keywords detected: {', '.join(destructive)}[/red]"
+                warning_msg = (
+                    " [red]⚠️ DESTRUCTIVE keywords detected: "
+                    + ", ".join(destructive)
+                    + "[/red]"
+                )
 
         if tool == "write_file":
             try:
-                from pathlib import Path
-
                 path_str = details.replace("write: ", "")
                 file_path = Path(path_str)
                 if file_path.exists():
@@ -64,8 +74,6 @@ def get_safety_config(config: dict) -> SafetyConfig:
 
         if tool == "read_file":
             try:
-                from pathlib import Path
-
                 path_str = details.replace("read: ", "")
                 file_path = Path(path_str)
                 if file_path.exists():
@@ -92,12 +100,13 @@ def get_safety_config(config: dict) -> SafetyConfig:
         allowed_domains=safety.get("allowed_domains", []),
         max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
         max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", []),
+        require_approval_for=safety.get("require_approval_for", ["bash", "write_file"]),
         approval_callback=approval_callback,
         audit_log_path=safety.get("audit_log_path"),
         read_requires_approval=safety.get("read_requires_approval", False),
         read_size_threshold=safety.get("read_size_threshold", 102400),
     )
+
 
 def get_tools(config: dict, safety_config: SafetyConfig) -> list:
     """Instantiate and return enabled tools based on configuration."""

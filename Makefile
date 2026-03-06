@@ -1,6 +1,6 @@
 # Agent Framework Makefile
 
-.PHONY: help install install-dev run chat test lint typecheck security clean sessions
+.PHONY: help install install-dev run chat test lint typecheck verify security clean sessions
 
 help:
 	@echo "Agent Framework - Available commands:"
@@ -39,6 +39,11 @@ lint:
 
 typecheck:
 	.venv/bin/pyright src/
+
+verify:
+	pytest tests/ -q
+	ruff check src/ tests/
+	pyright src/
 
 security:
 	.venv/bin/safety check || true

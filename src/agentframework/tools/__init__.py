@@ -74,6 +74,11 @@ from .memory import MemoryTool
 from .notes import PersonalNotesTool
 from .search import GlobTool, GrepTool
 from .web import WebFetchTool, WebSearchTool
+from .python import PythonTool
+from .api import RESTAPITool
+from .db import SQLiteQueryTool, SQLiteSchemaTool
+from .human import AskUserTool
+from .rag import SemanticSearchTool, DocumentIngestionTool
 
 
 TOOL_REGISTRY: dict[str, Type[Tool]] = {
@@ -88,6 +93,13 @@ TOOL_REGISTRY: dict[str, Type[Tool]] = {
     "git": GitTool,
     "memory": MemoryTool,
     "notes": PersonalNotesTool,
+    "python_execute": PythonTool,
+    "rest_api": RESTAPITool,
+    "sqlite_query": SQLiteQueryTool,
+    "sqlite_schema": SQLiteSchemaTool,
+    "ask_user": AskUserTool,
+    "semantic_search": SemanticSearchTool,
+    "ingest_document": DocumentIngestionTool,
 }
 
 TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {

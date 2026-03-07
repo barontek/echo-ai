@@ -215,7 +215,7 @@ class SecurityValidator:
         """Check if tool requires user approval."""
         if tool_name in self.config.require_approval_for:
             return True
-        
+
         if tool_name == "read_file":
             if self.config.read_requires_approval:
                 return True
@@ -228,7 +228,7 @@ class SecurityValidator:
                             return True
                 except OSError:
                     pass
-        
+
         return False
 
     def check_destructive_keywords(self, command: str) -> list[str]:
@@ -244,12 +244,12 @@ class SecurityValidator:
         """Log approval/denial to audit file."""
         if not self.config.audit_log_path:
             return
-        
+
         try:
             timestamp = datetime.now().isoformat()
             status = "APPROVED" if approved else "DENIED"
             log_entry = f"[{timestamp}] {status}: {tool_name} - {details}\n"
-            
+
             audit_path = Path(self.config.audit_log_path)
             audit_path.parent.mkdir(parents=True, exist_ok=True)
             with open(audit_path, "a") as f:
@@ -261,12 +261,12 @@ class SecurityValidator:
         """Get user approval for dangerous operation."""
         if not self.requires_approval(tool_name):
             return True
-        
+
         if self.config.approval_callback:
             approved = self.config.approval_callback(tool_name, details)
             self.log_approval(tool_name, details, approved)
             return approved
-        
+
         logger.warning(f"Approval required for {tool_name}: {details}")
         self.log_approval(tool_name, details, False)
         return False

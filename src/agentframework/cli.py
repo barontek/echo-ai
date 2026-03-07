@@ -1,55 +1,15 @@
 """CLI for the agent framework."""
 
 import asyncio
-import os
 import sys
-from pathlib import Path
 
 from rich.console import Console
 
-from .agent import Agent, AgentConfig, create_agent
+from .agent import Agent
+from .bootstrap import setup_agent
 from .chat_commands import normalize_command
-from .config import (
-    find_config_path as shared_find_config_path,
-    get_safety_config as shared_get_safety_config,
-    get_tools as shared_get_tools,
-    load_config as shared_load_config,
-)
-from .logging_utils import configure_logging
 
 console = Console(color_system="256")
-
-
-def find_config_path(path: str | None = None) -> Path | None:
-    """Proxy to shared config path lookup."""
-    return shared_find_config_path(path)
-
-
-def load_config(path: str | None = None) -> dict:
-    """Proxy to shared YAML config loader."""
-    return shared_load_config(path)
-
-
-def get_safety_config(config: dict):
-    """Proxy to shared safety configuration builder."""
-    return shared_get_safety_config(config)
-
-
-def get_tools(config: dict, safety_config):
-    """Proxy to shared tool bootstrap."""
-    return shared_get_tools(config, safety_config)
-
-
-def ensure_provider_credentials(provider: str, api_key: str | None) -> None:
-    """Validate required credentials for hosted providers."""
-    if provider == "anthropic" and not (api_key or os.getenv("ANTHROPIC_API_KEY")):
-        raise SystemExit(
-            "ANTHROPIC_API_KEY is required for provider='anthropic'. Set it or use provider='ollama'."
-        )
-    if provider == "openai" and not (api_key or os.getenv("OPENAI_API_KEY")):
-        raise SystemExit(
-            "OPENAI_API_KEY is required for provider='openai'. Set it or use provider='ollama'."
-        )
 
 
 
@@ -184,48 +144,7 @@ async def run_single(agent: Agent, task: str):
 
 def main():
     """Main entry point."""
-    if sys.version_info < (3, 11):
-        console.print("[red]Python 3.11+ is required to run Vibe AI.[/red]")
-        raise SystemExit(1)
-    debug_enabled = "--debug" in sys.argv
-    debug_json = "--debug-json" in sys.argv
-    configure_logging(debug_enabled, debug_json)
-
-    config = load_config()
-    config_path = find_config_path()
-    safety_config = get_safety_config(config)
-
-    agent_config = AgentConfig(
-        provider=config.get("model", {}).get("provider", "ollama"),
-        model=config.get("model", {}).get("name", "qwen3:4b-instruct"),
-        temperature=config.get("model", {}).get("temperature", 0.3),
-        max_iterations=config.get("agent", {}).get("max_iterations", 50),
-        system_prompt=config.get("agent", {}).get("system_prompt", ""),
-        tools=get_tools(config, safety_config),
-        base_url=config.get("model", {}).get("base_url"),
-        session_enabled=config.get("agent", {}).get("session_enabled", True),
-        session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
-    )
-
-    # Inject environment info into system prompt
-    workspace = safety_config.workspace or "."
-    cwd = os.getcwd()
-    env_info = f"\n\n## Environment\n- Current working directory: {cwd}\n- Workspace (file operations confined to): {workspace}\n"
-    if agent_config.system_prompt:
-        agent_config.system_prompt += env_info
-    else:
-        agent_config.system_prompt = (
-            f"You are an AI assistant with access to various tools.{env_info}"
-        )
-
-    api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
-
-    ensure_provider_credentials(agent_config.provider, api_key)
-    agent = create_agent(agent_config, api_key)
-
-    console.print(
-        f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]"
-    )
+    agent = setup_agent()
 
     args = [a for a in sys.argv[1:] if a not in {"--debug", "--debug-json"}]
     if args:

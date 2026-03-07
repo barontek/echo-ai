@@ -1,12 +1,60 @@
 """Web tools for fetching and searching with network restrictions."""
 
+import asyncio
 import httpx
-
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
+import markdownify
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
+
+
+def html_to_markdown(html: str, max_length: int = 10000) -> str:
+    """Parse HTML and extract readable markdown using markdownify."""
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Remove script, style, nav, header, footer elements
+        for tag in soup(
+            ["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript"]
+        ):
+            tag.decompose()
+
+        # Get the main content area if available, otherwise body
+        main = soup.find("main") or soup.find("article") or soup.find("body") or soup
+
+        # Convert to Markdown
+        md = markdownify.markdownify(
+            str(main),
+            heading_style="ATX",
+            strip=["script", "style"],
+        )
+
+        # Clean up whitespace
+        lines = [line.strip() for line in md.split("\n")]
+        cleaned_lines = []
+        consecutive_empty = 0
+        for line in lines:
+            if not line:
+                consecutive_empty += 1
+                if consecutive_empty <= 1:
+                    cleaned_lines.append("")
+            else:
+                consecutive_empty = 0
+                cleaned_lines.append(line)
+
+        text = "\n".join(cleaned_lines).strip()
+
+        # Truncate to max length
+        if len(text) > max_length:
+            text = text[:max_length] + "\n... (truncated)"
+
+        return text if text else "No readable content found"
+
+    except Exception:
+        # Fallback to raw text if parsing fails
+        return html[:max_length]
 
 
 class WebFetchParams(BaseModel):
@@ -38,39 +86,6 @@ class WebFetchTool(Tool):
             # Default to allowing network if no config provided
             self.validator = SecurityValidator(SafetyConfig(allow_network=True))
 
-    def _extract_readable_text(self, html: str, max_length: int = 10000) -> str:
-        """Parse HTML and extract readable text using BeautifulSoup."""
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-
-            # Remove script, style, nav, header, footer elements
-            for tag in soup(
-                ["script", "style", "nav", "header", "footer", "aside", "iframe"]
-            ):
-                tag.decompose()
-
-            # Get text from body or entire document
-            body = soup.find("body")
-            if body:
-                text = body.get_text(separator="\n", strip=True)
-            else:
-                text = soup.get_text(separator="\n", strip=True)
-
-            # Clean up whitespace
-            lines = [line.strip() for line in text.split("\n")]
-            lines = [line for line in lines if line]
-            text = "\n".join(lines)
-
-            # Truncate to max length
-            if len(text) > max_length:
-                text = text[:max_length] + "\n... (truncated)"
-
-            return text if text else "No readable content found"
-
-        except Exception:
-            # Fallback to raw text if parsing fails
-            return html[:10000]
-
     async def execute(self, url: str, **kwargs) -> ToolResult:
         """Fetch the URL with safety checks."""
         allowed, reason = self.validator.check_network_allowed(url)
@@ -94,7 +109,7 @@ class WebFetchTool(Tool):
                 response.raise_for_status()
 
                 # Extract readable text from HTML
-                content = self._extract_readable_text(response.text)
+                content = html_to_markdown(response.text)
                 return ToolResult(content=content)
         except httpx.TimeoutException:
             return ToolResult(error="Request timed out")
@@ -121,6 +136,21 @@ class WebSearchTool(Tool):
             self.validator = SecurityValidator(safety_config)
         else:
             self.validator = SecurityValidator(SafetyConfig(allow_network=False))
+
+    async def _fetch_search_result(self, client: httpx.AsyncClient, url: str, title: str, snippet: str) -> str:
+        content = ""
+        try:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                content = html_to_markdown(resp.text, max_length=4000)
+        except Exception:
+            # Use snippet from search result if fetch fails
+            content = snippet[:500] if snippet else ""
+
+        if not content:
+            content = "[Content could not be fetched]"
+
+        return f"- {title}: {url}\n  {content}"
 
     async def execute(self, query: str, **kwargs) -> ToolResult:
         """Search the web with safety checks."""
@@ -153,54 +183,29 @@ class WebSearchTool(Tool):
 
             formatted = []
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                tasks = []
                 for r in results:
-                    url = r.get("href", "")
-                    title = r.get("title", "")
-                    snippet = r.get("body", "")
+                    tasks.append(
+                        self._fetch_search_result(
+                            client,
+                            r.get("href", ""),
+                            r.get("title", ""),
+                            r.get("body", "")
+                        )
+                    )
 
-                    # Fetch full page content
-                    content = ""
-                    try:
-                        resp = await client.get(url)
-                        if resp.status_code == 200:
-                            soup = BeautifulSoup(resp.text, "html.parser")
+                # Fetch all results concurrently
+                gathered_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                            # Remove script, style, nav, header, footer elements
-                            for tag in soup(
-                                [
-                                    "script",
-                                    "style",
-                                    "nav",
-                                    "header",
-                                    "footer",
-                                    "aside",
-                                    "iframe",
-                                    "noscript",
-                                ]
-                            ):
-                                tag.decompose()
-
-                            # Get text from main content areas
-                            main = (
-                                soup.find("main")
-                                or soup.find("article")
-                                or soup.find("body")
-                            )
-                            if main:
-                                text = main.get_text(separator=" ", strip=True)
-                            else:
-                                text = soup.get_text(separator=" ", strip=True)
-
-                            # Clean up whitespace
-                            content = " ".join(text.split())[:4000]
-                    except Exception:
-                        # Use snippet from search result if fetch fails
-                        content = snippet[:500] if snippet else ""
-
-                    if not content:
-                        content = "[Content could not be fetched]"
-
-                    formatted.append(f"- {title}: {url}\n  {content}")
+                for i, r in enumerate(gathered_results):
+                    if isinstance(r, Exception):
+                        # Extreme fallback if task threw unhandled exception
+                        snippet = results[i].get("body", "")
+                        title = results[i].get("title", "")
+                        url = results[i].get("href", "")
+                        formatted.append(f"- {title}: {url}\n  {snippet[:500]}")
+                    else:
+                        formatted.append(r)
 
             return ToolResult(content="\n\n".join(formatted))
         except Exception as e:

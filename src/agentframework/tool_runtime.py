@@ -12,6 +12,7 @@ from .conversation import Message, sanitize_json
 from .providers import LLMToolCall
 from .session import ChangeTracker
 from .tools import Tool
+from .callbacks import CallbackManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +52,19 @@ async def execute_single_tool(
     tool_call: LLMToolCall,
     tool_map: dict[str, Tool],
     change_tracker: ChangeTracker | None = None,
+    callback_manager: CallbackManager | None = None,
+    run_id: str = "",
 ) -> tuple[Message, float]:
     """Execute a single tool call and return the result message + duration seconds."""
     started = perf_counter()
+    if callback_manager:
+        callback_manager.on_tool_start(run_id, tool_call.name, getattr(tool_call, 'arguments', {}))
+
     tool = tool_map.get(tool_call.name)
     if not tool:
         err = ToolError("tool_not_found", f"Unknown tool: {tool_call.name}")
+        if callback_manager:
+            callback_manager.on_tool_error(run_id, tool_call.name, str(err.message))
         return (
             Message(
                 role="tool",
@@ -76,6 +84,8 @@ async def execute_single_tool(
                 args = json.loads(sanitize_json(args))
             except json.JSONDecodeError:
                 err = ToolError("validation_error", f"Invalid JSON in arguments: {args}")
+                if callback_manager:
+                    callback_manager.on_tool_error(run_id, tool_call.name, "Invalid JSON in arguments")
                 return (
                     Message(
                         role="tool",
@@ -90,6 +100,8 @@ async def execute_single_tool(
 
         validation_error, validated_args = validate_tool_args(tool, args)
         if validation_error:
+            if callback_manager:
+                callback_manager.on_tool_error(run_id, tool_call.name, str(validation_error.message))
             return (
                 Message(
                     role="tool",
@@ -116,6 +128,8 @@ async def execute_single_tool(
                 logger.debug("Failed to record change: %s", e)
 
         if result.error:
+            if callback_manager:
+                callback_manager.on_tool_error(run_id, tool_call.name, result.error)
             msg = Message(
                 role="tool",
                 content=format_tool_failure(ToolError("policy_denied", result.error)),
@@ -125,6 +139,8 @@ async def execute_single_tool(
                 error_category="policy_denied",
             )
         else:
+            if callback_manager:
+                callback_manager.on_tool_end(run_id, tool_call.name, result.content or "")
             msg = Message(
                 role="tool",
                 content=result.content or "",
@@ -143,6 +159,8 @@ async def execute_single_tool(
         else:
             msg = f"Argument error: {error_msg}"
         err = ToolError("validation_error", msg)
+        if callback_manager:
+            callback_manager.on_tool_error(run_id, tool_call.name, str(err.message))
         return (
             Message(
                 role="tool",
@@ -157,6 +175,8 @@ async def execute_single_tool(
     except Exception as e:
         logger.exception("Tool %s failed", tool_call.name)
         err = ToolError("execution_error", str(e))
+        if callback_manager:
+            callback_manager.on_tool_error(run_id, tool_call.name, str(e))
         return (
             Message(
                 role="tool",
@@ -175,11 +195,13 @@ async def execute_tool_calls(
     tool_map: dict[str, Tool],
     parallel: bool = False,
     change_tracker: ChangeTracker | None = None,
+    callback_manager: CallbackManager | None = None,
+    run_id: str = "",
 ) -> tuple[list[Message], dict[str, float]]:
     """Execute tool calls and return result messages and timings by tool call id."""
 
     async def execute_and_message(tc: LLMToolCall):
-        return await execute_single_tool(tc, tool_map, change_tracker)
+        return await execute_single_tool(tc, tool_map, change_tracker, callback_manager, run_id)
 
     timings: dict[str, float] = {}
     messages: list[Message] = []

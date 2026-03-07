@@ -5,8 +5,7 @@ import asyncio
 import pytest
 
 from src.agentframework.agent import Agent, AgentConfig
-from src.agentframework.chat import ensure_provider_credentials as ensure_chat_provider_credentials
-from src.agentframework.cli import ensure_provider_credentials as ensure_cli_provider_credentials
+from src.agentframework.bootstrap import ensure_provider_credentials
 from src.agentframework.conversation import Message
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from src.agentframework.tool_runtime import execute_single_tool
@@ -30,19 +29,25 @@ class ExplodeTool(Tool):
 
 
 class SequencedProvider(LLMProvider):
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.idx = 0
+    def __init__(self, responses: list[LLMResponse]):
+        self.responses = responses
+        self.call_count = 0
+
+    async def extract_structured(self, messages, response_model, temperature=0.3):
+        return None
 
     async def chat(self, messages, tools=None, temperature=0.3):
-        if self.idx < len(self.responses):
-            response = self.responses[self.idx]
-            self.idx += 1
+        if self.call_count < len(self.responses):
+            response = self.responses[self.call_count]
+            self.call_count += 1
             return response
         return LLMResponse(content="done")
 
 
 class SummaryProvider(LLMProvider):
+    async def extract_structured(self, messages, response_model, temperature=0.3):
+        return None
+
     async def chat(self, messages, tools=None, temperature=0.3):
         prompt = messages[-1]["content"]
         if "Summarize this conversation" in prompt:
@@ -117,10 +122,7 @@ def test_context_summarization_content_included():
     ],
 )
 def test_provider_credential_errors_are_clear(provider, expected):
-    with pytest.raises(SystemExit) as chat_err:
-        ensure_chat_provider_credentials(provider, None)
-    with pytest.raises(SystemExit) as cli_err:
-        ensure_cli_provider_credentials(provider, None)
+    with pytest.raises(SystemExit) as err:
+        ensure_provider_credentials(provider, None)
 
-    assert expected in str(chat_err.value)
-    assert expected in str(cli_err.value)
+    assert expected in str(err.value)

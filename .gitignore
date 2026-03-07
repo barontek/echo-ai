@@ -45,3 +45,7 @@ Thumbs.db
 
 # Temp files
 *.txt
+!requirements.txt
+!requirements-dev.txt
+.coverage
+.test_agent_vector_db/

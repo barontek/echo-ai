@@ -14,14 +14,19 @@ class EchoTool(Tool):
 
 
 class SequenceProvider(LLMProvider):
-    def __init__(self, responses):
+    """Returns exactly what's programmed in sequence, allowing tool execution tests without LLM drift."""
+
+    def __init__(self, responses: list[LLMResponse]):
         self.responses = responses
-        self.i = 0
+        self.call_count = 0
+
+    async def extract_structured(self, messages, response_model, temperature=0.3):
+        return None
 
     async def chat(self, messages, tools=None, temperature=0.3):
-        if self.i < len(self.responses):
-            r = self.responses[self.i]
-            self.i += 1
+        if self.call_count < len(self.responses):
+            r = self.responses[self.call_count]
+            self.call_count += 1
             return r
         return LLMResponse(content="done")
 

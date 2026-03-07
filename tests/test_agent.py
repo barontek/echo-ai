@@ -15,6 +15,9 @@ class MockProvider(LLMProvider):
         self.responses = responses or []
         self.call_count = 0
 
+    async def extract_structured(self, messages, response_model, temperature=0.3):
+        return None
+
     async def chat(
         self,
         messages: list[dict],

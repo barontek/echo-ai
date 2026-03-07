@@ -90,21 +90,21 @@ class MemoryTool(Tool):
         # Create triggers to keep FTS table in sync
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-                INSERT INTO memories_fts(rowid, content, category) 
+                INSERT INTO memories_fts(rowid, content, category)
                 VALUES (new.id, new.content, new.category);
             END;
         """)
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, content, category) 
+                INSERT INTO memories_fts(memories_fts, rowid, content, category)
                 VALUES ('delete', old.id, old.content, old.category);
             END;
         """)
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, content, category) 
+                INSERT INTO memories_fts(memories_fts, rowid, content, category)
                 VALUES ('delete', old.id, old.content, old.category);
-                INSERT INTO memories_fts(rowid, content, category) 
+                INSERT INTO memories_fts(rowid, content, category)
                 VALUES (new.id, new.content, new.category);
             END;
         """)
@@ -191,7 +191,7 @@ class MemoryTool(Tool):
                 fts_query = " OR ".join(safe_terms)
                 cursor.execute(
                     """
-                    SELECT m.content, m.category 
+                    SELECT m.content, m.category
                     FROM memories_fts f
                     JOIN memories m ON m.id = f.rowid
                     WHERE memories_fts MATCH ?

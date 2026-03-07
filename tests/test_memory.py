@@ -64,7 +64,7 @@ class TestMemoryTool:
     async def test_recall_multiple_terms(self, tool):
         await tool.execute(action="save_fact", query="my name is John")
         await tool.execute(action="save_fact", query="john lives in NYC")
-        
+
         result = await tool.execute(action="recall_fact", query="john name")
         assert result.error is None
 
@@ -79,7 +79,7 @@ class TestMemoryTool:
         await tool.execute(action="save_fact", query="I like pizza")
         await tool.execute(action="save_fact", query="I hate broccoli")
         await tool.execute(action="save_fact", query="My favorite color is blue")
-        
+
         result = await tool.execute(action="recall_fact", query="favorite")
         assert result.error is None
         assert "blue" in result.content
@@ -89,7 +89,7 @@ class TestMemoryTool:
         await tool.execute(action="save_fact", query="fact 1", category="fact")
         await tool.execute(action="save_fact", query="pref 1", category="preference")
         await tool.execute(action="save_fact", query="fact 2", category="fact")
-        
+
         result = await tool.execute(action="recall_fact", query="fact")
         assert result.error is None
         assert "fact 1" in result.content or "fact 2" in result.content
@@ -125,7 +125,7 @@ class TestMemoryToolEdgeCases:
             query="我的名字是张三"
         )
         assert result.error is None
-        
+
         result = await tool.execute(action="recall_fact", query="名字")
         assert result.error is None
         assert "张" in result.content
@@ -148,7 +148,7 @@ class TestMemoryToolEdgeCases:
     async def test_many_recalls(self, tool):
         for i in range(10):
             await tool.execute(action="save_fact", query=f"fact number {i}")
-        
+
         result = await tool.execute(action="recall_fact", query="fact")
         assert result.error is None
 

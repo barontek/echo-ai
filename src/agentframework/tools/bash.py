@@ -80,7 +80,10 @@ class BashTool(Tool):
             output = stdout.decode(errors="replace") if stdout else ""
             err = stderr.decode(errors="replace") if stderr else ""
 
+            original_len = len(output)
             output = output[:100000]
+            if original_len > 100000:
+                output += "\n\n[WARNING: Output heavily truncated (exceeded 100k characters)]"
 
             if proc.returncode != 0:
                 return ToolResult(content=output + ("\n" + err if err else ""))

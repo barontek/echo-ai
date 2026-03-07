@@ -1,0 +1,27 @@
+[
+    {
+        "id": "eval_01",
+        "prompt": "What is the capital of France?",
+        "expected_behavior": "The agent should state that the capital is Paris."
+    },
+    {
+        "id": "eval_02",
+        "prompt": "Write a one-line Python script to print 'Hello World'.",
+        "expected_behavior": "The agent should return a valid python script containing exactly `print('Hello World')`."
+    },
+    {
+        "id": "eval_03",
+        "prompt": "Calculate 25 * 4 using the python tool.",
+        "expected_behavior": "The agent must use the PythonTool to compute 100, and explicitly return the number 100 in its response."
+    },
+    {
+        "id": "eval_04",
+        "prompt": "Who won the super bowl in 2024?",
+        "expected_behavior": "The agent should mention the Kansas City Chiefs."
+    },
+    {
+        "id": "eval_05",
+        "prompt": "If a triangle has sides 3, 4, what is the hypotenuse?",
+        "expected_behavior": "The agent should state the hypotenuse is 5 (based on the Pythagorean theorem)."
+    }
+]

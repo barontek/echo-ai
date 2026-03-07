@@ -72,3 +72,95 @@ class AnthropicProvider(LLMProvider):
                 )
 
         return LLMResponse(content=content, tool_calls=tool_calls)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def chat_streaming(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.3,
+        on_chunk: Any | None = None,
+    ) -> LLMResponse:
+        """Send a streaming chat request to Anthropic."""
+        system_msg = None
+        filtered_messages = []
+
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_msg = msg["content"]
+            else:
+                filtered_messages.append(msg)
+
+        params = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "messages": filtered_messages,
+            "temperature": temperature,
+        }
+
+        if system_msg:
+            params["system"] = system_msg
+
+        if tools:
+            params["tools"] = tools
+
+        content = ""
+        tool_calls = []
+
+        async with self.client.messages.stream(**params) as stream:
+            async for text in stream.text_stream:
+                content += text
+                if on_chunk:
+                    on_chunk(text)
+
+            final_message = await stream.get_final_message()
+            for block in final_message.content:
+                if block.type == "tool_use":
+                    tool_calls.append(
+                        LLMToolCall(
+                            id=block.id,
+                            name=block.name,
+                            arguments=block.input,
+                        )
+                    )
+
+        return LLMResponse(content=content, tool_calls=tool_calls)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def extract_structured(
+        self,
+        messages: list[dict[str, str]],
+        response_model: type[Any],
+        temperature: float = 0.3,
+    ) -> Any:
+        import instructor
+        instructor_client = instructor.from_anthropic(self.client)
+
+        filtered_messages = []
+
+        for msg in messages:
+            if msg.get("role") == "system":
+                pass
+            else:
+                filtered_messages.append(msg)
+
+        params = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "messages": filtered_messages,
+            "temperature": temperature,
+            "response_model": response_model,
+        }
+
+        # NOTE: Not all anthropic versions in instructor might natively accept "system" as kwargs in completions
+        # Instructor documentation notes passing it within messages normally is fine.
+
+        return await instructor_client.chat.completions.create(**params)

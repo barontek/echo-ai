@@ -256,11 +256,12 @@ class OllamaProvider(LLMProvider):
 
                         # This is regular content
                         # If we haven't marked non-JSON yet, flush accumulated content first
-                        if not has_seen_non_json and content:
-                            extracted = self._extract_tool_calls_from_content(content)
-                            if extracted:
-                                tool_calls.extend(extracted)
-                            content = ""
+                        if not has_seen_non_json:
+                            if content:
+                                extracted = self._extract_tool_calls_from_content(content)
+                                if extracted:
+                                    tool_calls.extend(extracted)
+                                    content = ""
                             has_seen_non_json = True
 
                         content += chunk
@@ -340,6 +341,39 @@ class OllamaProvider(LLMProvider):
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")
         except Exception as e:
             return LLMResponse(content=f"Error: {str(e)}")
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def extract_structured(
+        self,
+        messages: list[dict[str, str]],
+        response_model: type[Any],
+        temperature: float = 0.3,
+    ) -> Any:
+        import instructor
+        from openai import AsyncOpenAI
+
+        # Ollama exposes an OpenAI compatible API at /v1
+        openai_client = AsyncOpenAI(
+            base_url=f"{self.base_url}/v1",
+            api_key=self.api_key or "ollama"  # dummy API key required by client
+        )
+
+        # Use instructor with JSON mode for local open-source models
+        instructor_client = instructor.from_openai(
+            openai_client,
+            mode=instructor.Mode.JSON
+        )
+
+        return await instructor_client.chat.completions.create(
+            model=self.model,
+            response_model=response_model,
+            messages=messages,  # type: ignore
+            temperature=temperature,
+        )
 
     async def close(self):
         """Close the HTTP client."""

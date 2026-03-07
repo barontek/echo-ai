@@ -11,6 +11,7 @@ from .session import SessionManager, ChangeTracker
 from .conversation import Message, apply_context_window, create_assistant_message, format_messages_for_llm, sanitize_json, summarize_old_messages
 from .tool_runtime import execute_tool_calls as runtime_execute_tool_calls, create_tool_result_notice
 from .session_runtime import undo_change, redo_change, serialize_messages, deserialize_messages
+from .callbacks import CallbackManager, AgentCallback
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,16 @@ class Agent:
 
         self.session_manager = None
         self.change_tracker = ChangeTracker()
+        self.callback_manager = CallbackManager()
         self.sub_agents: dict[str, SubAgentConfig] = {}
 
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
             self.session_manager.create_session()
+
+    def add_callback(self, callback: AgentCallback) -> None:
+        """Register a new observer callback."""
+        self.callback_manager.add_callback(callback)
 
     def add_system_message(self, content: str) -> None:
         """Add a system message to the conversation."""
@@ -142,6 +148,17 @@ class Agent:
 
         return response
 
+    async def extract_data(self, prompt: str, response_model: type[Any]) -> Any:
+        """Extract strictly typed JSON data mapped to the given Pydantic model natively."""
+        # Note: Tracing hooks could be initialized here if we wanted to log this,
+        # but for simplicity we bypass the conversational buffer.
+        messages = [{"role": "user", "content": prompt}]
+        return await self.llm.extract_structured(
+            messages=messages,
+            response_model=response_model,
+            temperature=self.config.temperature
+        )
+
     async def _run_loop(
         self, messages: list[Message], has_thinking: bool = False
     ) -> tuple[str, list[Message]]:
@@ -149,19 +166,24 @@ class Agent:
         current_messages = list(messages)
         request_id = str(uuid4())
 
+        self.callback_manager.on_run_start(request_id, current_messages[-1].content if current_messages else "")
+
         for iteration in range(self.config.max_iterations):
             logger.debug("agent_stream_iteration_start", extra={"request_id": request_id, "iteration": iteration})
             llm_messages = await self._prepare_messages(current_messages)
 
+            self.callback_manager.on_llm_start(request_id, llm_messages)
             response = await self.llm.chat(
                 messages=llm_messages,
                 tools=get_tool_schemas(self.config.tools),
                 temperature=self.config.temperature,
             )
+            self.callback_manager.on_llm_end(request_id, response)
 
             if not response.tool_calls:
                 logger.debug("agent_iteration_final", extra={"request_id": request_id, "iteration": iteration})
                 final_content = response.content or ""
+                self.callback_manager.on_run_end(request_id, final_content)
                 assistant_msg = create_assistant_message(final_content, has_thinking)
                 current_messages.append(assistant_msg)
                 return final_content, current_messages
@@ -174,8 +196,10 @@ class Agent:
             )
             current_messages = updated_messages
 
+        err_msg = "Max iterations reached. The agent could not complete the task."
+        self.callback_manager.on_run_error(request_id, Exception(err_msg))
         return (
-            "Max iterations reached. The agent could not complete the task.",
+            err_msg,
             current_messages,
         )
 
@@ -189,10 +213,13 @@ class Agent:
         current_messages = list(messages)
         request_id = str(uuid4())
 
+        self.callback_manager.on_run_start(request_id, current_messages[-1].content if current_messages else "")
+
         for iteration in range(self.config.max_iterations):
             logger.debug("agent_iteration_start", extra={"request_id": request_id, "iteration": iteration})
             llm_messages = await self._prepare_messages(current_messages)
 
+            self.callback_manager.on_llm_start(request_id, llm_messages)
             if hasattr(self.llm, "chat_streaming"):
                 response = await self.llm.chat_streaming(
                     messages=llm_messages,
@@ -206,10 +233,12 @@ class Agent:
                     tools=get_tool_schemas(self.config.tools),
                     temperature=self.config.temperature,
                 )
+            self.callback_manager.on_llm_end(request_id, response)
 
             if not response.tool_calls:
                 logger.debug("agent_iteration_final", extra={"request_id": request_id, "iteration": iteration})
                 final_content = response.content or ""
+                self.callback_manager.on_run_end(request_id, final_content)
                 assistant_msg = create_assistant_message(final_content, has_thinking)
                 current_messages.append(assistant_msg)
                 return final_content, current_messages
@@ -222,8 +251,10 @@ class Agent:
             )
             current_messages = updated_messages
 
+        err_msg = "Max iterations reached. The agent could not complete the task."
+        self.callback_manager.on_run_error(request_id, Exception(err_msg))
         return (
-            "Max iterations reached. The agent could not complete the task.",
+            err_msg,
             current_messages,
         )
 
@@ -265,6 +296,8 @@ class Agent:
             self.tool_map,
             parallel=self.config.parallel_tool_execution,
             change_tracker=self.change_tracker,
+            callback_manager=self.callback_manager,
+            run_id=request_id or "",
         )
 
         if timings:
@@ -307,7 +340,11 @@ class Agent:
     async def _execute_tool(self, tool_call: LLMToolCall) -> ToolResult:
         """Execute a single tool call (backward compatibility wrapper)."""
         msgs, _timings = await runtime_execute_tool_calls(
-            [tool_call], self.tool_map, parallel=False, change_tracker=self.change_tracker
+            [tool_call],
+            self.tool_map,
+            parallel=False,
+            change_tracker=self.change_tracker,
+            callback_manager=self.callback_manager
         )
         msg = msgs[0]
         if msg.content.startswith("FAILED"):

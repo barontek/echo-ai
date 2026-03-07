@@ -74,7 +74,7 @@ class TestGitTool:
         (Path(git_repo) / "test.txt").write_text("content")
         subprocess.run(["git", "add", "."], cwd=git_repo, capture_output=True)
         subprocess.run(["git", "commit", "-m", "initial"], cwd=git_repo, capture_output=True)
-        
+
         result = await tool.execute(command="log")
         assert result.error is None
         assert "initial" in result.content.lower()
@@ -94,7 +94,7 @@ class TestGitTool:
     async def test_git_diff(self, tool, git_repo):
         (Path(git_repo) / "test.txt").write_text("content")
         subprocess.run(["git", "add", "."], cwd=git_repo, capture_output=True)
-        
+
         result = await tool.execute(command="diff")
         assert result.error is None
 

@@ -45,6 +45,16 @@ class LLMProvider(ABC):
         """Streaming chat - override in subclass if supported."""
         raise NotImplementedError("Streaming not supported")
 
+    @abstractmethod
+    async def extract_structured(
+        self,
+        messages: list[dict[str, str]],
+        response_model: type[Any],
+        temperature: float = 0.3,
+    ) -> Any:
+        """Extract structured data matching the given pydantic response_model."""
+        pass
+
 
 def get_provider(
     name: str,

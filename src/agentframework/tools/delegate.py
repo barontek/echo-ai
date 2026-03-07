@@ -1,6 +1,5 @@
 """Delegate tool for calling sub-agents."""
 
-
 from pydantic import BaseModel
 
 from ..agent import Agent
@@ -30,12 +29,16 @@ class DelegateTool(Tool):
         """Execute the delegate tool by running the sub-agent."""
         sub_agents = getattr(self.agent, "sub_agents", {})
 
-        if agent_name not in sub_agents:
+        # Strip @ prefix if present
+        lookup_name = agent_name.lstrip("@")
+
+        if lookup_name not in sub_agents:
+            available = list(sub_agents.keys())
             return ToolResult(
-                error=f"Sub-agent '{agent_name}' not found. Available: {list(sub_agents.keys())}"
+                error=f"Sub-agent '{agent_name}' not found. Available: {available}"
             )
 
-        sub_config = sub_agents[agent_name]
+        sub_config = sub_agents[lookup_name]
 
         # Get tool instances from the parent agent
         tool_map = getattr(self.agent, "tool_map", {})

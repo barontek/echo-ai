@@ -1,12 +1,15 @@
 """Memory tool for storing and retrieving personal facts across sessions."""
 
 import sqlite3
+import logging
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from . import Tool, ToolResult
 from ..safety import SafetyConfig, SecurityValidator
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryParams(BaseModel):
@@ -22,7 +25,11 @@ class MemoryTool(Tool):
 
     parameters_model = MemoryParams
 
-    def __init__(self, db_path: str | Path | None = None, safety_config: SafetyConfig | None = None):
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        safety_config: SafetyConfig | None = None,
+    ):
         super().__init__(
             name="memory",
             description=(
@@ -50,6 +57,12 @@ class MemoryTool(Tool):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
+    def _recreate_db(self) -> None:
+        """Recreate the database if it's corrupted."""
+        logger.warning(f"Recreating corrupted database at {self.db_path}")
+        self.db_path.unlink(missing_ok=True)
+        self._init_db()
+
     def _init_db(self) -> None:
         """Initialize the SQLite database."""
         conn = sqlite3.connect(self.db_path)
@@ -63,7 +76,7 @@ class MemoryTool(Tool):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         # Create FTS5 virtual table
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
@@ -73,7 +86,7 @@ class MemoryTool(Tool):
                 content_rowid='id'
             )
         """)
-        
+
         # Create triggers to keep FTS table in sync
         cursor.execute("""
             CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
@@ -95,16 +108,16 @@ class MemoryTool(Tool):
                 VALUES (new.id, new.content, new.category);
             END;
         """)
-        
+
         # Check if we need to backfill FTS index
         cursor.execute("SELECT COUNT(*) FROM memories")
         memories_count = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM memories_fts")
         fts_count = cursor.fetchone()[0]
-        
+
         if memories_count > 0 and fts_count == 0:
             cursor.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
-            
+
         conn.commit()
         conn.close()
 
@@ -133,11 +146,11 @@ class MemoryTool(Tool):
 
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             # Prevent exact duplicates
             cursor.execute(
                 "SELECT id FROM memories WHERE content = ? AND category = ?",
-                (content, category)
+                (content, category),
             )
             if cursor.fetchone():
                 conn.close()
@@ -158,7 +171,9 @@ class MemoryTool(Tool):
         """Search memory for relevant facts."""
         try:
             if not search_query.strip():
-                return ToolResult(content="I don't have any memories matching that query yet.")
+                return ToolResult(
+                    content="I don't have any memories matching that query yet."
+                )
 
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -171,19 +186,19 @@ class MemoryTool(Tool):
                     safe_terms.append(clean_term)
 
             results = []
-            
+
             if safe_terms:
                 fts_query = " OR ".join(safe_terms)
                 cursor.execute(
-                    '''
+                    """
                     SELECT m.content, m.category 
                     FROM memories_fts f
                     JOIN memories m ON m.id = f.rowid
                     WHERE memories_fts MATCH ?
                     ORDER BY rank
                     LIMIT 5
-                    ''',
-                    (fts_query,)
+                    """,
+                    (fts_query,),
                 )
                 results.extend(cursor.fetchall())
 
@@ -192,7 +207,7 @@ class MemoryTool(Tool):
             if len(results) < 5:
                 search_terms = search_query.lower().split()
                 seen_contents = set(row[0] for row in results)
-                
+
                 for term in search_terms:
                     cursor.execute(
                         "SELECT content, category FROM memories WHERE query_text LIKE ? ORDER BY created_at DESC LIMIT 5",
@@ -215,7 +230,7 @@ class MemoryTool(Tool):
                 )
 
             formatted = []
-            for content, category in results[:5]: # Cap at 5 total
+            for content, category in results[:5]:  # Cap at 5 total
                 formatted.append(f"[{category}] {content}")
 
             return ToolResult(content="\n".join(formatted))
@@ -251,10 +266,10 @@ class MemoryTool(Tool):
 
     def load_memories(self, categories: list[str] | None = None) -> str:
         """Load all stored memories as a formatted string for injection into system context.
-        
+
         Args:
             categories: Optional list of categories to filter by. If None, all memories are loaded.
-            
+
         Returns:
             Formatted string of memories, or empty string if none exist.
         """
@@ -288,7 +303,9 @@ class MemoryTool(Tool):
         """Delete a specific memory by matching content (exact or partial)."""
         try:
             if not content.strip():
-                return ToolResult(error="Please provide the content of the memory to delete.")
+                return ToolResult(
+                    error="Please provide the content of the memory to delete."
+                )
 
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -332,6 +349,11 @@ class MemoryTool(Tool):
 
             summary = "\n".join(deleted)
             return ToolResult(content=f"Deleted {len(deleted)} memory(s):\n{summary}")
+        except sqlite3.DatabaseError:
+            self._recreate_db()
+            return ToolResult(
+                content="Memory database was corrupted and has been reset."
+            )
         except Exception as e:
             return ToolResult(error=f"Failed to delete: {str(e)}")
 
@@ -355,7 +377,11 @@ class MemoryTool(Tool):
                 return ToolResult(content="No memories to clear.")
 
             # Request approval before clearing
-            scope = f"category '{category}'" if (category and category != "fact") else "all categories"
+            scope = (
+                f"category '{category}'"
+                if (category and category != "fact")
+                else "all categories"
+            )
             if self.validator.requires_approval("memory"):
                 approved = self.validator.get_approval(
                     "memory", f"Clear {count} memory(s) from {scope}"
@@ -370,11 +396,18 @@ class MemoryTool(Tool):
             else:
                 cursor.execute("DELETE FROM memories")
                 # Also rebuild the FTS index so it reflects the empty table
-                cursor.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
+                cursor.execute(
+                    "INSERT INTO memories_fts(memories_fts) VALUES('rebuild')"
+                )
                 msg = f"Cleared all {count} memory(s)."
 
             conn.commit()
             conn.close()
             return ToolResult(content=msg)
+        except sqlite3.DatabaseError:
+            self._recreate_db()
+            return ToolResult(
+                content="Memory database was corrupted and has been reset. All memories have been cleared."
+            )
         except Exception as e:
             return ToolResult(error=f"Failed to clear: {str(e)}")

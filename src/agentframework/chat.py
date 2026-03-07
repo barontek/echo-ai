@@ -201,11 +201,15 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             def on_chunk(chunk: str):
                 nonlocal in_thinking
                 if "__THINKING__" in chunk:
+                    # Transition from talking to thinking - add newline
+                    if not in_thinking:
+                        chunk = "\n" + chunk
                     in_thinking = True
                     chunk = chunk.replace("__THINKING__", "")
                     if not chunk:
                         return
                 if "__THINKING_END__" in chunk:
+                    # Transition from thinking to talking - add newline
                     in_thinking = False
                     chunk = chunk.replace("__THINKING_END__", "\n")
                     if not chunk:

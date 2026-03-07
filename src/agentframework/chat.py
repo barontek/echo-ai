@@ -207,7 +207,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         return
                 if "__THINKING_END__" in chunk:
                     in_thinking = False
-                    chunk = chunk.replace("__THINKING_END__", "")
+                    chunk = chunk.replace("__THINKING_END__", "\n")
                     if not chunk:
                         return
 

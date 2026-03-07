@@ -156,6 +156,7 @@ class WebSearchTool(Tool):
                 for r in results:
                     url = r.get("href", "")
                     title = r.get("title", "")
+                    snippet = r.get("body", "")
 
                     # Fetch full page content
                     content = ""
@@ -192,8 +193,12 @@ class WebSearchTool(Tool):
 
                             # Clean up whitespace
                             content = " ".join(text.split())[:2000]
-                    except (httpx.RequestError, Exception):
-                        content = r.get("body", "")[:500]
+                    except Exception:
+                        # Use snippet from search result if fetch fails
+                        content = snippet[:500] if snippet else ""
+
+                    if not content:
+                        content = "[Content could not be fetched]"
 
                     formatted.append(f"- {title}: {url}\n  {content}")
 

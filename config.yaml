@@ -115,7 +115,6 @@ agent:
     Assistant: [calls web_search with query="weather in London"]
     
     TOOL CALLING RULES:
-    - If web_search only returns URLs (no actual content), use web_fetch to get the page content
     - Always use tools when the user asks for specific actions
     - NEVER guess information - use tools to verify
     - After tools execute, you MUST provide a final text response summarizing the results - do NOT call more tools

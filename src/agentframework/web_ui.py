@@ -73,6 +73,28 @@ def setup_sidebar():
                 st.session_state.agent.session_manager.save_session()
             st.rerun()
 
+def render_message_content(content: str):
+    """Render message content with native Streamlit expanders for thinking blocks."""
+    if "__THINKING__" in content:
+        parts = content.split("__THINKING__")
+        if parts[0].strip():
+            st.markdown(parts[0])
+
+        for part in parts[1:]:
+            if "__THINKING_END__" in part:
+                thinking, rest = part.split("__THINKING_END__", 1)
+                if thinking.strip():
+                    with st.expander("🤔 Thought Process"):
+                        st.markdown(thinking)
+                if rest.strip():
+                    st.markdown(rest)
+            else:
+                if part.strip():
+                    with st.expander("🤔 Thought Process"):
+                        st.markdown(part)
+    else:
+        st.markdown(content)
+
 async def process_chat(prompt: str):
     """Process user input through the agent asynchronously."""
     # Add user message to UI
@@ -106,17 +128,13 @@ async def process_chat(prompt: str):
 
         try:
             # Tell the agent to use our custom chunk handler for the streaming run
-            response = await st.session_state.agent.run_streaming(prompt, on_chunk=on_chunk)
+            await st.session_state.agent.run_streaming(prompt, on_chunk=on_chunk)
 
-            # Final render
-            final_content = response
-            if "__THINKING__" in final_content:
-                final_content = final_content.replace("__THINKING__", "<details><summary>🤔 Thought Process</summary>\n\n")
-                final_content = final_content.replace("__THINKING_END__", "\n\n</details>\n\n")
+            # Final render using native st.expander components
+            message_placeholder.empty()
+            render_message_content(full_response)
 
-            message_placeholder.markdown(final_content, unsafe_allow_html=True)
-
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.error(f"Error processing request: {str(e)}")
 
@@ -139,11 +157,7 @@ def run_app():
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
-                content = message["content"]
-                if "__THINKING__" in content:
-                    content = content.replace("__THINKING__", "<details><summary>🤔 Thought Process</summary>\n\n")
-                    content = content.replace("__THINKING_END__", "\n\n</details>\n\n")
-                st.markdown(content, unsafe_allow_html=True)
+                render_message_content(message["content"])
             else:
                 st.markdown(message["content"])
 

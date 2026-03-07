@@ -24,7 +24,7 @@ async def test_notes_tool(temp_notes_dir):
 
     # Test Create Existing
     res2 = await tool.execute("create_note", filename="test", content="World")
-    assert "already exists" in res2.error
+    assert res2.error and "already exists" in res2.error
 
     # Test Read
     res_read = await tool.execute("read_note", filename="test")
@@ -61,7 +61,7 @@ async def test_notes_tool(temp_notes_dir):
 
     # Test invalid action
     res_invalid = await tool.execute("invalid")
-    assert "Unknown action" in res_invalid.error
+    assert res_invalid.error and "Unknown action" in res_invalid.error
 
 
 @pytest.mark.asyncio
@@ -87,12 +87,12 @@ async def test_web_fetch_tool():
         return_value=httpx.Response(404)
     )
     res2 = await tool.execute(url="http://error.com")
-    assert "HTTP error: 404" in res2.error
+    assert res2.error and "HTTP error: 404" in res2.error
 
     # Blocked by config
     blocked_tool = WebFetchTool(safety_config=SafetyConfig(allow_network=False))
     res3 = await blocked_tool.execute(url="http://example.com")
-    assert "Network blocked" in res3.error
+    assert res3.error and "Network blocked" in res3.error
 
 
 @pytest.mark.asyncio
@@ -103,7 +103,7 @@ async def test_web_search_tool():
     # Test blocked
     blocked_tool = WebSearchTool(safety_config=SafetyConfig(allow_network=False))
     res_blocked = await blocked_tool.execute(query="query")
-    assert "Web search is disabled" in res_blocked.error
+    assert res_blocked.error and "Web search is disabled" in res_blocked.error
 
     # Test mock DDGS
     with patch("ddgs.DDGS") as mock_ddgs:

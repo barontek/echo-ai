@@ -28,7 +28,7 @@ async def test_python_tool_timeout(allow_all_safety):
     # Set a very short timeout for testing
     tool = PythonTool(safety_config=allow_all_safety, execution_timeout=1)
     res = await tool.execute(code="import time\ntime.sleep(2)")
-    assert "Execution timed out" in res.error
+    assert res.error and "Execution timed out" in res.error
 
 @pytest.mark.asyncio
 async def test_python_tool_no_output(allow_all_safety):

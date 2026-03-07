@@ -10,8 +10,11 @@ try:
     from rich.console import Console
     from rich.table import Table
     console = Console()
+    has_rich = True
 except ImportError:
     console = None
+    has_rich = False
+    Table = None
 
 class ScoreResult(BaseModel):
     """The extraction schema for the judge LLM."""
@@ -74,7 +77,7 @@ async def evaluate_dataset(dataset_path: str, agent_config: AgentConfig) -> floa
 
     # Print summary
     avg_score = sum(r["score"] for r in results) / len(results) if results else 0
-    if console:
+    if console and Table:
         table = Table(title=f"Evaluation Summary (Avg: {avg_score:.1f}/10)")
         table.add_column("ID", style="cyan")
         table.add_column("Score", style="magenta")

@@ -12,8 +12,15 @@ from agentframework.providers import LLMProvider, LLMResponse
 
 
 class FastMockProvider(LLMProvider):
-    async def chat(self, messages, tools=None, temperature=0.3):
-        return LLMResponse(content="ok")
+    async def chat(self, messages: list[dict[str, str]], tools: list | None = None, temperature: float = 0.3) -> LLMResponse:
+        # Note: self.call_count is not initialized in this mock provider,
+        # so this line will cause an AttributeError if executed.
+        # This is kept as per the user's explicit instruction in the provided code edit.
+        self.call_count += 1
+        return LLMResponse(content="Benchmarking response")
+
+    async def extract_structured(self, messages, response_model, temperature=0.3):
+        return None
 
 
 async def run_once(agent: Agent, prompt: str) -> float:

@@ -89,14 +89,32 @@ async def process_chat(prompt: str):
         def on_chunk(chunk: str):
             nonlocal full_response
             full_response += chunk
+
+            display_content = full_response
+            if "__THINKING__" in display_content:
+                display_content = display_content.replace("__THINKING__", "<details open><summary>🤔 Thought Process</summary>\n\n")
+                if "__THINKING_END__" in display_content:
+                    display_content = display_content.replace("__THINKING_END__", "\n\n</details>\n\n")
+                    # Close the dropdown once thinking is complete
+                    display_content = display_content.replace("<details open>", "<details>")
+                else:
+                    # Auto-close the tag if we're midway through generating
+                    display_content += "\n\n</details>"
+
             # Streamlit is synchronous, we update the placeholder from the async loop
-            message_placeholder.markdown(full_response + "▌")
+            message_placeholder.markdown(display_content + "▌", unsafe_allow_html=True)
 
         try:
             # Tell the agent to use our custom chunk handler for the streaming run
-            # The agent's run() method returns the final string natively anyway
             response = await st.session_state.agent.run_streaming(prompt, on_chunk=on_chunk)
-            message_placeholder.markdown(response)
+
+            # Final render
+            final_content = response
+            if "__THINKING__" in final_content:
+                final_content = final_content.replace("__THINKING__", "<details><summary>🤔 Thought Process</summary>\n\n")
+                final_content = final_content.replace("__THINKING_END__", "\n\n</details>\n\n")
+
+            message_placeholder.markdown(final_content, unsafe_allow_html=True)
 
             st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
@@ -120,7 +138,14 @@ def run_app():
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            if message["role"] == "assistant":
+                content = message["content"]
+                if "__THINKING__" in content:
+                    content = content.replace("__THINKING__", "<details><summary>🤔 Thought Process</summary>\n\n")
+                    content = content.replace("__THINKING_END__", "\n\n</details>\n\n")
+                st.markdown(content, unsafe_allow_html=True)
+            else:
+                st.markdown(message["content"])
 
     # Chat input
     if prompt := st.chat_input("What would you like me to do?"):

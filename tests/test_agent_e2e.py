@@ -21,7 +21,9 @@ class MockE2EProvider(LLMProvider):
             return resp
         return LLMResponse(content="Fallback response")
 
-    async def chat_streaming(self, messages: list[dict], on_chunk=None, tools: list | None = None, temperature: float = 0.3) -> LLMResponse:
+    async def chat_streaming(
+        self, messages: list[dict], tools: list | None = None, temperature: float = 0.3, on_chunk=None
+    ) -> LLMResponse:
         resp = await self.chat(messages, tools, temperature)
         if on_chunk and resp.content:
             for word in resp.content.split():

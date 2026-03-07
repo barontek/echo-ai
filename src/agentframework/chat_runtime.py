@@ -43,8 +43,12 @@ def current_query_tool_messages(
     return [m for m in candidates if m.role == "tool" and m.tool_name in tool_names]
 
 
-def extract_urls(clean_response: str, tool_messages: list) -> list[tuple[str, str]]:
-    """Extract and deduplicate candidate sources from response and tool outputs."""
+def extract_urls(
+    clean_response: str, tool_messages: list
+) -> tuple[list[tuple[str, str]], str]:
+    """Extract and deduplicate candidate sources from response and tool outputs.
+    Returns (urls, response_with_links_removed)
+    """
     links = re.findall(r"\[([^\]]+)\]\(([^)]+)\)", clean_response)
     url_only = re.findall(r"\((https?://[^)]+)\)", clean_response)
 
@@ -67,7 +71,12 @@ def extract_urls(clean_response: str, tool_messages: list) -> list[tuple[str, st
             all_urls.append((name, url))
             seen_urls.add(url)
 
-    return all_urls
+    # Remove markdown links from response
+    clean = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", clean_response)
+    clean = re.sub(r"\(https?://[^)]+\)", "", clean)
+    clean = re.sub(r"https?://\S+", "", clean)
+
+    return all_urls, clean
 
 
 async def fetch_titles(url_pairs: list[tuple[str, str]]) -> dict[str, str]:

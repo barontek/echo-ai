@@ -102,7 +102,9 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                         console.print("[dim]Started new chat[/dim]\n")
                         continue
                     case "/save", name:
-                        result = agent.save_session(name.strip() if name and name.strip() else None)
+                        result = agent.save_session(
+                            name.strip() if name and name.strip() else None
+                        )
                         console.print(f"[cyan]{result}[/cyan]")
                         continue
                     case "/load", name if name and name.strip():
@@ -137,7 +139,9 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     case "/models", _:
                         console.print("\n[bold]Recommended Models (4GB VRAM):[/bold]")
                         for model_name, description in RECOMMENDED_MODELS:
-                            console.print(f"  [cyan]{model_name}[/cyan] - {description}")
+                            console.print(
+                                f"  [cyan]{model_name}[/cyan] - {description}"
+                            )
                         console.print("\n[dim]Use /model <name> to switch[/dim]\n")
                         continue
                     case "/model", model_name if model_name and model_name.strip():
@@ -150,29 +154,45 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                             )
                             agent.llm = new_provider
                             agent.config.model = model_name.strip()
-                            console.print(f"[green]Model successfully switched to {model_name.strip()}[/green]\n")
+                            console.print(
+                                f"[green]Model successfully switched to {model_name.strip()}[/green]\n"
+                            )
                         except Exception as e:
                             console.print(f"[red]Failed to switch model: {e}[/red]")
-                            console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
+                            console.print(
+                                f"[dim]Current model remains: {old_model}[/dim]\n"
+                            )
                         continue
                     case "/model", _:
                         console.print("[yellow]Usage: /model <model_name>[/yellow]")
-                        console.print("[dim]Use /models to see available models[/dim]\n")
+                        console.print(
+                            "[dim]Use /models to see available models[/dim]\n"
+                        )
                         continue
                     case "/temperature", value if value and value.strip():
                         try:
                             new_temp = float(value.strip())
                             if not 0.0 <= new_temp <= 2.0:
-                                raise ValueError("Temperature must be between 0.0 and 2.0")
+                                raise ValueError(
+                                    "Temperature must be between 0.0 and 2.0"
+                                )
                             agent.config.temperature = new_temp
-                            console.print(f"[green]Temperature set to {new_temp}[/green]\n")
+                            console.print(
+                                f"[green]Temperature set to {new_temp}[/green]\n"
+                            )
                         except ValueError as e:
                             console.print(f"[red]Invalid temperature: {e}[/red]")
-                            console.print("[dim]Temperature must be between 0.0 and 2.0[/dim]\n")
+                            console.print(
+                                "[dim]Temperature must be between 0.0 and 2.0[/dim]\n"
+                            )
                         continue
                     case "/temperature", _:
-                        console.print(f"[cyan]Current temperature: {agent.config.temperature}[/cyan]")
-                        console.print("[dim]Use /temperature <0.0-2.0> to change[/dim]\n")
+                        console.print(
+                            f"[cyan]Current temperature: {agent.config.temperature}[/cyan]"
+                        )
+                        console.print(
+                            "[dim]Use /temperature <0.0-2.0> to change[/dim]\n"
+                        )
                         continue
 
             console.print("[dim]Thinking...[/dim]", end="\r")
@@ -206,7 +226,9 @@ async def chat_session(agent: Agent, session_name: str | None = None):
             )
 
             if web_tool_messages:
-                all_urls = extract_urls(clean_response, web_tool_messages)
+                all_urls, clean_response = extract_urls(
+                    clean_response, web_tool_messages
+                )
                 if all_urls:
                     titles = await fetch_titles(all_urls)
                     console.print("[dim]Sources:[/dim]")

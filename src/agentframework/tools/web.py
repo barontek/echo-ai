@@ -192,7 +192,7 @@ class WebSearchTool(Tool):
                                 text = soup.get_text(separator=" ", strip=True)
 
                             # Clean up whitespace
-                            content = " ".join(text.split())[:2000]
+                            content = " ".join(text.split())[:4000]
                     except Exception:
                         # Use snippet from search result if fetch fails
                         content = snippet[:500] if snippet else ""

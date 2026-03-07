@@ -90,7 +90,7 @@ def render_message_content(content: str):
                     st.markdown(rest)
             else:
                 if part.strip():
-                    with st.expander("🤔 Thought Process"):
+                    with st.expander("🤔 Thought Process", expanded=True):
                         st.markdown(part)
     else:
         st.markdown(content)
@@ -112,19 +112,9 @@ async def process_chat(prompt: str):
             nonlocal full_response
             full_response += chunk
 
-            display_content = full_response
-            if "__THINKING__" in display_content:
-                display_content = display_content.replace("__THINKING__", "<details open><summary>🤔 Thought Process</summary>\n\n")
-                if "__THINKING_END__" in display_content:
-                    display_content = display_content.replace("__THINKING_END__", "\n\n</details>\n\n")
-                    # Close the dropdown once thinking is complete
-                    display_content = display_content.replace("<details open>", "<details>")
-                else:
-                    # Auto-close the tag if we're midway through generating
-                    display_content += "\n\n</details>"
-
             # Streamlit is synchronous, we update the placeholder from the async loop
-            message_placeholder.markdown(display_content + "▌", unsafe_allow_html=True)
+            with message_placeholder.container():
+                render_message_content(full_response + "▌")
 
         try:
             # Tell the agent to use our custom chunk handler for the streaming run

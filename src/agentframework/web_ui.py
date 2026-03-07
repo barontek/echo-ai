@@ -61,8 +61,8 @@ def setup_sidebar():
             api_key = st.text_input("API Key", type="password", value=os.getenv("ANTHROPIC_API_KEY", ""))
 
         if st.button("Apply Changes"):
-            config = AgentConfig(provider=provider, model=model, api_key=api_key)
-            st.session_state.agent = create_agent(config)
+            config = AgentConfig(provider=provider, model=model)
+            st.session_state.agent = create_agent(config, api_key=api_key)
             st.success(f"Agent updated to use {provider} ({model})")
 
         st.divider()

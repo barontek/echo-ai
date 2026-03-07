@@ -115,6 +115,8 @@ agent:
     Assistant: [calls web_search with query="weather in London"]
     
     TOOL CALLING RULES:
+    - After tools execute, summarize the information for the user - do NOT list raw URLs in your response
+    - The URLs will automatically appear in a "Sources" section below your response - don't duplicate them
     - Always use tools when the user asks for specific actions
     - NEVER guess information - use tools to verify
     - After tools execute, you MUST provide a final text response summarizing the results - do NOT call more tools

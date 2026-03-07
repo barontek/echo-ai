@@ -25,7 +25,9 @@ async def get_input(prompt_text: str = "\n> ") -> str:
         return await asyncio.to_thread(input, prompt_text)
 
 
-def current_query_tool_messages(messages: list, tool_names: set[str] | None = None) -> list:
+def current_query_tool_messages(
+    messages: list, tool_names: set[str] | None = None
+) -> list:
     """Return tool messages associated with the current user query."""
     user_indexes = [i for i, message in enumerate(messages) if message.role == "user"]
 
@@ -69,18 +71,30 @@ def extract_urls(clean_response: str, tool_messages: list) -> list[tuple[str, st
 
 
 async def fetch_titles(url_pairs: list[tuple[str, str]]) -> dict[str, str]:
-    """Fetch HTML titles for a list of URLs."""
+    """Fetch HTML titles for a list of URLs in parallel."""
     titles: dict[str, str] = {}
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
-        for _, url in url_pairs:
-            try:
+
+    async def fetch_single(url: str) -> tuple[str, str | None]:
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=3)
+            ) as session:
                 async with session.get(url, ssl=False) as response:
                     if response.status != 200:
-                        continue
+                        return url, None
                     html = await response.text()
-                    match = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
+                    match = re.search(
+                        r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE
+                    )
                     if match:
-                        titles[url] = match.group(1).strip()[:60]
-            except Exception:
-                continue  # nosec B112
+                        return url, match.group(1).strip()[:60]
+        except Exception:
+            pass
+        return url, None
+
+    results = await asyncio.gather(*[fetch_single(url) for _, url in url_pairs])
+    for url, title in results:
+        if title:
+            titles[url] = title
+
     return titles

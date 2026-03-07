@@ -102,6 +102,9 @@ class Agent:
 
     async def run(self, user_input: str) -> str:
         """Run the agent with user input and return the response."""
+        if not self.messages:
+            await self.load_persistent_memory()
+
         self.add_user_message(user_input)
 
         if self.session_manager:
@@ -120,6 +123,9 @@ class Agent:
         self, user_input: str, on_chunk: Callable[[str], None] | None = None
     ) -> str:
         """Run the agent with streaming output."""
+        if not self.messages:
+            await self.load_persistent_memory()
+
         self.add_user_message(user_input)
 
         if self.session_manager:
@@ -386,6 +392,33 @@ Provide a brief summary (2-3 sentences):"""
     def undo(self) -> str:
         """Undo the last file change."""
         return undo_change(self.change_tracker)
+
+    async def load_persistent_memory(self) -> None:
+        """Load all stored memories and inject them as a system message.
+        
+        Called automatically on the first turn of a new conversation.
+        Finds a MemoryTool in the tool map and loads its stored facts,
+        then prepends a system message so the LLM always has this context.
+        """
+        from .tools.memory import MemoryTool
+
+        memory_tool = next(
+            (t for t in self.tool_map.values() if isinstance(t, MemoryTool)), None
+        )
+        if not memory_tool:
+            return
+
+        memories_str = memory_tool.load_memories()
+        if not memories_str:
+            return
+
+        system_msg = (
+            "[Persistent Memory]\n"
+            "The following facts were previously saved about the user. "
+            "Use them to personalize your responses:\n\n"
+            + memories_str
+        )
+        self.messages.insert(0, Message(role="system", content=system_msg))
 
     def redo(self) -> str:
         """Redo the last undone change."""

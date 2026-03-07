@@ -74,6 +74,7 @@ safety:
   require_approval_for:
     - bash
     - write_file
+    - memory
   # New security options
   audit_log_path: "vibe-ai-audit.log"
   read_requires_approval: false

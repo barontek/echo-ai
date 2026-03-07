@@ -86,6 +86,9 @@ def get_safety_config(config: dict) -> SafetyConfig:
             except OSError:
                 pass
 
+        if tool == "memory":
+            warning_msg = " [red]⚠️ This will permanently delete stored memories![/red]"
+
         console.print(
             f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}"
         )
@@ -100,7 +103,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
         allowed_domains=safety.get("allowed_domains", []),
         max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
         max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", ["bash", "write_file"]),
+        require_approval_for=safety.get("require_approval_for", ["bash", "write_file", "memory"]),
         approval_callback=approval_callback,
         audit_log_path=safety.get("audit_log_path"),
         read_requires_approval=safety.get("read_requires_approval", False),

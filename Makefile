@@ -14,6 +14,9 @@ help:
 	@echo "  make lint            - Run ruff linter"
 	@echo "  make typecheck       - Run pyright type checker"
 	@echo "  make security        - Run security checks"
+	@echo "  make bench           - Run benchmark harness"
+	@echo "  make serve-docs      - Serve MkDocs documentation locally"
+	@echo "  make build-docs      - Build MkDocs documentation for production"
 	@echo "  make chats           - List saved chats"
 	@echo "  make clean           - Clean up sessions and cache"
 
@@ -49,8 +52,13 @@ security:
 	.venv/bin/pip-audit || true
 	.venv/bin/bandit -r src/ || true
 
-bench:
 	python scripts/benchmarks/basic_benchmark.py --iterations 50
+
+serve-docs:
+	NO_MKDOCS_2_WARNING=1 .venv/bin/mkdocs serve
+
+build-docs:
+	NO_MKDOCS_2_WARNING=1 .venv/bin/mkdocs build --strict
 
 chats:
 	@ls -la .agent_sessions/ 2>/dev/null || echo "No saved chats"
@@ -58,4 +66,5 @@ chats:
 clean:
 	rm -rf .agent_sessions/*.json
 	rm -rf __pycache__ src/**/__pycache__
+	rm -rf site/
 	find . -name "*.pyc" -delete

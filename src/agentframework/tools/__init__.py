@@ -100,7 +100,7 @@ TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
     "web_fetch": {"safety_config": None},
     "web_search": {"safety_config": None},
     "git": {"base_dir": ".", "safety_config": None},
-    "memory": {"db_path": None},
+    "memory": {"db_path": None, "safety_config": None},
     "notes": {"notes_dir": None},
 }
 

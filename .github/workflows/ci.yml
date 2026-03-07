@@ -25,10 +25,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install pytest pytest-asyncio ruff pyright
+          pip install pytest pytest-asyncio ruff pyright mkdocs mkdocs-material
 
       - name: Run verify
         run: make verify
+
+      - name: Verify Docs Build
+        run: NO_MKDOCS_2_WARNING=1 mkdocs build --strict
 
   security:
     runs-on: ubuntu-latest

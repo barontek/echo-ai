@@ -112,8 +112,8 @@ async def execute_single_tool(
                 if Path(args["path"]).exists():
                     old_content = Path(args["path"]).read_text()
                 change_tracker.record_change("write", args["path"], old_content, args.get("content"))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to record change: %s", e)
 
         if result.error:
             msg = Message(

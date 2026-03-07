@@ -310,7 +310,7 @@ def main():
     except KeyboardInterrupt:
         try:
             agent.save_session()
-        except Exception:
+        except OSError:
             pass
         console.print("\n[dim]Chat saved. Goodbye![/dim]")
 

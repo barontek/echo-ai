@@ -41,10 +41,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install safety bandit
+        run: pip install pip-audit bandit
 
-      - name: Run safety check
-        run: safety check || true
+      - name: Run pip-audit
+        run: pip-audit || true
 
       - name: Run bandit
         run: bandit -r src/ -f json || true

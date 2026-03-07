@@ -87,7 +87,7 @@ class WebFetchTool(Tool):
                 timeout=httpx.Timeout(30.0, connect=10.0),
                 follow_redirects=True,
                 limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-                verify=False,
+                verify=True,
                 headers={"User-Agent": "Mozilla/5.0 (compatible; AgentBot/1.0)"},
             ) as client:
                 response = await client.get(url)

@@ -84,7 +84,7 @@ class ReadFileTool(FileSystemTool):
             if full_path.exists() and full_path.is_file():
                 size = full_path.stat().st_size
                 file_size_info = f" ({size // 1024} KB)"
-        except Exception:
+        except OSError:
             pass
 
         if self.validator.requires_approval("read_file", path=str(full_path)):

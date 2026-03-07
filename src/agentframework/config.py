@@ -69,7 +69,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
                 file_path = Path(path_str)
                 if file_path.exists():
                     warning_msg = " [red]⚠️ File exists - will overwrite![/red]"
-            except Exception:
+            except OSError:
                 pass
 
         if tool == "read_file":
@@ -83,7 +83,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
                         warning_msg = (
                             f" [yellow]⚠️ Large file ({size // 1024} KB)[/yellow]"
                         )
-            except Exception:
+            except OSError:
                 pass
 
         console.print(

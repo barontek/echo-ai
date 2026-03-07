@@ -82,5 +82,5 @@ async def fetch_titles(url_pairs: list[tuple[str, str]]) -> dict[str, str]:
                     if match:
                         titles[url] = match.group(1).strip()[:60]
             except Exception:
-                continue
+                continue  # nosec B112
     return titles

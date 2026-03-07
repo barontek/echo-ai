@@ -207,7 +207,7 @@ class SecurityValidator:
             try:
                 size = Path(path).stat().st_size
                 return size <= self.config.max_file_size
-            except Exception:
+            except OSError:
                 pass
         return True
 
@@ -226,7 +226,7 @@ class SecurityValidator:
                         size = file_path.stat().st_size
                         if size > self.config.read_size_threshold:
                             return True
-                except Exception:
+                except OSError:
                     pass
         
         return False

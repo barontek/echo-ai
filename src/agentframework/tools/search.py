@@ -121,7 +121,7 @@ class GrepTool(Tool):
                             )
                             if len(results) >= 100:
                                 break
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     continue
 
             if not results:

@@ -206,7 +206,7 @@ class OllamaProvider(LLMProvider):
                         continue
                     try:
                         data = json.loads(line)
-                    except Exception:
+                    except json.JSONDecodeError:
                         continue
 
                     msg = data.get("message", {})

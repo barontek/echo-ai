@@ -46,7 +46,7 @@ verify:
 	pyright src/
 
 security:
-	.venv/bin/safety check || true
+	.venv/bin/pip-audit || true
 	.venv/bin/bandit -r src/ || true
 
 bench:

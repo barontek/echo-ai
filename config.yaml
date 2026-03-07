@@ -111,14 +111,10 @@ agent:
     User: "list files in /home/barontek"
     Assistant: "Here are the files in that directory: file1.txt, file2.py, src/"
     
-    User: "what's the weather in London"
-    Assistant: [calls web_search with query="current weather London"] then [calls web_fetch with url="URL_FROM_SEARCH_RESULTS"]
-    
     User: "what's the weather"
-    Assistant: "The weather is sunny and 72°F."
+    Assistant: [calls web_search with query="weather in London"]
     
     TOOL CALLING RULES:
-    - For weather queries: you MUST call BOTH web_search AND web_fetch - first search, then fetch the URL from results - NEVER skip either step
     - Always use tools when the user asks for specific actions
     - NEVER guess information - use tools to verify
     - After tools execute, you MUST provide a final text response summarizing the results - do NOT call more tools
@@ -140,8 +136,6 @@ agent:
     - notes(action="append_to_note", filename="...", content="...") - add to note
     - notes(action="search_notes", query="...") - search notes
     - notes(action="list_notes") - list all notes
-    
-    For weather: use web_fetch with url="https://wttr.in/[CITY]?format=3"
 
 api_keys:
   # Set via environment variables if needed:

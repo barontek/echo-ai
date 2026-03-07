@@ -13,6 +13,7 @@ try:
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
+
 def initialize_session_state():
     """Initialize Streamlit session state variables."""
     if "messages" not in st.session_state:
@@ -21,6 +22,7 @@ def initialize_session_state():
         # Initialize with default config
         config = AgentConfig(provider="ollama", model="qwen3:4b-instruct")
         st.session_state.agent = create_agent(config)
+
 
 @st.cache_data(ttl=60)
 def get_ollama_models() -> list[str]:
@@ -37,15 +39,14 @@ def get_ollama_models() -> list[str]:
     # Fallback to standard defaults if daemon is offline or empty
     return ["qwen3:4b-instruct", "llama3:8b", "phi3:mini"]
 
+
 def setup_sidebar():
     """Configure the sidebar settings."""
     with st.sidebar:
         st.title("⚙️ Agent Settings")
 
         provider = st.selectbox(
-            "Provider",
-            options=["ollama", "openai", "anthropic"],
-            index=0
+            "Provider", options=["ollama", "openai", "anthropic"], index=0
         )
 
         # Dynamic model selection based on provider
@@ -55,10 +56,16 @@ def setup_sidebar():
             api_key = None
         elif provider == "openai":
             model = st.selectbox("Model", ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"])
-            api_key = st.text_input("API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
+            api_key = st.text_input(
+                "API Key", type="password", value=os.getenv("OPENAI_API_KEY", "")
+            )
         else:
-            model = st.selectbox("Model", ["claude-3-5-sonnet-20240620", "claude-3-haiku-20240307"])
-            api_key = st.text_input("API Key", type="password", value=os.getenv("ANTHROPIC_API_KEY", ""))
+            model = st.selectbox(
+                "Model", ["claude-3-5-sonnet-20240620", "claude-3-haiku-20240307"]
+            )
+            api_key = st.text_input(
+                "API Key", type="password", value=os.getenv("ANTHROPIC_API_KEY", "")
+            )
 
         if st.button("Apply Changes"):
             config = AgentConfig(provider=provider, model=model)
@@ -66,12 +73,61 @@ def setup_sidebar():
             st.success(f"Agent updated to use {provider} ({model})")
 
         st.divider()
-        if st.button("Clear History"):
+        st.subheader("Chat History")
+
+        agent = st.session_state.agent
+        session_list = ["New Chat"]
+        current_session_id = None
+
+        if agent.session_manager and agent.session_manager.current_session:
+            current_session_id = agent.session_manager.current_session.id
+
+        if agent.session_manager:
+            for sid in agent.list_sessions():
+                if sid not in session_list:
+                    session_list.append(sid)
+
+        default_index = 0
+        if current_session_id in session_list:
+            default_index = session_list.index(current_session_id)
+
+        selected_session = st.selectbox(
+            "Select Session",
+            options=session_list,
+            index=default_index,
+            label_visibility="collapsed",
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Load", use_container_width=True):
+                if (
+                    selected_session != "New Chat"
+                    and selected_session != current_session_id
+                ):
+                    agent.load_session(selected_session)
+                    st.session_state.messages = []
+                    for msg in agent.messages:
+                        st.session_state.messages.append(
+                            {"role": msg.role, "content": msg.content}
+                        )
+                    st.rerun()
+        with col2:
+            if st.button("New", use_container_width=True):
+                if agent.session_manager:
+                    agent.session_manager.create_session()
+                agent.messages = []
+                st.session_state.messages = []
+                st.rerun()
+
+        if st.button("Clear Current", use_container_width=True):
             st.session_state.messages = []
-            if st.session_state.agent.session_manager and st.session_state.agent.session_manager.current_session:
-                st.session_state.agent.session_manager.current_session.messages = []
-                st.session_state.agent.session_manager.save_session()
+            agent.messages = []
+            if agent.session_manager and agent.session_manager.current_session:
+                agent.session_manager.current_session.messages = []
+                agent.session_manager.save_session()
             st.rerun()
+
 
 def render_message_content(content: str):
     """Render message content with native Streamlit expanders for thinking blocks."""
@@ -94,6 +150,7 @@ def render_message_content(content: str):
                         st.markdown(part)
     else:
         st.markdown(content)
+
 
 async def process_chat(prompt: str):
     """Process user input through the agent asynchronously."""
@@ -124,7 +181,9 @@ async def process_chat(prompt: str):
             message_placeholder.empty()
             render_message_content(full_response)
 
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            st.session_state.messages.append(
+                {"role": "assistant", "content": full_response}
+            )
         except Exception as e:
             st.error(f"Error processing request: {str(e)}")
 
@@ -132,16 +191,16 @@ async def process_chat(prompt: str):
 def run_app():
     """Main Streamlit application entry point."""
     st.set_page_config(
-        page_title="Vibe AI Enterprise Dashboard",
-        page_icon="🤖",
-        layout="wide"
+        page_title="Vibe AI Enterprise Dashboard", page_icon="🤖", layout="wide"
     )
 
     initialize_session_state()
     setup_sidebar()
 
     st.title("🤖 Vibe AI Web Dashboard")
-    st.markdown("Welcome to the Vibe AI Web Interface. This terminal-free dashboard allows you to interact with the underlying execution agent using modern web components.")
+    st.markdown(
+        "Welcome to the Vibe AI Web Interface. This terminal-free dashboard allows you to interact with the underlying execution agent using modern web components."
+    )
 
     # Display chat history
     for message in st.session_state.messages:
@@ -155,6 +214,7 @@ def run_app():
     if prompt := st.chat_input("What would you like me to do?"):
         # We run the async process pipeline inside Streamlit's synchronous loop
         asyncio.run(process_chat(prompt))
+
 
 if __name__ == "__main__":
     run_app()

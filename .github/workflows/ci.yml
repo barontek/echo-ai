@@ -16,6 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -23,9 +29,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest pytest-asyncio ruff pyright mkdocs mkdocs-material
+          uv pip install --system -r requirements-dev.txt
+          uv pip install --system -e .
 
       - name: Run verify
         run: make verify
@@ -38,13 +43,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install pip-audit bandit
+        run: uv pip install --system pip-audit bandit
 
       - name: Run pip-audit
         run: pip-audit || true

@@ -8,7 +8,7 @@ from uuid import uuid4
 from .providers import LLMProvider, get_provider, LLMToolCall
 from .tools import Tool, ToolResult
 from .session import SessionManager, ChangeTracker
-from .conversation import Message, apply_context_window, create_assistant_message, format_messages_for_llm, estimate_tokens, sanitize_json
+from .conversation import Message, apply_context_window, create_assistant_message, format_messages_for_llm, sanitize_json, summarize_old_messages
 from .tool_runtime import execute_tool_calls as runtime_execute_tool_calls, create_tool_result_notice
 from .session_runtime import undo_change, redo_change, serialize_messages, deserialize_messages
 
@@ -329,7 +329,7 @@ class Agent:
             messages,
             self.config.max_context_messages,
             self.config.max_context_chars,
-            summarize_fn=self._summarize_old_messages,
+            summarize_fn=lambda msgs: summarize_old_messages(msgs, self.llm),
         )
         logger.debug("context_window", extra={"context_before": before_count, "context_after": len(filtered_messages), "max_messages": self.config.max_context_messages, "max_chars": self.config.max_context_chars})
 
@@ -339,63 +339,13 @@ class Agent:
             sub_agents=self.sub_agents,
         )
 
-    async def _summarize_old_messages(
-        self, messages_to_summarize: list[Message]
-    ) -> str:
-        """Summarize old messages using the LLM to preserve context."""
-        if not messages_to_summarize:
-            return ""
-
-        conversation = []
-        for msg in messages_to_summarize:
-            if msg.role == "user":
-                conversation.append(f"User: {msg.content[:500]}")
-            elif msg.role == "assistant":
-                if msg.content:
-                    conversation.append(f"Assistant: {msg.content[:500]}")
-                if msg.tool_name:
-                    conversation.append(f"Assistant used tool: {msg.tool_name}")
-            elif msg.role == "tool":
-                tool_name = msg.tool_name or "unknown"
-                content = msg.content[:300] if msg.content else ""
-                conversation.append(f"Tool {tool_name} returned: {content}")
-
-        conversation_str = chr(10).join(conversation)
-        token_count = estimate_tokens(conversation_str)
-
-        if token_count > 8000:
-            chars_to_keep = 8000 * 4
-            if len(conversation_str) > chars_to_keep:
-                half = chars_to_keep // 2
-                conversation_str = (
-                    conversation_str[:half]
-                    + "\n[...conversation truncated for summarization...]\n"
-                    + conversation_str[-half:]
-                )
-
-        prompt = f"""Summarize this conversation concisely, preserving key information, decisions, and any important context:
-
-{conversation_str}
-
-Provide a brief summary (2-3 sentences):"""
-
-        try:
-            summary_response = await self.llm.chat(
-                messages=[{"role": "user", "content": prompt}],
-                tools=None,
-                temperature=0.3,
-            )
-            return summary_response.content or ""
-        except Exception:
-            return f"[{len(messages_to_summarize)} previous messages summarized]"
-
     def undo(self) -> str:
         """Undo the last file change."""
         return undo_change(self.change_tracker)
 
     async def load_persistent_memory(self) -> None:
         """Load all stored memories and inject them as a system message.
-        
+
         Called automatically on the first turn of a new conversation.
         Finds a MemoryTool in the tool map and loads its stored facts,
         then prepends a system message so the LLM always has this context.

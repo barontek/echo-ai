@@ -26,6 +26,10 @@ dev = [
     "mkdocs-material>=9.5.0",
     "mkdocstrings>=0.28.0",
     "mkdocstrings-python>=1.16.0",
+    "pytest-cov>=4.1.0",
+    "pre-commit>=3.5.0",
+    "ruff>=0.3.0",
+    "pyright>=1.1.300",
 ]
 
 [project.scripts]

@@ -16,8 +16,9 @@ help:
 	@echo "  make security        - Run security checks"
 	@echo "  make bench           - Run benchmark harness"
 	@echo "  make serve-docs      - Serve MkDocs documentation locally"
-	@echo "  make build-docs      - Build MkDocs documentation for production"
 	@echo "  make chats           - List saved chats"
+	@echo "  make lock            - Generate strict dependencies using uv"
+	@echo "  make setup-precommit - Install local pre-commit hooks"
 	@echo "  make clean           - Clean up sessions and cache"
 
 install:
@@ -35,7 +36,7 @@ run:
 	.venv/bin/python -m agentframework.cli $(ARGS)
 
 test:
-	.venv/bin/pytest tests/ -v
+	.venv/bin/pytest --cov=src/agentframework --cov-report=term-missing tests/ -v
 
 lint:
 	.venv/bin/ruff check src/
@@ -68,3 +69,14 @@ clean:
 	rm -rf __pycache__ src/**/__pycache__
 	rm -rf site/
 	find . -name "*.pyc" -delete
+
+lock: requirements.txt requirements-dev.txt
+
+requirements.txt: pyproject.toml
+	uv pip compile pyproject.toml -o requirements.txt
+
+requirements-dev.txt: pyproject.toml
+	uv pip compile pyproject.toml --extra dev -o requirements-dev.txt
+
+setup-precommit:
+	.venv/bin/pre-commit install

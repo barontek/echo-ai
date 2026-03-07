@@ -168,3 +168,52 @@ async def apply_context_window(
         result = recent
 
     return result[-max_context_messages:] if max_context_messages > 0 else result
+
+
+async def summarize_old_messages(messages_to_summarize: list[Message], llm: Any) -> str:
+    """Summarize old messages using the LLM to preserve context."""
+    if not messages_to_summarize:
+        return ""
+
+    conversation = []
+    for msg in messages_to_summarize:
+        if msg.role == "user":
+            conversation.append(f"User: {msg.content[:500]}")
+        elif msg.role == "assistant":
+            if msg.content:
+                conversation.append(f"Assistant: {msg.content[:500]}")
+            if msg.tool_name:
+                conversation.append(f"Assistant used tool: {msg.tool_name}")
+        elif msg.role == "tool":
+            tool_name = msg.tool_name or "unknown"
+            content = msg.content[:300] if msg.content else ""
+            conversation.append(f"Tool {tool_name} returned: {content}")
+
+    conversation_str = chr(10).join(conversation)
+    token_count = estimate_tokens(conversation_str)
+
+    if token_count > 8000:
+        chars_to_keep = 8000 * 4
+        if len(conversation_str) > chars_to_keep:
+            half = chars_to_keep // 2
+            conversation_str = (
+                conversation_str[:half]
+                + "\n[...conversation truncated for summarization...]\n"
+                + conversation_str[-half:]
+            )
+
+    prompt = f"""Summarize this conversation concisely, preserving key information, decisions, and any important context:
+
+{conversation_str}
+
+Provide a brief summary (2-3 sentences):"""
+
+    try:
+        summary_response = await llm.chat(
+            messages=[{"role": "user", "content": prompt}],
+            tools=None,
+            temperature=0.3,
+        )
+        return summary_response.content or ""
+    except Exception:
+        return f"[{len(messages_to_summarize)} previous messages summarized]"

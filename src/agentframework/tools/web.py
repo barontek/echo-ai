@@ -1,10 +1,10 @@
 """Web tools for fetching and searching with network restrictions."""
 
 import asyncio
-import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
 import markdownify
+from crawl4ai import AsyncWebCrawler
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
@@ -98,25 +98,16 @@ class WebFetchTool(Tool):
                 return ToolResult(error="Web fetch requires approval")
 
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(30.0, connect=10.0),
-                follow_redirects=True,
-                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-                verify=True,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; AgentBot/1.0)"},
-            ) as client:
-                response = await client.get(url)
-                response.raise_for_status()
-
-                # Extract readable text from HTML
-                content = html_to_markdown(response.text)
-                return ToolResult(content=content)
-        except httpx.TimeoutException:
-            return ToolResult(error="Request timed out")
-        except httpx.HTTPStatusError as e:
-            return ToolResult(error=f"HTTP error: {e.response.status_code}")
-        except httpx.RequestError as e:
-            return ToolResult(error=f"Request failed: {e}")
+            async with AsyncWebCrawler(verbose=True) as crawler:
+                result = await crawler.arun(url=url)
+                if result.success:
+                    content = result.markdown
+                    # Truncate string if too long to prevent blowing up context windows
+                    if len(content) > 15000:
+                        content = content[:15000] + "\n... (truncated)"
+                    return ToolResult(content=content)
+                else:
+                    return ToolResult(error=result.error_message or "Failed to crawl URL")
         except Exception as e:
             return ToolResult(error=str(e))
 
@@ -137,12 +128,14 @@ class WebSearchTool(Tool):
         else:
             self.validator = SecurityValidator(SafetyConfig(allow_network=False))
 
-    async def _fetch_search_result(self, client: httpx.AsyncClient, url: str, title: str, snippet: str) -> str:
+    async def _fetch_search_result(self, crawler: AsyncWebCrawler, url: str, title: str, snippet: str) -> str:
         content = ""
         try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                content = html_to_markdown(resp.text, max_length=4000)
+            result = await crawler.arun(url=url)
+            if result.success:
+                content = result.markdown
+                if len(content) > 4000:
+                    content = content[:4000] + "\n... (truncated)"
         except Exception:
             # Use snippet from search result if fetch fails
             content = snippet[:500] if snippet else ""
@@ -182,12 +175,12 @@ class WebSearchTool(Tool):
                 return ToolResult(content="No results found.")
 
             formatted = []
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            async with AsyncWebCrawler(verbose=False) as crawler:
                 tasks = []
                 for r in results:
                     tasks.append(
                         self._fetch_search_result(
-                            client,
+                            crawler,
                             r.get("href", ""),
                             r.get("title", ""),
                             r.get("body", "")

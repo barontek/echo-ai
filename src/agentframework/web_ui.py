@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 """Streamlit web UI for the Echo AI agent."""
 
 import asyncio
@@ -6,7 +9,7 @@ import streamlit as st
 import httpx
 from typing import Any
 
-from .agent import AgentConfig, create_agent
+from src.agentframework.agent import AgentConfig, create_agent
 
 # Make sure we have an event loop running in the streamlit thread
 try:

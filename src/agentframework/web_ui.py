@@ -132,7 +132,9 @@ def setup_sidebar():
 def render_message_content(content: str):
     """Render message content with native Streamlit expanders for thinking blocks."""
     # Translate raw literal <think> blocks from uncensored models into system markers
-    content = content.replace("<think>", "__THINKING__").replace("</think>", "__THINKING_END__")
+    content = content.replace("<think>", "__THINKING__").replace(
+        "</think>", "__THINKING_END__"
+    )
 
     if "__THINKING__" in content:
         parts = content.split("__THINKING__")
@@ -175,7 +177,9 @@ async def process_chat(prompt: str):
             # Streamlit is synchronous, we update the placeholder from the async loop
             with message_placeholder.container():
                 # Safe-guard translation for literal XML emitted by unconstrained models during stream
-                display_content = full_response.replace("<think>", "__THINKING__").replace("</think>", "__THINKING_END__")
+                display_content = full_response.replace(
+                    "<think>", "__THINKING__"
+                ).replace("</think>", "__THINKING_END__")
                 render_message_content(display_content + "▌")
 
         try:
@@ -193,6 +197,65 @@ async def process_chat(prompt: str):
             st.error(f"Error processing request: {str(e)}")
 
 
+async def run_workflow_demo(topic: str):
+    from src.agentframework.workflow import WorkflowGraph
+    import asyncio
+
+    graph = WorkflowGraph()
+
+    async def node_research(state):
+        await asyncio.sleep(1.5)
+        # Using the active session's agent to do real work!
+        res = await st.session_state.agent.run(
+            f"Write a 2-sentence summary about {state['topic']}"
+        )
+        state["research_result"] = res
+        return state
+
+    async def node_format(state):
+        await asyncio.sleep(1.0)
+        state["final"] = f"### Research Report\n\n{state.get('research_result', '')}"
+        return state
+
+    graph.add_node("research", node_research)
+    graph.add_node("format", node_format)
+    graph.set_entry_point("research")
+    graph.add_edge("research", "format")
+    graph.add_edge("format", graph.END)
+
+    status = st.status("Initializing Workflow...", expanded=True)
+    try:
+        async for current_node, current_state in graph.run_streaming({"topic": topic}):
+            if current_node == graph.END:
+                status.update(
+                    label="Workflow Complete!", state="complete", expanded=False
+                )
+                st.success("Final Output:")
+                st.markdown(current_state.get("final", ""))
+            else:
+                status.write(f"Executing node: `{current_node}`...")
+                status.update(label=f"Running `{current_node}`...")
+    except Exception as e:
+        status.update(label=f"Error: {e}", state="error")
+        st.error(f"Workflow failed: {e}")
+
+
+def render_workflows_tab():
+    """Render the orchestration workflows UI."""
+    st.subheader("⚙️ Local Workflows")
+    st.markdown("Trigger autonomous multi-step Directed Acyclic Graph pipelines.")
+
+    with st.container(border=True):
+        st.markdown("**Research & Summarize Workflow**")
+        st.caption(
+            "A 2-step pipeline (`research` -> `format`) demonstrating live state traversal."
+        )
+        topic = st.text_input("Topic to Research", placeholder="e.g. Quantum Computing")
+
+        if st.button("Run Pipeline", type="primary") and topic:
+            asyncio.run(run_workflow_demo(topic))
+
+
 def run_app():
     """Main Streamlit application entry point."""
     st.set_page_config(
@@ -207,18 +270,24 @@ def run_app():
         "Welcome to the Echo AI Web Interface. This terminal-free dashboard allows you to interact with the underlying execution agent using modern web components."
     )
 
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            if message["role"] == "assistant":
-                render_message_content(message["content"])
-            else:
-                st.markdown(message["content"])
+    tab_chat, tab_workflows = st.tabs(["💬 Chat", "⚙️ Workflows"])
 
-    # Chat input
-    if prompt := st.chat_input("What would you like me to do?"):
-        # We run the async process pipeline inside Streamlit's synchronous loop
-        asyncio.run(process_chat(prompt))
+    with tab_chat:
+        # Display chat history
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                if message["role"] == "assistant":
+                    render_message_content(message["content"])
+                else:
+                    st.markdown(message["content"])
+
+        # Chat input
+        if prompt := st.chat_input("What would you like me to do?"):
+            # We run the async process pipeline inside Streamlit's synchronous loop
+            asyncio.run(process_chat(prompt))
+
+    with tab_workflows:
+        render_workflows_tab()
 
 
 if __name__ == "__main__":

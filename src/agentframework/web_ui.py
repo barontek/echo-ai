@@ -131,6 +131,9 @@ def setup_sidebar():
 
 def render_message_content(content: str):
     """Render message content with native Streamlit expanders for thinking blocks."""
+    # Translate raw literal <think> blocks from uncensored models into system markers
+    content = content.replace("<think>", "__THINKING__").replace("</think>", "__THINKING_END__")
+
     if "__THINKING__" in content:
         parts = content.split("__THINKING__")
         if parts[0].strip():
@@ -171,7 +174,9 @@ async def process_chat(prompt: str):
 
             # Streamlit is synchronous, we update the placeholder from the async loop
             with message_placeholder.container():
-                render_message_content(full_response + "▌")
+                # Safe-guard translation for literal XML emitted by unconstrained models during stream
+                display_content = full_response.replace("<think>", "__THINKING__").replace("</think>", "__THINKING_END__")
+                render_message_content(display_content + "▌")
 
         try:
             # Tell the agent to use our custom chunk handler for the streaming run

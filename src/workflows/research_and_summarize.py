@@ -21,7 +21,7 @@ def get_workflow() -> WorkflowGraph:
     async def node_format(state: dict[str, Any]) -> dict[str, Any]:
         await asyncio.sleep(0.5)
         raw = state.get('research_result', '')
-        state["final"] = f"### Executive Summary\\n\\n{raw}\\n\\n*Compiled by Echo AI Orchestrator*"
+        state["final"] = f"### Executive Summary\n\n{raw}\n\n*Compiled by Echo AI Orchestrator*"
         return state
 
     graph.add_node("research", node_research)

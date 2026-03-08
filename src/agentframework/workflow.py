@@ -143,6 +143,26 @@ class WorkflowGraph:
         if current_node_name == self.END or iteration >= max_iterations:
             yield self.END, state
 
+    def to_mermaid(self) -> str:
+        """Generate a declarative Mermaid flowchart representing the static map logic."""
+        lines = ["stateDiagram-v2"]
+        if self.entry_point:
+            lines.append(f"    [*] --> {self.entry_point}")
+        
+        for source, edges in self.edges.items():
+            for edge in edges:
+                if isinstance(edge, ParallelEdge):
+                    for target in edge.targets:
+                        lines.append(f"    {source} --> {target} : Parallel Start")
+                    for target in edge.targets:
+                        lines.append(f"    {target} --> {edge.next_node} : Parallel Reduce")
+                else:
+                    target = edge.condition if isinstance(edge.condition, str) else "DynamicRoute"
+                    lines.append(f"    {source} --> {target}")
+                    
+        lines.append(f"    {self.END} --> [*]")
+        return "\n".join(lines)
+
     async def compile_and_run(self, initial_state: State) -> State:
         """Synchronously blocks and runs the graph until it reaches the END terminal state."""
         state = initial_state

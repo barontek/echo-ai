@@ -4,6 +4,7 @@ import asyncio
 import os
 import streamlit as st
 import httpx
+from typing import Any
 
 from .agent import AgentConfig, create_agent
 
@@ -197,63 +198,80 @@ async def process_chat(prompt: str):
             st.error(f"Error processing request: {str(e)}")
 
 
-async def run_workflow_demo(topic: str):
-    from src.agentframework.workflow import WorkflowGraph
-    import asyncio
-
-    graph = WorkflowGraph()
-
-    async def node_research(state):
-        await asyncio.sleep(1.5)
-        # Using the active session's agent to do real work!
-        res = await st.session_state.agent.run(
-            f"Write a 2-sentence summary about {state['topic']}"
-        )
-        state["research_result"] = res
-        return state
-
-    async def node_format(state):
-        await asyncio.sleep(1.0)
-        state["final"] = f"### Research Report\n\n{state.get('research_result', '')}"
-        return state
-
-    graph.add_node("research", node_research)
-    graph.add_node("format", node_format)
-    graph.set_entry_point("research")
-    graph.add_edge("research", "format")
-    graph.add_edge("format", graph.END)
-
-    status = st.status("Initializing Workflow...", expanded=True)
+async def execute_workflow(graph: Any, topic: str):
+    """Dynamically traverse a generic graph loaded from the registry container."""
+    import streamlit as st
+    status = st.status("Initializing Graph Execution Pipeline...", expanded=True)
     try:
         async for current_node, current_state in graph.run_streaming({"topic": topic}):
-            if current_node == graph.END:
-                status.update(
-                    label="Workflow Complete!", state="complete", expanded=False
-                )
-                st.success("Final Output:")
-                st.markdown(current_state.get("final", ""))
+            if current_node == "__INTERRUPT__":
+                status.update(label="Pipeline Paused -> Awaiting Verification", state="error", expanded=False)
+                st.warning("This node requires explicit human-in-the-loop validation.")
+                break
+            elif current_node == graph.END:
+                status.update(label="Workflow Complete!", state="complete", expanded=False)
+                st.success("Final Result:")
+                st.markdown(current_state.get("final", current_state.get("output", "Done.")))
             else:
-                status.write(f"Executing node: `{current_node}`...")
-                status.update(label=f"Running `{current_node}`...")
+                status.write(f"Executing step: `{current_node}`...")
+                status.update(label=f"Tracking node => `{current_node}`")
     except Exception as e:
-        status.update(label=f"Error: {e}", state="error")
-        st.error(f"Workflow failed: {e}")
+        status.update(label=f"Error Occurred: {e}", state="error")
+        st.error(f"Fatal orchestration error: {e}")
+
+def get_available_workflows() -> dict[str, Any]:
+    """Dynamically introspect out-of-box template DAG processes configured by the developer module hierarchy."""
+    import pkgutil
+    import importlib
+    import os
+    import sys
+    
+    # Pre-add local path to pathspec explicitly
+    if os.getcwd() not in sys.path:
+        sys.path.insert(0, os.getcwd())
+
+    try:
+        import src.workflows
+    except ImportError:
+        return {}
+
+    registry = {}
+    for _, modname, _ in pkgutil.iter_modules(src.workflows.__path__):
+        try:
+            module = importlib.import_module(f"src.workflows.{modname}")
+            if hasattr(module, "get_workflow"):
+                display_name = modname.replace("_", " ").title()
+                registry[display_name] = module.get_workflow()
+        except Exception:
+            pass
+            
+    return registry
 
 
 def render_workflows_tab():
     """Render the orchestration workflows UI."""
     st.subheader("⚙️ Local Workflows")
     st.markdown("Trigger autonomous multi-step Directed Acyclic Graph pipelines.")
+    
+    workflows = get_available_workflows()
+    if not workflows:
+        st.info("No workflow templates found in `src/workflows/`. Define a python pipeline with `get_workflow()` to begin.")
+        return
+
+    selected_name = st.selectbox("Select Target Pipeline:", list(workflows.keys()))
+    graph = workflows[selected_name]
+
+    with st.expander("📊 View Graph Architecture", expanded=False):
+        mermaid_syntax = graph.to_mermaid()
+        st.markdown(f"```mermaid\n{mermaid_syntax}\n```")
 
     with st.container(border=True):
-        st.markdown("**Research & Summarize Workflow**")
-        st.caption(
-            "A 2-step pipeline (`research` -> `format`) demonstrating live state traversal."
-        )
-        topic = st.text_input("Topic to Research", placeholder="e.g. Quantum Computing")
+        st.markdown(f"**Deploying Template:** `{selected_name}`")
+        topic = st.text_input("Execution Context / Subject Payload:", placeholder="e.g. Asynchronous Microservices")
 
         if st.button("Run Pipeline", type="primary") and topic:
-            asyncio.run(run_workflow_demo(topic))
+            import asyncio
+            asyncio.run(execute_workflow(graph, topic))
 
 
 def run_app():

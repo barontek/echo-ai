@@ -1,9 +1,14 @@
 """Workflow Graph Engine for Agentic State Machines."""
 
-from typing import Any, Callable, Coroutine, AsyncGenerator
+import asyncio
+from typing import Any, Callable, Coroutine, AsyncGenerator, Union
 
 State = dict[str, Any]
 NodeFunc = Callable[[State], Coroutine[Any, Any, State]]
+
+class Interrupt(Exception):
+    """Signal to pause workflow execution and return control to the UI."""
+    pass
 
 
 class Node:
@@ -23,18 +28,35 @@ class Edge:
         self.condition = condition
 
 
+class ParallelEdge:
+    """A directed edge transitioning to multiple parallel nodes."""
+
+    def __init__(self, source: str, targets: list[str], reducer: Callable[[list[State]], State], next_node: str):
+        self.source = source
+        self.targets = targets
+        self.reducer = reducer
+        self.next_node = next_node
+
+
 class WorkflowGraph:
     """Orchestrates deterministic multi-step state machine execution, contrasting with Agentic ReAct loops."""
 
-    def __init__(self):
+    def __init__(self, checkpoint_manager: Any = None, workflow_id: str | None = None):
         self.nodes: dict[str, Node] = {}
-        self.edges: dict[str, list[Edge]] = {}
+        self.edges: dict[str, list[Union[Edge, ParallelEdge]]] = {}
         self.entry_point: str | None = None
         self.END = "__end__"
+        self.checkpoint_manager = checkpoint_manager
+        self.workflow_id = workflow_id
 
-    def add_node(self, name: str, func: NodeFunc):
-        """Register a new distinct processing node."""
-        self.nodes[name] = Node(name, func)
+    def add_node(self, name: str, func: Union[NodeFunc, "WorkflowGraph"]):
+        """Register a new distinct processing node or nested sub-graph."""
+        if isinstance(func, WorkflowGraph):
+            async def _subgraph_wrapper(state: State) -> State:
+                return await func.compile_and_run(state)
+            self.nodes[name] = Node(name, _subgraph_wrapper)
+        else:
+            self.nodes[name] = Node(name, func)
         self.edges[name] = []
 
     def set_entry_point(self, name: str):
@@ -49,14 +71,18 @@ class WorkflowGraph:
         """Add a dynamic routing edge calculated against the payload state."""
         self.edges[source].append(Edge(source, condition))
 
+    def add_parallel_edge(self, source: str, targets: list[str], reducer: Callable[[list[State]], State], next_node: str):
+        """Add a parallel execution route handling multiple nodes simultaneously cleanly resolving to a next node."""
+        self.edges[source].append(ParallelEdge(source, targets, reducer, next_node))
+
     async def run_streaming(
-        self, initial_state: State
+        self, initial_state: State, resume_from: str | None = None
     ) -> AsyncGenerator[tuple[str, State], None]:
         """Run the graph asynchronously, yielding each active node name and state update."""
-        if not self.entry_point:
+        if not self.entry_point and not resume_from:
             raise ValueError("Entry point not set for WorkflowGraph")
 
-        current_node_name = self.entry_point
+        current_node_name = resume_from or self.entry_point
         state = initial_state.copy()
 
         # Hard cap to prevent infinite recursive graphs
@@ -72,8 +98,18 @@ class WorkflowGraph:
             yield current_node_name, state
 
             node = self.nodes[current_node_name]
+            
             # Wait for execution payload to return manipulated state
-            state = await node.func(state)
+            try:
+                state = await node.func(state)
+            except Interrupt:
+                yield "__INTERRUPT__", state
+                break
+
+            # Snapshot state for persistence tracking if configured
+            if self.checkpoint_manager and self.workflow_id:
+                if hasattr(self.checkpoint_manager, "save_checkpoint"):
+                    self.checkpoint_manager.save_checkpoint(self.workflow_id, current_node_name, state)
 
             # Find next transition
             edges = self.edges.get(current_node_name, [])
@@ -81,13 +117,31 @@ class WorkflowGraph:
                 break  # Implicit terminal end if no edges exist
 
             edge = edges[0]
-            if callable(edge.condition):
+            
+            if isinstance(edge, ParallelEdge):
+                # Execute targets concurrently
+                coroutines = []
+                # Make isolated state contexts per node branch
+                for tgt in edge.targets:
+                    if tgt not in self.nodes:
+                        raise ValueError(f"Parallel target '{tgt}' not mapped to node list")
+                    coroutines.append(self.nodes[tgt].func(state.copy()))
+                
+                try:
+                    results = await asyncio.gather(*coroutines)
+                except Interrupt:
+                    yield "__INTERRUPT__", state
+                    break
+                    
+                state = edge.reducer(list(results))
+                current_node_name = edge.next_node
+            elif callable(edge.condition):
                 current_node_name = edge.condition(state)
             else:
                 current_node_name = edge.condition
 
-        # Yield the final transition to END state implicitly
-        yield self.END, state
+        if current_node_name == self.END or iteration >= max_iterations:
+            yield self.END, state
 
     async def compile_and_run(self, initial_state: State) -> State:
         """Synchronously blocks and runs the graph until it reaches the END terminal state."""

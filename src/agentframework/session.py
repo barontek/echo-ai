@@ -139,6 +139,19 @@ class SessionManager:
             self.current_session.messages.append(msg)
             self.save_session()
 
+    def save_checkpoint(self, workflow_id: str, current_node: str, state: dict) -> None:
+        """Save a state checkout for workflow graphs."""
+        if self.current_session and self.current_session.id == workflow_id:
+            if "checkpoints" not in self.current_session.metadata:
+                self.current_session.metadata["checkpoints"] = []
+            
+            self.current_session.metadata["checkpoints"].append({
+                "node": current_node,
+                "state": state,
+                "timestamp": datetime.now().isoformat()
+            })
+            self.save_session()
+
     def get_history(self) -> list[dict[str, Any]]:
         """Get message history."""
         if self.current_session:

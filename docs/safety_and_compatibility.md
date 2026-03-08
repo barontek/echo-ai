@@ -2,7 +2,7 @@
 
 ## Safety Features
 
-Vibe AI includes several safety mechanisms to ensure secure operation:
+Echo AI includes several safety mechanisms to ensure secure operation:
 
 - **Workspace confinement**: Files outside the workspace are blocked
 - **Command allowlisting**: Only permitted commands can be executed

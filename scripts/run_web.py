@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Vibe AI Streamlit Web UI.
+"""Run the Echo AI Streamlit Web UI.
 
 Usage:
     streamlit run scripts/run_web.py

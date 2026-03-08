@@ -1,4 +1,4 @@
-"""LLM-as-a-judge evaluation harness for Vibe AI."""
+"""LLM-as-a-judge evaluation harness for Echo AI."""
 
 import json
 from pydantic import BaseModel, Field

@@ -10,10 +10,10 @@ if [ "$1" == "--docker" ]; then
 fi
 
 if [ $DOCKER_MODE -eq 1 ]; then
-    echo "Starting Vibe AI Enterprise Cluster in Docker Mode..."
+    echo "Starting Echo AI Enterprise Cluster in Docker Mode..."
     docker-compose up --build
 else
-    echo "Starting Vibe AI Locally..."
+    echo "Starting Echo AI Locally..."
 
     # Check if .venv exists
     if [ ! -d ".venv" ]; then

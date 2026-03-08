@@ -22,7 +22,7 @@ def find_config_path(path: str | None = None) -> Path | None:
     search_paths = [
         Path.cwd() / "config.yaml",
         script_dir / "config.yaml",
-        Path.home() / "vibe-ai" / "config.yaml",
+        Path.home() / "echo-ai" / "config.yaml",
     ]
     for config_path in search_paths:
         if config_path.exists():

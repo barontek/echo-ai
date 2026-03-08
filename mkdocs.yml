@@ -1,8 +1,8 @@
-site_name: Vibe AI
+site_name: Echo AI
 site_description: A standalone AI agent framework built from scratch
 site_author: barontek
-repo_url: https://github.com/barontek/vibe-ai
-repo_name: barontek/vibe-ai
+repo_url: https://github.com/barontek/echo-ai
+repo_name: barontek/echo-ai
 edit_uri: edit/main/docs/
 
 theme:

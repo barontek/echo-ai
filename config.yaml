@@ -76,7 +76,7 @@ safety:
     - write_file
     - memory
   # New security options
-  audit_log_path: "vibe-ai-audit.log"
+  audit_log_path: "echo-ai-audit.log"
   read_requires_approval: false
   read_size_threshold: 102400
 
@@ -101,7 +101,7 @@ agent:
       tools: ["memory", "notes"]
 
   system_prompt: |
-    You are Vibe AI, an autonomous enterprise reasoning agent. Your primary directive is to execute operations accurately and safely on behalf of the user.
+    You are Echo AI, an autonomous enterprise reasoning agent. Your primary directive is to execute operations accurately and safely on behalf of the user.
 
     CORE PRINCIPLES:
     1. Tool Execution: You operate within a highly capable tool-calling environment. When asked to perform an action, ALWAYS use the provided native function tools. DO NOT GUESS or hallucinate results.

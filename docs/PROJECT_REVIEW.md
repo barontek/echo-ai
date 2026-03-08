@@ -1,8 +1,8 @@
-# Vibe AI Project Review (Re-evaluation)
+# Echo AI Project Review (Re-evaluation)
 
 ## Executive Summary
 
-Vibe AI is in a healthier state than the previous review: several high-priority quality recommendations have already been implemented, including shared config bootstrap logic, safer defaults, a unified local verification command, and cleaner lint/type/test baselines.
+Echo AI is in a healthier state than the previous review: several high-priority quality recommendations have already been implemented, including shared config bootstrap logic, safer defaults, a unified local verification command, and cleaner lint/type/test baselines.
 
 Current local verification snapshot:
 

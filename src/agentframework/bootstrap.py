@@ -30,7 +30,7 @@ def ensure_provider_credentials(provider: str, api_key: str | None) -> None:
 def setup_agent(force_session_enabled: bool = False) -> Agent:
     """Initialize and return the configured agent instance."""
     if sys.version_info < (3, 11):
-        console.print("[red]Python 3.11+ is required to run Vibe AI.[/red]")
+        console.print("[red]Python 3.11+ is required to run Echo AI.[/red]")
         raise SystemExit(1)
 
     debug_enabled = "--debug" in sys.argv

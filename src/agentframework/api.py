@@ -1,4 +1,4 @@
-"""FastAPI server for the Vibe AI framework."""
+"""FastAPI server for the Echo AI framework."""
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,7 +10,7 @@ from src.agentframework.agent import AgentConfig, create_agent
 from src.agentframework.router import SemanticRouter
 
 app = FastAPI(
-    title="Vibe AI Enterprise API",
+    title="Echo AI Enterprise API",
     description="High-performance async server for multi-agent capabilities.",
     version="1.0.0"
 )

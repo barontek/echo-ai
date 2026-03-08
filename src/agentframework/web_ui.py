@@ -1,4 +1,4 @@
-"""Streamlit web UI for the Vibe AI agent."""
+"""Streamlit web UI for the Echo AI agent."""
 
 import asyncio
 import os
@@ -196,15 +196,15 @@ async def process_chat(prompt: str):
 def run_app():
     """Main Streamlit application entry point."""
     st.set_page_config(
-        page_title="Vibe AI Enterprise Dashboard", page_icon="🤖", layout="wide"
+        page_title="Echo AI Enterprise Dashboard", page_icon="🤖", layout="wide"
     )
 
     initialize_session_state()
     setup_sidebar()
 
-    st.title("🤖 Vibe AI Web Dashboard")
+    st.title("🤖 Echo AI Web Dashboard")
     st.markdown(
-        "Welcome to the Vibe AI Web Interface. This terminal-free dashboard allows you to interact with the underlying execution agent using modern web components."
+        "Welcome to the Echo AI Web Interface. This terminal-free dashboard allows you to interact with the underlying execution agent using modern web components."
     )
 
     # Display chat history

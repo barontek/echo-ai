@@ -45,7 +45,7 @@ class TuiCallback(AgentCallback):
 
 
 class AgentDashboard(App):
-    """Main Textual Application for Vibe AI."""
+    """Main Textual Application for Echo AI."""
 
     CSS = """
     #main_container {
@@ -97,11 +97,11 @@ class AgentDashboard(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "Vibe AI Enterprise Dashboard"
+        self.title = "Echo AI Enterprise Dashboard"
         self.log_panel.border_title = "Agent Stream"
         self.tools_panel.border_title = "Active Tools"
         self.status_text = "Idle"
-        self.log_panel.write_line("Welcome to the Vibe AI TUI Dashboard.")
+        self.log_panel.write_line("Welcome to the Echo AI TUI Dashboard.")
 
     def watch_status_text(self, old_value: str, new_value: str) -> None:
         self.status_bar.update(new_value)

@@ -1,6 +1,6 @@
 # Chat Mode
 
-Vibe AI provides an interactive chat mode for continuous conversation with command history.
+Echo AI provides an interactive chat mode for continuous conversation with command history.
 
 ## Commands
 

@@ -9,7 +9,7 @@ from .callbacks import AgentCallback
 class OpenTelemetryCallback(AgentCallback):
     """Callback that emits OpenTelemetry traces for agent execution."""
 
-    def __init__(self, tracer_name: str = "vibe-ai.agent"):
+    def __init__(self, tracer_name: str = "echo-ai.agent"):
         self.tracer = trace.get_tracer(tracer_name)
         self.run_spans = {}
         self.llm_spans = {}

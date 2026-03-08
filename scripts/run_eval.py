@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Vibe AI Evaluation Benchmark Suite.
+"""Run the Echo AI Evaluation Benchmark Suite.
 
 Usage:
     scripts/run_eval.py

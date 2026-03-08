@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Vibe AI interactive dashboard."""
+"""Run the Echo AI interactive dashboard."""
 # ruff: noqa: E402
 
 import sys

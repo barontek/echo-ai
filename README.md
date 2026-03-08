@@ -1,4 +1,4 @@
-# Vibe AI
+# Echo AI
 
 A standalone AI agent framework built from scratch, similar to OpenCode but simpler.
 
@@ -14,8 +14,8 @@ A standalone AI agent framework built from scratch, similar to OpenCode but simp
 
 ```bash
 # Clone and setup
-git clone https://github.com/barontek/vibe-ai.git
-cd vibe-ai
+git clone https://github.com/barontek/echo-ai.git
+cd echo-ai
 make install
 
 # Run in chat mode (continuous conversation)

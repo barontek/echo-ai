@@ -26,10 +26,6 @@ class OllamaProvider(LLMProvider):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=120.0,
-        )
 
     def _extract_tool_calls_from_content(self, content: str) -> list[LLMToolCall]:
         """Extract tool calls from markdown code blocks or plain JSON in content."""
@@ -102,11 +98,12 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            response = await self.client.post(
-                "/api/chat",
-                json=payload,
-                headers=headers,
-            )
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+                response = await client.post(
+                    "/api/chat",
+                    json=payload,
+                    headers=headers,
+                )
             response.raise_for_status()
             data = response.json()
 
@@ -191,10 +188,11 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            async with self.client.stream(
-                "POST", "/api/chat", json=payload, headers=headers
-            ) as response:
-                response.raise_for_status()
+            async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+                async with client.stream(
+                    "POST", "/api/chat", json=payload, headers=headers
+                ) as response:
+                    response.raise_for_status()
 
                 content = ""
                 thinking = ""

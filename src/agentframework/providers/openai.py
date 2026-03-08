@@ -38,7 +38,7 @@ class OpenAIProvider(LLMProvider):
 
     def __init__(self, model: str, api_key: str | None = None):
         self.model = model
-        self.client = AsyncOpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -62,7 +62,8 @@ class OpenAIProvider(LLMProvider):
         if tools:
             params["tools"] = tools
 
-        response = await self.client.chat.completions.create(**params)
+        async with AsyncOpenAI(api_key=self.api_key) as client:
+            response = await client.chat.completions.create(**params)
 
         msg = response.choices[0].message
         content = msg.content or ""
@@ -104,20 +105,21 @@ class OpenAIProvider(LLMProvider):
         if tools:
             params["tools"] = tools
 
-        response = await self.client.chat.completions.create(**params)
-
         content = ""
         tool_calls_dict = {}
 
-        async for chunk in response:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
+        async with AsyncOpenAI(api_key=self.api_key) as client:
+            response = await client.chat.completions.create(**params)
 
-            if delta.content:
-                content += delta.content
-                if on_chunk:
-                    on_chunk(delta.content)
+            async for chunk in response:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+    
+                if delta.content:
+                    content += delta.content
+                    if on_chunk:
+                        on_chunk(delta.content)
 
             if delta.tool_calls:
                 for tc in delta.tool_calls:
@@ -159,10 +161,12 @@ class OpenAIProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> Any:
         import instructor
-        instructor_client = instructor.from_openai(self.client)
-        return await instructor_client.chat.completions.create(
-            model=self.model,
-            response_model=response_model,
-            messages=messages,  # type: ignore
-            temperature=temperature,
-        )
+        
+        async with AsyncOpenAI(api_key=self.api_key) as client:
+            instructor_client = instructor.from_openai(client)
+            return await instructor_client.chat.completions.create(
+                model=self.model,
+                response_model=response_model,
+                messages=messages,  # type: ignore
+                temperature=temperature,
+            )

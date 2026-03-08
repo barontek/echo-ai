@@ -18,7 +18,7 @@ class AnthropicProvider(LLMProvider):
 
     def __init__(self, model: str, api_key: str | None = None):
         self.model = model
-        self.client = AsyncAnthropic(api_key=api_key or os.getenv("ANTHROPIC_API_KEY"))
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -54,7 +54,8 @@ class AnthropicProvider(LLMProvider):
         if tools:
             params["tools"] = tools
 
-        response = await self.client.messages.create(**params)
+        async with AsyncAnthropic(api_key=self.api_key) as client:
+            response = await client.messages.create(**params)
 
         content = ""
         tool_calls = []
@@ -111,11 +112,12 @@ class AnthropicProvider(LLMProvider):
         content = ""
         tool_calls = []
 
-        async with self.client.messages.stream(**params) as stream:
-            async for text in stream.text_stream:
-                content += text
-                if on_chunk:
-                    on_chunk(text)
+        async with AsyncAnthropic(api_key=self.api_key) as client:
+            async with client.messages.stream(**params) as stream:
+                async for text in stream.text_stream:
+                    content += text
+                    if on_chunk:
+                        on_chunk(text)
 
             final_message = await stream.get_final_message()
             for block in final_message.content:
@@ -142,25 +144,27 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> Any:
         import instructor
-        instructor_client = instructor.from_anthropic(self.client)
+        
+        async with AsyncAnthropic(api_key=self.api_key) as client:
+            instructor_client = instructor.from_anthropic(client)
+    
+            filtered_messages = []
 
-        filtered_messages = []
-
-        for msg in messages:
-            if msg.get("role") == "system":
-                pass
-            else:
-                filtered_messages.append(msg)
-
-        params = {
-            "model": self.model,
-            "max_tokens": 4096,
-            "messages": filtered_messages,
-            "temperature": temperature,
-            "response_model": response_model,
-        }
-
-        # NOTE: Not all anthropic versions in instructor might natively accept "system" as kwargs in completions
-        # Instructor documentation notes passing it within messages normally is fine.
-
-        return await instructor_client.chat.completions.create(**params)
+            for msg in messages:
+                if msg.get("role") == "system":
+                    pass
+                else:
+                    filtered_messages.append(msg)
+    
+            params = {
+                "model": self.model,
+                "max_tokens": 4096,
+                "messages": filtered_messages,
+                "temperature": temperature,
+                "response_model": response_model,
+            }
+    
+            # NOTE: Not all anthropic versions in instructor might natively accept "system" as kwargs in completions
+            # Instructor documentation notes passing it within messages normally is fine.
+    
+            return await instructor_client.chat.completions.create(**params)

@@ -14,7 +14,8 @@ from agentframework.providers.ollama import OllamaProvider
 @pytest.mark.asyncio
 async def test_openai_chat():
     with patch("agentframework.providers.openai.AsyncOpenAI") as mock_openai:
-        mock_client = mock_openai.return_value
+        mock_client = AsyncMock()
+        mock_openai.return_value.__aenter__.return_value = mock_client
         mock_response = AsyncMock()
         mock_msg = MagicMock()
         mock_msg.content = "OpenAI Response"
@@ -31,7 +32,8 @@ async def test_openai_chat():
 @pytest.mark.asyncio
 async def test_anthropic_chat():
     with patch("agentframework.providers.anthropic.AsyncAnthropic") as mock_anth:
-        mock_client = mock_anth.return_value
+        mock_client = AsyncMock()
+        mock_anth.return_value.__aenter__.return_value = mock_client
         mock_response = AsyncMock()
 
         text_block = MagicMock()
@@ -71,35 +73,40 @@ async def test_ollama_chat():
 
 
 @pytest.mark.asyncio
-@respx.mock
 async def test_ollama_chat_streaming():
-    provider = OllamaProvider(model="qwen3:4b-instruct") # Triggers streaming
+    with patch("agentframework.providers.ollama.httpx.AsyncClient") as mock_httpx:
+        mock_client = AsyncMock()
+        mock_httpx.return_value.__aenter__.return_value = mock_client
+        
+        class MockResponse:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+            def raise_for_status(self):
+                pass
+            async def aiter_lines(self):
+                yield json.dumps({"message": {"content": "Stream "}})
+                yield json.dumps({"message": {"content": "Chunk "}})
+                yield json.dumps({"message": {"content": "Finished"}, "done": True})
 
-    stream_content = (
-        json.dumps({"message": {"content": "Stream "}}).encode() + b"\n" +
-        json.dumps({"message": {"content": "Chunk "}}).encode() + b"\n" +
-        json.dumps({"message": {"content": "Finished"}, "done": True}).encode() + b"\n"
-    )
+        mock_client.stream = MagicMock(return_value=MockResponse())
 
-    respx.post("http://localhost:11434/api/chat").mock(
-        return_value=httpx.Response(
-            200,
-            content=stream_content
-        )
-    )
+        provider = OllamaProvider(model="qwen3:4b-instruct") # Triggers streaming
+        
+        chunks = []
+        def on_chunk(c):
+            chunks.append(c)
 
-    chunks = []
-    def on_chunk(c):
-        chunks.append(c)
-
-    resp = await provider.chat_streaming([{"role": "user", "content": "hi"}], on_chunk=on_chunk)
-    assert resp.content == "Stream Chunk Finished"
-    assert chunks == ["Stream ", "Chunk ", "Finished"]
+        resp = await provider.chat_streaming([{"role": "user", "content": "hi"}], on_chunk=on_chunk)
+        assert resp.content == "Stream Chunk Finished"
+        assert chunks == ["Stream ", "Chunk ", "Finished"]
 
 @pytest.mark.asyncio
 async def test_openai_chat_streaming():
     with patch("agentframework.providers.openai.AsyncOpenAI") as mock_openai:
-        mock_client = mock_openai.return_value
+        mock_client = AsyncMock()
+        mock_openai.return_value.__aenter__.return_value = mock_client
 
         async def mock_stream():
             delta1 = MagicMock()
@@ -124,7 +131,8 @@ async def test_openai_chat_streaming():
 @pytest.mark.asyncio
 async def test_anthropic_chat_streaming():
     with patch("agentframework.providers.anthropic.AsyncAnthropic") as mock_anth:
-        mock_client = mock_anth.return_value
+        mock_client = AsyncMock()
+        mock_anth.return_value.__aenter__.return_value = mock_client
 
         class MockStream:
             async def __aenter__(self):
@@ -132,15 +140,17 @@ async def test_anthropic_chat_streaming():
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 pass
             @property
-            async def text_stream(self):
-                yield "Stream"
-                yield " Chunk"
+            def text_stream(self):
+                async def _gen():
+                    yield "Stream"
+                    yield " Chunk"
+                return _gen()
             async def get_final_message(self):
                 msg = MagicMock()
                 msg.content = []
                 return msg
 
-        mock_client.messages.stream.return_value = MockStream()
+        mock_client.messages.stream = MagicMock(return_value=MockStream())
 
         provider = AnthropicProvider(model="claude-3", api_key="test-key")
         chunks = []

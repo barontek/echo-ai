@@ -97,7 +97,7 @@ class AgentDashboard(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "Echo AI Enterprise Dashboard"
+        self.title = "Echo AI Dashboard"
         self.log_panel.border_title = "Agent Stream"
         self.tools_panel.border_title = "Active Tools"
         self.status_text = "Idle"

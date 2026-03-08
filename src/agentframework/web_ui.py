@@ -94,7 +94,7 @@ def setup_sidebar():
     """Configure the sidebar settings."""
     with st.sidebar:
         st.title("🤖 Echo AI")
-        st.caption("v1.0.0 Enterprise Orchestrator")
+        st.caption("v1.0.0 Orchestrator")
         st.divider()
 
         with st.expander("⚙️ Provider Configuration", expanded=False):
@@ -335,7 +335,7 @@ def render_workflows_tab():
 def run_app():
     """Main Streamlit application entry point."""
     st.set_page_config(
-        page_title="Echo AI Enterprise Dashboard", page_icon="🤖", layout="wide"
+        page_title="Echo AI Dashboard", page_icon="🤖", layout="wide"
     )
 
     inject_custom_css()

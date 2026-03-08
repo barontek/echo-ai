@@ -10,7 +10,7 @@ from src.agentframework.agent import AgentConfig, create_agent
 from src.agentframework.router import SemanticRouter
 
 app = FastAPI(
-    title="Echo AI Enterprise API",
+    title="Echo AI API",
     description="High-performance async server for multi-agent capabilities.",
     version="1.0.0"
 )

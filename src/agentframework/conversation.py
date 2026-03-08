@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import platform
+from datetime import datetime
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -56,11 +59,23 @@ def format_messages_for_llm(
     result = []
 
     prompt = system_prompt
+
+    # Inject dynamic context
+    cwd = os.getcwd()
+    os_name = platform.system()
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    dynamic_context = f"\n\n[System Context]\nOS: {os_name}\nCurrent Working Directory: {cwd}\nCurrent Time: {current_time}\n"
+
+    if prompt:
+        prompt += dynamic_context
+    else:
+        prompt = dynamic_context
+
     if sub_agents:
-        sub_agents_info = "\n\nAvailable sub-agents:\n"
+        sub_agents_info = "\nAvailable sub-agents:\n"
         for name, cfg in sub_agents.items():
             sub_agents_info += f"- @{name}: {cfg.description}\n"
-        prompt = system_prompt + sub_agents_info
+        prompt += sub_agents_info
 
     if prompt:
         result.append({"role": "system", "content": prompt})

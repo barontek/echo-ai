@@ -230,7 +230,7 @@ def process_chat(prompt: str):
             message_placeholder = st.empty()
             
             # Show a native loading spinner until the whole block resolves
-            with st.spinner("Analyzing constraints..."):
+            with st.spinner("Thinking..."):
                 # Run the execution natively across the thread without loop injection conflicts
                 import asyncio
                 # Set dummy loop

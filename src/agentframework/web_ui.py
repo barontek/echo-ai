@@ -1,14 +1,12 @@
+"""Streamlit web UI for the Echo AI agent."""
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-"""Streamlit web UI for the Echo AI agent."""
-
 import asyncio
-import os
 import streamlit as st
 import httpx
 from typing import Any
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.agentframework.agent import AgentConfig, create_agent
 
 # Make sure we have an event loop running in the streamlit thread
@@ -124,8 +122,17 @@ def setup_sidebar():
                 config = AgentConfig(provider=provider, model=model)
                 st.session_state.agent = create_agent(config, api_key=api_key)
                 st.success(f"Backend hot-swapped => {provider} ({model})")
+                
+        # Primary Navigation Switcher
+        st.subheader("Navigation")
+        active_tab = st.radio(
+            "Primary Menu",
+            ["💬 Chat Interface", "⚙️ Workflow Orchestration"],
+            label_visibility="collapsed"
+        )
+        st.divider()
 
-        with st.expander("🗃️ Session History", expanded=True):
+        with st.expander("🗃️ Session History", expanded=active_tab == "💬 Chat Interface"):
             agent = st.session_state.agent
             session_list = ["New Chat"]
             current_session_id = None
@@ -178,6 +185,8 @@ def setup_sidebar():
                     agent.session_manager.current_session.messages = []
                     agent.session_manager.save_session()
                 st.rerun()
+                
+        return active_tab
 
 
 def render_message_content(content: str):
@@ -208,44 +217,39 @@ def render_message_content(content: str):
         st.markdown(content)
 
 
-async def process_chat(prompt: str):
-    """Process user input through the agent asynchronously."""
+def process_chat(prompt: str):
+    """Process user input through the agent synchronously to avoid Streamlit event contention."""
     # Add user message to UI
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # Process assistant response
+    # Process assistant response natively avoiding global stream locks
     with st.chat_message("assistant", avatar="🤖"):
-        message_placeholder = st.empty()
-        full_response = ""
-
-        # We define a custom chunk handler to update the Streamlit UI dynamically
-        def on_chunk(chunk: str):
-            nonlocal full_response
-            full_response += chunk
-
-            # Streamlit is synchronous, we update the placeholder from the async loop
-            with message_placeholder.container():
-                # Safe-guard translation for literal XML emitted by unconstrained models during stream
-                display_content = full_response.replace(
-                    "<think>", "__THINKING__"
-                ).replace("</think>", "__THINKING_END__")
-                render_message_content(display_content + "▌")
-
         try:
-            # Tell the agent to use our custom chunk handler for the streaming run
-            await st.session_state.agent.run_streaming(prompt, on_chunk=on_chunk)
+            message_placeholder = st.empty()
+            
+            # Show a native loading spinner until the whole block resolves
+            with st.spinner("Analyzing constraints..."):
+                # Run the execution natively across the thread without loop injection conflicts
+                import asyncio
+                # Set dummy loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                resp = loop.run_until_complete(st.session_state.agent.run(prompt))
+                loop.close()
 
-            # Final render using native st.expander components
+            # Final render execution
             message_placeholder.empty()
-            render_message_content(full_response)
+            render_message_content(resp)
 
             st.session_state.messages.append(
-                {"role": "assistant", "content": full_response}
+                {"role": "assistant", "content": resp}
             )
+
         except Exception as e:
-            st.error(f"Error processing request: {str(e)}")
+            import traceback
+            st.error(f"Execution fault: {str(e)}\n\n{traceback.format_exc()}")
 
 
 async def execute_workflow(graph: Any, topic: str):
@@ -340,16 +344,14 @@ def run_app():
 
     inject_custom_css()
     initialize_session_state()
-    setup_sidebar()
+    active_tab = setup_sidebar()
 
     st.title("🤖 Echo AI")
     st.markdown(
         "Welcome to the Echo AI Web Interface. This terminal-free dashboard allows you to interact with the underlying execution agent using modern web components."
     )
 
-    tab_chat, tab_workflows = st.tabs(["💬 Chat", "⚙️ Workflows"])
-
-    with tab_chat:
+    if active_tab == "💬 Chat Interface":
         prompt = st.chat_input("What would you like me to do?")
         
         # Display Welcome Screen if Empty
@@ -378,12 +380,11 @@ def run_app():
                 else:
                     st.markdown(message["content"])
 
-        # Chat execution logic triggered either via input text bar or welcome buttons
+        # Execute Chat Event
         if prompt:
-            # We run the async process pipeline inside Streamlit's synchronous loop
-            asyncio.run(process_chat(prompt))
+            process_chat(prompt)
 
-    with tab_workflows:
+    elif active_tab == "⚙️ Workflow Orchestration":
         render_workflows_tab()
 
 

@@ -59,3 +59,9 @@ packages = ["src/agentframework"]
 markers = [
     "asyncio: mark tests as asynchronous",
 ]
+
+[dependency-groups]
+dev = [
+    "markdownify>=1.2.2",
+    "respx>=0.22.0",
+]

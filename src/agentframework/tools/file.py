@@ -157,8 +157,22 @@ class WriteFileTool(FileSystemTool):
 
         try:
             full_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            old_content = None
+            if full_path.exists():
+                old_content = full_path.read_text()
+                
             full_path.write_text(content)
-            return ToolResult(content=f"Written to {path}")
+            
+            metadata = {
+                "change": {
+                    "action": "write",
+                    "path": path,
+                    "old_content": old_content,
+                    "new_content": content
+                }
+            }
+            return ToolResult(content=f"Written to {path}", metadata=metadata)
         except Exception as e:
             return ToolResult(error=str(e))
 

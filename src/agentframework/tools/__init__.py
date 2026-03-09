@@ -27,6 +27,7 @@ class ToolResult:
 
     content: str = ""
     error: str | None = None
+    metadata: dict[str, Any] | None = None
 
     def __str__(self) -> str:
         if self.error:

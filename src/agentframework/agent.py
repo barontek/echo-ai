@@ -25,6 +25,7 @@ class AgentConfig:
     model: str = "qwen3:4b-instruct"
     temperature: float = 0.3
     max_iterations: int = 50
+    max_history_messages: int = 20
     max_context_messages: int = 50
     max_context_chars: int = 64000
     system_prompt: str = ""
@@ -62,12 +63,16 @@ class Agent:
 
         self.session_manager = None
         self.change_tracker = ChangeTracker()
+        from .memory import MemoryManager
+        self.memory_manager: MemoryManager | None = None
         self.callback_manager = CallbackManager()
         self.sub_agents: dict[str, SubAgentConfig] = {}
 
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
             self.session_manager.create_session()
+            
+        self.memory_manager = MemoryManager(self.session_manager)
 
     def add_callback(self, callback: AgentCallback) -> None:
         """Register a new observer callback."""
@@ -168,6 +173,15 @@ class Agent:
 
         self.callback_manager.on_run_start(request_id, current_messages[-1].content if current_messages else "")
 
+        max_msgs = getattr(self.config, "max_history_messages", 20)
+        if self.memory_manager:
+            current_messages = await self.memory_manager.summarize_if_needed(
+                agent_messages=current_messages,
+                llm=self.llm,
+                max_messages=max_msgs
+            )
+            self.messages = list(current_messages)
+
         for iteration in range(self.config.max_iterations):
             logger.debug("agent_stream_iteration_start", extra={"request_id": request_id, "iteration": iteration})
             llm_messages = await self._prepare_messages(current_messages)
@@ -215,6 +229,15 @@ class Agent:
 
         self.callback_manager.on_run_start(request_id, current_messages[-1].content if current_messages else "")
 
+        max_msgs = getattr(self.config, "max_history_messages", 20)
+        if self.memory_manager:
+            current_messages = await self.memory_manager.summarize_if_needed(
+                agent_messages=current_messages,
+                llm=self.llm,
+                max_messages=max_msgs
+            )
+            self.messages = list(current_messages)
+
         for iteration in range(self.config.max_iterations):
             logger.debug("agent_iteration_start", extra={"request_id": request_id, "iteration": iteration})
             llm_messages = await self._prepare_messages(current_messages)
@@ -259,37 +282,16 @@ class Agent:
         )
 
 
-    @overload
-    async def _execute_tool_calls(
-        self,
-        tool_calls: list[LLMToolCall],
-        current_messages: None = None,
-        request_id: str | None = None,
-        iteration: int | None = None,
-    ) -> list[Message]: ...
-
-    @overload
-    async def _execute_tool_calls(
-        self,
-        tool_calls: list[LLMToolCall],
-        current_messages: list[Message],
-        request_id: str | None = None,
-        iteration: int | None = None,
-    ) -> tuple[list[Message], list[Message]]: ...
-
     async def _execute_tool_calls(
         self,
         tool_calls: list[LLMToolCall],
         current_messages: list[Message] | None = None,
         request_id: str | None = None,
         iteration: int | None = None,
-    ) -> list[Message] | tuple[list[Message], list[Message]]:
+    ) -> tuple[list[Message], list[Message]]:
         """Execute tool calls and return (tool_messages, updated_messages)."""
         if current_messages is None:
             current_messages = list(self.messages)
-            use_old_api = True
-        else:
-            use_old_api = False
 
         tool_messages, timings = await runtime_execute_tool_calls(
             tool_calls,
@@ -333,8 +335,6 @@ class Agent:
         if notice:
             new_messages.append(notice)
 
-        if use_old_api:
-            return tool_messages
         return tool_messages, new_messages
 
     async def _execute_tool(self, tool_call: LLMToolCall) -> ToolResult:

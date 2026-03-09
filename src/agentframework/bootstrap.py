@@ -16,16 +16,7 @@ from .logging_utils import configure_logging
 
 console = Console(color_system="256")
 
-def ensure_provider_credentials(provider: str, api_key: str | None) -> None:
-    """Validate required credentials for hosted providers."""
-    if provider == "anthropic" and not (api_key or os.getenv("ANTHROPIC_API_KEY")):
-        raise SystemExit(
-            "ANTHROPIC_API_KEY is required for provider='anthropic'. Set it or use provider='ollama'."
-        )
-    if provider == "openai" and not (api_key or os.getenv("OPENAI_API_KEY")):
-        raise SystemExit(
-            "OPENAI_API_KEY is required for provider='openai'. Set it or use provider='ollama'."
-        )
+
 
 def setup_agent(force_session_enabled: bool = False) -> Agent:
     """Initialize and return the configured agent instance."""
@@ -66,9 +57,12 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
         )
 
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
-    ensure_provider_credentials(agent_config.provider, api_key)
-
-    agent = create_agent(agent_config, api_key)
+    
+    try:
+        agent = create_agent(agent_config, api_key)
+    except ValueError as e:
+        console.print(f"[red]Provider Configuration Error:[/red] {e}")
+        raise SystemExit(1)
     console.print(
         f"[dim]Config: {config_path if config_path else '<none>'} | Provider: {agent_config.provider} | Model: {agent_config.model}[/dim]"
     )

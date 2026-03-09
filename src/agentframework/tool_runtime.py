@@ -116,14 +116,15 @@ async def execute_single_tool(
 
         result = await tool.execute(**validated_args)
 
-        if change_tracker and tool_call.name == "write_file" and validated_args and "path" in validated_args:
+        if change_tracker and result.metadata and "change" in result.metadata:
+            change = result.metadata["change"]
             try:
-                from pathlib import Path
-
-                old_content = None
-                if Path(args["path"]).exists():
-                    old_content = Path(args["path"]).read_text()
-                change_tracker.record_change("write", args["path"], old_content, args.get("content"))
+                change_tracker.record_change(
+                    change.get("action", "write"),
+                    change.get("path"),
+                    change.get("old_content"),
+                    change.get("new_content")
+                )
             except Exception as e:
                 logger.debug("Failed to record change: %s", e)
 

@@ -180,10 +180,10 @@ class TestPydanticValidation:
             arguments={"command": "test", "count": 5},
         )
 
-        result = await agent._execute_tool_calls([tool_call])
+        tool_messages, updated_messages = await agent._execute_tool_calls([tool_call])
 
-        assert len(result) == 1
-        assert "Executed test 5 times" in result[0].content
+        assert len(tool_messages) == 1
+        assert "Executed test 5 times" in tool_messages[0].content
 
     @pytest.mark.asyncio
     async def test_validation_coerces_types(self, agent_with_mock_tool):
@@ -196,11 +196,11 @@ class TestPydanticValidation:
             arguments={"command": "test", "count": "3"},
         )
 
-        result = await agent._execute_tool_calls([tool_call])
+        tool_messages, updated_messages = await agent._execute_tool_calls([tool_call])
 
         # Should succeed because Pydantic coerces "3" to 3
-        assert len(result) == 1
-        assert "Executed test 3 times" in result[0].content
+        assert len(tool_messages) == 1
+        assert "Executed test 3 times" in tool_messages[0].content
 
     @pytest.mark.asyncio
     async def test_validation_fails_with_invalid_types(self, agent_with_mock_tool):
@@ -213,13 +213,13 @@ class TestPydanticValidation:
             arguments={"command": "test", "count": {"invalid": "type"}},
         )
 
-        result = await agent._execute_tool_calls([tool_call])
+        tool_messages, updated_messages = await agent._execute_tool_calls([tool_call])
 
-        assert len(result) == 1
-        assert "Validation error" in result[0].content
+        assert len(tool_messages) == 1
+        assert "Validation error" in tool_messages[0].content
         assert (
-            "Input should be a valid integer" in result[0].content
-            or "type" in result[0].content.lower()
+            "Input should be a valid integer" in tool_messages[0].content
+            or "type" in tool_messages[0].content.lower()
         )
 
     @pytest.mark.asyncio
@@ -233,11 +233,11 @@ class TestPydanticValidation:
             arguments={"count": 1},
         )
 
-        result = await agent._execute_tool_calls([tool_call])
+        tool_messages, updated_messages = await agent._execute_tool_calls([tool_call])
 
-        assert len(result) == 1
-        assert "Validation error" in result[0].content
-        assert "command" in result[0].content.lower()
+        assert len(tool_messages) == 1
+        assert "Validation error" in tool_messages[0].content
+        assert "command" in tool_messages[0].content.lower()
 
 
 class TestSanitizeJsonIntegration:

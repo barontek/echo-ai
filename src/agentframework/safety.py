@@ -134,53 +134,81 @@ class SecurityValidator:
         return False
 
     def check_command_safety(self, command: str) -> tuple[bool, str]:
-        """Check if command is safe to execute."""
+        """Check if command is safe to execute natively, parsing shell control logic via shlex."""
         cmd_lower = command.lower().strip()
-        parts = cmd_lower.split()
-
-        if not parts:
-            return False, "Empty command"
-
-        base_cmd = parts[0]
-
-        # Check blocked commands - compile regex patterns
-        if self.config.blocked_commands:
-            if not isinstance(self.config.blocked_commands, list):
-                pass  # Skip if not a list
-            else:
-                for blocked in self.config.blocked_commands:
-                    if not isinstance(blocked, str):
-                        continue
-                    try:
-                        if re.search(blocked, command):
-                            return False, f"Command '{base_cmd}' is blocked"
-                    except re.error:
-                        # Fall back to fnmatch for simple patterns
-                        if fnmatch.fnmatch(base_cmd, blocked):
-                            return False, f"Command '{base_cmd}' is blocked"
-
-        # Check allowed commands
-        allowed = self.config.allowed_commands
-        if allowed and "*" not in allowed:
-            if isinstance(allowed, list):
-                allowed_found = False
-                for pattern in allowed:
-                    if isinstance(pattern, str) and fnmatch.fnmatch(base_cmd, pattern):
-                        allowed_found = True
-                        break
-                if not allowed_found:
-                    return False, f"Command '{base_cmd}' not in allowlist"
-
+        
+        # We always check raw command strings against Regex dangerous patterns immediately
+        # (Since some operators like `:(){` or basic `sudo rm -rf` might span tokens weirdly).
         for pattern, reason in self._dangerous_patterns:
             if pattern.search(command):
                 return False, f"Dangerous pattern detected: {reason}"
 
-        if base_cmd in SAFE_COMMANDS:
-            allowed_args = SAFE_COMMANDS[base_cmd]
-            if allowed_args and len(parts) > 1:
-                subcmd = parts[1]
-                if subcmd not in allowed_args and '*' not in allowed_args:
-                    return False, f"Subcommand '{subcmd}' not allowed for {base_cmd}"
+        import shlex
+        import re
+
+        try:
+            # We must break the string across bash boundary chaining loops to inspect them individually
+            # Because `shlex` doesn't natively treat `;` or `&&` as command splitters dynamically unless explicitly instructed.
+            sub_commands = re.split(r'(?:;|&&|\|\||\|)', cmd_lower)
+            
+            for sub_cmd in sub_commands:
+                sub_cmd = sub_cmd.strip()
+                if not sub_cmd:
+                    continue
+                    
+                parts = shlex.split(sub_cmd)
+                if not parts:
+                    continue
+                
+                # Check for explicit bash variable assignments directly (e.g. "X=/; rm -rf $X")
+                # Shlex handles "X=/" as a single token but assigning it dynamically hides logic.
+                # If a part contains typical assignment operators out of band, flag immediately
+                # Example: `parts = ['X=/', 'rm', '-rf', '$X']`.
+                # We need to evaluate the execution block. The base command here is usually the first non-variable token.
+                # To be rigorous, we strip out leading variable assignments from the 'base_cmd' inspection natively.
+                executable_parts = []
+                for p in parts:
+                    if "=" not in p or p.startswith("-"): # Quick heuristic to skip env vars preceding a command (e.g. `DEBUG=1 npm start`)
+                        executable_parts.append(p)
+                        
+                if not executable_parts:
+                    continue # It was purely an assignment
+                    
+                base_cmd = executable_parts[0]
+
+                # Check blocked commands - compile regex patterns natively
+                if self.config.blocked_commands:
+                    for blocked in self.config.blocked_commands:
+                        if not isinstance(blocked, str):
+                            continue
+                        try:
+                            if re.search(blocked, base_cmd):
+                                return False, f"Command '{base_cmd}' is blocked"
+                        except re.error:
+                            # Fall back to fnmatch for simple patterns
+                            if fnmatch.fnmatch(base_cmd, blocked):
+                                return False, f"Command '{base_cmd}' is blocked"
+
+                # Check allowed commands
+                allowed = self.config.allowed_commands
+                if allowed and "*" not in allowed:
+                    allowed_found = False
+                    for pattern in allowed:
+                        if isinstance(pattern, str) and fnmatch.fnmatch(base_cmd, pattern):
+                            allowed_found = True
+                            break
+                    if not allowed_found:
+                        return False, f"Command '{base_cmd}' not in allowlist"
+
+                if base_cmd in SAFE_COMMANDS:
+                    allowed_args = SAFE_COMMANDS[base_cmd]
+                    if allowed_args and len(executable_parts) > 1:
+                        subcmd = executable_parts[1]
+                        if subcmd not in allowed_args and '*' not in allowed_args:
+                            return False, f"Subcommand '{subcmd}' not allowed for {base_cmd}"
+                            
+        except ValueError as e:
+            return False, f"Malformed command string: {e}"
 
         return True, "OK"
 

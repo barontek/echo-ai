@@ -101,6 +101,40 @@ class TestSecurityValidator:
         assert safe is False
         assert "Fork bomb" in reason
 
+    def test_command_safety_injection_bypasses(self, temp_workspace):
+        config = SafetyConfig(
+            workspace=temp_workspace,
+            allow_network=True,
+            allowed_commands=["echo", "ls"],
+            blocked_commands=["rm", "sudo"]
+        )
+        validator = SecurityValidator(config)
+
+        # Variable injection obfuscation (Command 'rm' is blocked)
+        safe, reason = validator.check_command_safety("X=/; rm -rf $X")
+        assert safe is False
+        assert "pattern" in reason or "blocked" in reason
+
+        # Chained command obfuscation, where second part is blocked
+        safe, reason = validator.check_command_safety("echo 'safe' && rm file.txt")
+        assert safe is False
+        assert "blocked" in reason
+
+        # Piping into a dangerous execution shell
+        safe, reason = validator.check_command_safety("echo 'malicious script' | bash")
+        assert safe is False
+        assert "not in allowlist" in reason or "blocked" in reason
+
+        # Obfuscated string evaluation (eval bypasses are in dangerous patterns)
+        safe, reason = validator.check_command_safety('eval "rm -rf /"')
+        assert safe is False
+        assert "Dangerous pattern" in reason
+
+        # Allowed sub-commands shouldn't be impacted
+        safe, reason = validator.check_command_safety("echo safe; ls -la")
+        assert safe is True
+        assert reason == "OK"
+
     def test_command_safety_not_in_allowlist(self, validator):
         safe, reason = validator.check_command_safety("vim")
         assert safe is False

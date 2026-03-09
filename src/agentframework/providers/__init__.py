@@ -63,10 +63,16 @@ def get_provider(
     base_url: str | None = None,
 ) -> LLMProvider:
     """Get an LLM provider by name."""
+    import os
+    
     if name == "anthropic":
+        if not (api_key or os.getenv("ANTHROPIC_API_KEY")):
+            raise ValueError("ANTHROPIC_API_KEY is required for provider='anthropic'. Set it or use provider='ollama'.")
         from .anthropic import AnthropicProvider
         return AnthropicProvider(model=model, api_key=api_key)
     elif name == "openai":
+        if not (api_key or os.getenv("OPENAI_API_KEY")):
+            raise ValueError("OPENAI_API_KEY is required for provider='openai'. Set it or use provider='ollama'.")
         from .openai import OpenAIProvider
         return OpenAIProvider(model=model, api_key=api_key)
     elif name == "ollama":

@@ -129,6 +129,7 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
         # model_config = ConfigDict(arbitrary_types_allowed=True).get(tool_name, {})
         config_defaults = TOOL_CONFIG_KEYS.get(tool_name, {})
 
+        tool_config = config.get("tools", {}).get(tool_name, {})
         kwargs = {}
         for key, default_value in config_defaults.items():
             if key in tool_config:

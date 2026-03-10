@@ -115,19 +115,21 @@ class OpenAIProvider(LLMProvider):
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
+                if not delta:
+                    continue
     
                 if delta.content:
                     content += delta.content
                     if on_chunk:
                         on_chunk(delta.content)
 
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in tool_calls_dict:
-                        tool_calls_dict[idx] = {"id": tc.id, "name": tc.function.name, "arguments": ""}
-                    if tc.function and tc.function.arguments:
-                        tool_calls_dict[idx]["arguments"] += tc.function.arguments
+                if getattr(delta, "tool_calls", None):
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_dict:
+                            tool_calls_dict[idx] = {"id": tc.id, "name": tc.function.name, "arguments": ""}
+                        if tc.function and tc.function.arguments:
+                            tool_calls_dict[idx]["arguments"] += tc.function.arguments
 
         tool_calls = []
         import json

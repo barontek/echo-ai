@@ -76,7 +76,7 @@ async def test_ollama_chat():
 async def test_ollama_chat_streaming():
     with patch("agentframework.providers.ollama.httpx.AsyncClient") as mock_httpx:
         mock_client = AsyncMock()
-        mock_httpx.return_value.__aenter__.return_value = mock_client
+        mock_httpx.return_value = mock_client
         
         class MockResponse:
             async def __aenter__(self):

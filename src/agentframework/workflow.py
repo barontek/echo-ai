@@ -77,12 +77,12 @@ class WorkflowGraph:
 
     async def run_streaming(
         self, initial_state: State, resume_from: str | None = None
-    ) -> AsyncGenerator[tuple[str, State], None]:
+    ) -> AsyncGenerator[tuple[str, State], Any]:
         """Run the graph asynchronously, yielding each active node name and state update."""
         if not self.entry_point and not resume_from:
             raise ValueError("Entry point not set for WorkflowGraph")
 
-        current_node_name = resume_from or self.entry_point
+        current_node_name: str = resume_from or self.entry_point or ""
         state = initial_state.copy()
 
         # Hard cap to prevent infinite recursive graphs

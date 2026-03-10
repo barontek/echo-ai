@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, overload
+from typing import Any, Callable
 from uuid import uuid4
 
 from .providers import LLMProvider, get_provider, LLMToolCall

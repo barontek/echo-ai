@@ -48,7 +48,7 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                     else ""
                 )
 
-                should_continue = await execute_command(cmd, args, agent, console)
+                should_continue = execute_command(cmd, args, agent, console)
                 if not should_continue:
                     return
                 continue

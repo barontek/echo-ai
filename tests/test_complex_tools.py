@@ -65,16 +65,25 @@ async def test_notes_tool(temp_notes_dir):
 
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_web_fetch_tool():
+@patch("agentframework.tools.web.AsyncWebCrawler")
+async def test_web_fetch_tool(mock_crawler_class):
     tool = WebFetchTool(safety_config=SafetyConfig(allow_network=True))
 
-    respx.get("http://example.com").mock(
-        return_value=httpx.Response(
-            200,
-            text="<html><body><h1>Test Page</h1><p>Content goes here</p><script>alert('hide')</script></body></html>"
-        )
-    )
+    mock_crawler = mock_crawler_class.return_value.__aenter__.return_value
+
+    class MockResult:
+        def __init__(self, success, markdown="", error_message=""):
+            self.success = success
+            self.markdown = markdown
+            self.error_message = error_message
+
+    async def mock_arun(url, **kwargs):
+        if url == "http://example.com":
+            return MockResult(success=True, markdown="# Test Page\nContent goes here")
+        else:
+            return MockResult(success=False, error_message="HTTP error: 404")
+
+    mock_crawler.arun.side_effect = mock_arun
 
     res = await tool.execute(url="http://example.com")
     assert not res.error
@@ -83,9 +92,6 @@ async def test_web_fetch_tool():
     assert "alert" not in res.content
 
     # Status error
-    respx.get("http://error.com").mock(
-        return_value=httpx.Response(404)
-    )
     res2 = await tool.execute(url="http://error.com")
     assert res2.error and "HTTP error: 404" in res2.error
 
@@ -96,14 +102,30 @@ async def test_web_fetch_tool():
 
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_web_search_tool():
+@patch("agentframework.tools.web.AsyncWebCrawler")
+async def test_web_search_tool(mock_crawler_class):
     tool = WebSearchTool(safety_config=SafetyConfig(allow_network=True))
 
     # Test blocked
     blocked_tool = WebSearchTool(safety_config=SafetyConfig(allow_network=False))
     res_blocked = await blocked_tool.execute(query="query")
     assert res_blocked.error and "Web search is disabled" in res_blocked.error
+
+    mock_crawler = mock_crawler_class.return_value.__aenter__.return_value
+
+    class MockResult:
+        def __init__(self, success, markdown="", error_message=""):
+            self.success = success
+            self.markdown = markdown
+            self.error_message = error_message
+
+    async def mock_arun(url, **kwargs):
+        if url == "http://example.com/1":
+            return MockResult(success=True, markdown="Page 1 Content")
+        else:
+            raise RuntimeError("Error")
+
+    mock_crawler.arun.side_effect = mock_arun
 
     # Test mock DDGS
     with patch("ddgs.DDGS") as mock_ddgs:
@@ -112,9 +134,6 @@ async def test_web_search_tool():
             {"href": "http://example.com/1", "title": "Result 1", "body": "Snippet 1"},
             {"href": "http://example.com/2", "title": "Result 2", "body": "Snippet 2"},
         ]
-
-        respx.get("http://example.com/1").mock(return_value=httpx.Response(200, text="<html><body>Page 1 Content</body></html>"))
-        respx.get("http://example.com/2").mock(side_effect=httpx.ConnectError("Error")) # Will fallback to snippet
 
         res = await tool.execute(query="query")
         assert not res.error

@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from src.agentframework.agent import Agent, AgentConfig
-from src.agentframework.bootstrap import ensure_provider_credentials
+from src.agentframework.providers import get_provider
 from src.agentframework.conversation import Message
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from src.agentframework.tool_runtime import execute_single_tool
@@ -121,8 +121,9 @@ def test_context_summarization_content_included():
         ("anthropic", "ANTHROPIC_API_KEY"),
     ],
 )
-def test_provider_credential_errors_are_clear(provider, expected):
-    with pytest.raises(SystemExit) as err:
-        ensure_provider_credentials(provider, None)
+def test_provider_credential_errors_are_clear(provider, expected, monkeypatch):
+    monkeypatch.delenv(expected, raising=False)
+    with pytest.raises(ValueError) as err:
+        get_provider(provider, model="some_model")
 
     assert expected in str(err.value)

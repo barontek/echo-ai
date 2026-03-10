@@ -121,11 +121,9 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
         if tool_class is None:
             continue
 
-        max_history_messages: int = 50  # Limit before sqlite summarization
         # Assuming ConfigDict is imported or defined elsewhere if needed,
         # but based on the instruction, it's inserted as is.
         # This line's indentation is corrected to be inside the loop.
-        model_config = {} # Placeholder for ConfigDict if not defined
         # model_config = ConfigDict(arbitrary_types_allowed=True).get(tool_name, {})
         config_defaults = TOOL_CONFIG_KEYS.get(tool_name, {})
 

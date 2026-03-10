@@ -99,15 +99,15 @@ class WebFetchTool(Tool):
 
         try:
             async with AsyncWebCrawler(verbose=True) as crawler:
-                result = await crawler.arun(url=url)
-                if result.success:
-                    content = result.markdown
-                    # Truncate string if too long to prevent blowing up context windows
-                    if len(content) > 15000:
+                res = await crawler.arun(url=url)
+                if hasattr(res, "success") and res.success: # type: ignore
+                    content = res.markdown if hasattr(res, "markdown") else "" # type: ignore
+                    if isinstance(content, str) and len(content) > 15000:
                         content = content[:15000] + "\n... (truncated)"
-                    return ToolResult(content=content)
+                    return ToolResult(content=str(content))
                 else:
-                    return ToolResult(error=result.error_message or "Failed to crawl URL")
+                    error_msg = getattr(res, "error_message", "Unknown error") # type: ignore
+                    return ToolResult(error=f"Failed to fetch {url}: {error_msg}")
         except Exception as e:
             return ToolResult(error=str(e))
 
@@ -131,10 +131,10 @@ class WebSearchTool(Tool):
     async def _fetch_search_result(self, crawler: AsyncWebCrawler, url: str, title: str, snippet: str) -> str:
         content = ""
         try:
-            result = await crawler.arun(url=url)
-            if result.success:
-                content = result.markdown
-                if len(content) > 4000:
+            res = await crawler.arun(url=url)
+            if hasattr(res, "success") and res.success: # type: ignore
+                content = getattr(res, "markdown", "") # type: ignore
+                if isinstance(content, str) and len(content) > 4000:
                     content = content[:4000] + "\n... (truncated)"
         except Exception:
             # Use snippet from search result if fetch fails

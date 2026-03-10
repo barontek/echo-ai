@@ -2,8 +2,6 @@
 
 import pytest
 from unittest.mock import patch
-import httpx
-import respx
 
 from agentframework.tools.notes import PersonalNotesTool
 from agentframework.tools.web import WebFetchTool, WebSearchTool

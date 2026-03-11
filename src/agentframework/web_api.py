@@ -3,12 +3,11 @@
 import asyncio
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import httpx
 import uvicorn
-from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -168,6 +167,7 @@ async def websocket_chat(websocket: WebSocket):
 
         agent_config = AgentConfig(provider=provider, model=model)
         agent = create_agent(agent_config, api_key=api_key)
+        active_agent = agent
 
         # Send ready confirmation
         await websocket.send_json({"type": "ready"})
@@ -212,14 +212,14 @@ async def websocket_chat(websocket: WebSocket):
             in_thinking = False
             send_queue: asyncio.Queue = asyncio.Queue()
 
-            async def sender():
+            async def sender_loop():
                 while True:
                     msg = await send_queue.get()
                     if msg is None:
                         break
                     await websocket.send_json(msg)
 
-            sender_task = asyncio.create_task(sender())
+            sender_task = asyncio.create_task(sender_loop())
 
             async def run_with_cancellation():
                 """Run streaming in a way that can be cancelled."""
@@ -232,7 +232,7 @@ async def websocket_chat(websocket: WebSocket):
                     nonlocal accumulated_content, thinking_content, in_thinking
 
                     # Check if cancelled
-                    if task.cancelled():
+                    if task is not None and task.cancelled():
                         raise asyncio.CancelledError()
 
                     if stop_flag["stop"]:
@@ -257,7 +257,7 @@ async def websocket_chat(websocket: WebSocket):
                             {"type": "content", "content": accumulated_content}
                         )
 
-                return await agent.run_streaming(prompt, on_chunk=on_chunk)
+                return await active_agent.run_streaming(prompt, on_chunk=on_chunk)
 
             # Run as a task that can be cancelled
             streaming_task = asyncio.create_task(run_with_cancellation())

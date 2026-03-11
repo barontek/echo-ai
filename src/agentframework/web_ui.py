@@ -22,55 +22,180 @@ def initialize_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "agent" not in st.session_state:
-        # Initialize with default config
         config = AgentConfig(provider="ollama", model="qwen3:4b-instruct")
         st.session_state.agent = create_agent(config)
+    if "theme" not in st.session_state:
+        st.session_state.theme = "dark"
 
 
 def inject_custom_css():
     """Inject premium CSS to modernize Streamlit's base look."""
+    theme = st.session_state.get("theme", "dark")
+
+    if theme == "dark":
+        bg_color = "#0e1117"
+        surface_color = "#1e2130"
+        text_color = "#e0e0e0"
+        accent_color = "#ff6b6b"
+        border_color = "#2d3748"
+        user_bg = "#2d3748"
+        bot_bg = "#1e2130"
+    else:
+        bg_color = "#ffffff"
+        surface_color = "#f7fafc"
+        text_color = "#1a202c"
+        accent_color = "#e53e3e"
+        border_color = "#e2e8f0"
+        user_bg = "#ed8936"
+        bot_bg = "#f7fafc"
+
     st.markdown(
-        """
+        f"""
         <style>
         /* Hide main menu and footer */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
+        #MainMenu {{visibility: hidden;}}
+        footer {{visibility: hidden;}}
+        header {{visibility: hidden;}}
 
-        /* Modern Typography & Spacing */
-        .stApp {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        }
+        /* Base Theme */
+        .stApp {{
+            background-color: {bg_color};
+            color: {text_color};
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }}
         
-        /* Softer Chat Bubbles */
-        .stChatMessage {
+        /* Sidebar styling */
+        [data-testid="stSidebar"] {{
+            background-color: {surface_color};
+            border-right: 1px solid {border_color};
+        }}
+        
+        /* Modern Chat Bubbles */
+        [data-testid="stChatMessage"] {{
+            border-radius: 16px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }}
+        
+        [data-testid="stChatMessageContent"] {{
             border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 0.5rem;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
+        }}
+        
+        /* User message */
+        [data-testid="stChatMessage-user"] {{
+            background-color: {user_bg};
+        }}
+        
+        /* Bot message */
+        [data-testid="stChatMessage-assistant"] {{
+            background-color: {bot_bg};
+        }}
         
         /* Premium Buttons */
-        .stButton>button {
-            border-radius: 8px;
+        .stButton>button {{
+            border-radius: 10px;
             transition: all 0.2s ease;
-            border: 1px solid rgba(128,128,128,0.2);
-        }
-        .stButton>button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border-color: #ff4b4b;
-        }
+            border: 1px solid {border_color};
+            font-weight: 500;
+        }}
+        .stButton>button:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-color: {accent_color};
+        }}
         
-        /* Expander Headers */
-        .streamlit-expanderHeader {
-            border-radius: 8px;
-        }
-
-        /* Sleek Status Alerts */
-        .stAlert {
-            border-radius: 8px;
-        }
+        /* Primary button */
+        .stButton>button[kind="primary"] {{
+            background: linear-gradient(135deg, {accent_color}, #ff8787);
+            border: none;
+        }}
+        
+        /* Input field styling */
+        .stTextInput>div>div>input {{
+            border-radius: 12px;
+            border: 1px solid {border_color};
+            background-color: {surface_color};
+        }}
+        
+        /* Select box styling */
+        .stSelectbox>div>div>div {{
+            border-radius: 10px;
+            border: 1px solid {border_color};
+        }}
+        
+        /* Expander styling */
+        .streamlit-expanderHeader {{
+            border-radius: 10px;
+            background-color: {surface_color};
+            border: 1px solid {border_color};
+        }}
+        
+        /* Status alerts */
+        .stAlert {{
+            border-radius: 12px;
+            border: none;
+        }}
+        
+        /* Dividers */
+        [data-testid="stDivider"] {{
+            border-color: {border_color};
+        }}
+        
+        /* Chat input container */
+        [data-testid="stChatInputContainer"] {{
+            border-radius: 16px;
+            border: 1px solid {border_color};
+            background-color: {surface_color};
+        }}
+        
+        /* Message timestamp styling */
+        .message-timestamp {{
+            font-size: 0.7rem;
+            color: #888;
+            margin-top: 0.5rem;
+        }}
+        
+        /* Quick action buttons grid */
+        .quick-actions {{
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }}
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {{
+            width: 8px;
+            height: 8px;
+        }}
+        ::-webkit-scrollbar-track {{
+            background: {bg_color};
+        }}
+        ::-webkit-scrollbar-thumb {{
+            background: {border_color};
+            border-radius: 4px;
+        }}
+        ::-webkit-scrollbar-thumb:hover {{
+            background: #888;
+        }}
+        
+        /* Title styling */
+        h1, h2, h3 {{
+            font-weight: 600;
+        }}
+        
+        /* Tool usage badge */
+        .tool-badge {{
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            background-color: {surface_color};
+            border: 1px solid {border_color};
+            margin-right: 4px;
+            margin-top: 4px;
+        }}
         </style>
     """,
         unsafe_allow_html=True,
@@ -96,7 +221,21 @@ def get_ollama_models() -> list[str]:
 def setup_sidebar():
     """Configure the sidebar settings."""
     with st.sidebar:
-        st.title("Echo AI")
+        # Theme toggle at top
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.title("Echo AI")
+        with col2:
+            theme = st.session_state.get("theme", "dark")
+            new_theme = st.toggle(
+                "Dark Mode",
+                value=(theme == "dark"),
+                key="theme_toggle",
+            )
+            if new_theme != (theme == "dark"):
+                st.session_state.theme = "dark" if new_theme else "light"
+                st.rerun()
+
         st.caption("v1.0.0 Orchestrator")
         st.divider()
 
@@ -139,61 +278,70 @@ def setup_sidebar():
         )
         st.divider()
 
-        with st.expander("Session History", expanded=active_tab == "Chat Interface"):
-            agent = st.session_state.agent
-            session_list = ["New Chat"]
-            current_session_id = None
+        # Model indicator
+        st.markdown("### Current Model")
+        model_info = (
+            st.session_state.agent.config.model
+            if hasattr(st.session_state.agent, "config")
+            else "qwen3:4b-instruct"
+        )
+        st.success(f"Running: {model_info}")
 
-            if agent.session_manager and agent.session_manager.current_session:
-                current_session_id = agent.session_manager.current_session.id
+        # Session History as markdown list with clickable buttons
+        st.markdown("### Sessions")
 
+        agent = st.session_state.agent
+        sessions = []
+
+        if agent.session_manager:
+            sessions = agent.list_sessions()
+
+        current_session_id = None
+        if agent.session_manager and agent.session_manager.current_session:
+            current_session_id = agent.session_manager.current_session.id
+
+        # Show current session indicator
+        if current_session_id:
+            st.caption(f"Active: {current_session_id}")
+
+        # New chat button
+        if st.button("+ New Chat", use_container_width=True):
             if agent.session_manager:
-                for sid in agent.list_sessions():
-                    if sid not in session_list:
-                        session_list.append(sid)
+                agent.session_manager.create_session()
+            agent.messages = []
+            st.session_state.messages = []
+            st.rerun()
 
-            default_index = 0
-            if current_session_id in session_list:
-                default_index = session_list.index(current_session_id)
+        st.markdown("---")
+        st.caption("Available Sessions:")
 
-            selected_session = st.selectbox(
-                "Active Timeline",
-                options=session_list,
-                index=default_index,
-                label_visibility="collapsed",
-            )
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Load Branch", use_container_width=True):
-                    if (
-                        selected_session != "New Chat"
-                        and selected_session != current_session_id
-                    ):
-                        agent.load_session(selected_session)
+        # Session buttons as a list
+        if sessions:
+            for sid in sessions:
+                is_active = sid == current_session_id
+                button_type = "primary" if is_active else "secondary"
+                if st.button(f"{sid}", use_container_width=True, type=button_type):
+                    if sid != current_session_id:
+                        agent.load_session(sid)
                         st.session_state.messages = []
                         for msg in agent.messages:
                             st.session_state.messages.append(
-                                {"role": msg.role, "content": msg.content}
+                                {
+                                    "role": msg.role,
+                                    "content": msg.content,
+                                    "timestamp": "",
+                                }
                             )
                         st.rerun()
-            with col2:
-                if st.button("+ Blank", use_container_width=True):
-                    if agent.session_manager:
-                        agent.session_manager.create_session()
-                    agent.messages = []
-                    st.session_state.messages = []
-                    st.rerun()
+        else:
+            st.caption("No saved sessions yet")
 
-            if st.button(
-                "Erase Active Branch", use_container_width=True, type="secondary"
-            ):
-                st.session_state.messages = []
-                agent.messages = []
-                if agent.session_manager and agent.session_manager.current_session:
-                    agent.session_manager.current_session.messages = []
-                    agent.session_manager.save_session()
-                st.rerun()
+        st.divider()
+
+        # Session stats
+        if st.session_state.messages:
+            msg_count = len(st.session_state.messages)
+            st.caption(f"Messages: {msg_count}")
 
         return active_tab
 
@@ -228,37 +376,94 @@ def render_message_content(content: str):
 
 def process_chat(prompt: str):
     """Process user input through the agent synchronously to avoid Streamlit event contention."""
-    # Add user message to UI
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="User"):
+    from datetime import datetime
+
+    # Add user message to UI with timestamp
+    timestamp = datetime.now().strftime("%H:%M")
+    st.session_state.messages.append(
+        {"role": "user", "content": prompt, "timestamp": timestamp}
+    )
+    with st.chat_message("user"):
         st.markdown(prompt)
+        st.caption(timestamp)
 
-    # Process assistant response natively avoiding global stream locks
-    with st.chat_message("assistant", avatar="AI"):
-        try:
-            message_placeholder = st.empty()
+    # Process assistant response with streaming
+    try:
+        import asyncio
+        from datetime import datetime
 
-            # Show a native loading spinner until the whole block resolves
-            with st.spinner("Thinking..."):
-                # Run the execution natively across the thread without loop injection conflicts
-                import asyncio
+        # Show thinking inline during streaming (Streamlit limitation: expanders can't update in real-time)
+        thinking_placeholder = st.empty()
+        content_placeholder = st.empty()
 
-                # Set dummy loop
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                resp = loop.run_until_complete(st.session_state.agent.run(prompt))
-                loop.close()
+        accumulated_content = ""
+        thinking_content = ""
 
-            # Final render execution
-            message_placeholder.empty()
-            render_message_content(resp)
+        def on_chunk(chunk: str):
+            nonlocal accumulated_content, thinking_content
 
-            st.session_state.messages.append({"role": "assistant", "content": resp})
+            # Handle thinking markers
+            if "__THINKING__" in chunk:
+                chunk = chunk.replace("__THINKING__", "")
+            if "__THINKING_END__" in chunk:
+                chunk = chunk.replace("__THINKING_END__", "")
 
-        except Exception as e:
-            import traceback
+            if chunk:
+                accumulated_content += chunk
+                # Show thinking inline (will be moved to expander after)
+                thinking_placeholder.markdown(f"**Thinking...**\n\n{thinking_content}")
+                content_placeholder.markdown(accumulated_content)
 
-            st.error(f"Execution fault: {str(e)}\n\n{traceback.format_exc()}")
+        # Run streaming
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        resp = loop.run_until_complete(
+            st.session_state.agent.run_streaming(prompt, on_chunk=on_chunk)
+        )
+        loop.close()
+
+        # Use accumulated content or final response
+        final_content = accumulated_content if accumulated_content else resp
+
+        # Extract thinking from content
+        thinking = ""
+        if "__THINKING__" in final_content:
+            parts = final_content.split("__THINKING__")
+            final_content = parts[0] + parts[-1].replace("__THINKING_END__", "")
+            # Get thinking part
+            if len(parts) > 1:
+                thinking = parts[1].replace("__THINKING_END__", "")
+
+        # Clear placeholders and show final result
+        thinking_placeholder.empty()
+        content_placeholder.empty()
+
+        # Show thinking in expander if present
+        if thinking:
+            with st.expander("Thought Process", expanded=False):
+                st.markdown(thinking)
+
+        # Show final content
+        st.markdown(final_content)
+
+        # Add assistant message with timestamp to session state
+        timestamp = datetime.now().strftime("%H:%M")
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": final_content,
+                "timestamp": timestamp,
+                "thinking": thinking,
+            }
+        )
+
+        # Rerun to render all messages from session state
+        st.rerun()
+
+    except Exception as e:
+        import traceback
+
+        st.error(f"Execution fault: {str(e)}\n\n{traceback.format_exc()}")
 
 
 async def execute_workflow(graph: Any, topic: str):
@@ -416,13 +621,27 @@ def run_app():
             st.markdown("</div>", unsafe_allow_html=True)
 
         # Display chat history
-        for message in st.session_state.messages:
-            avatar = "User" if message["role"] == "user" else "AI"
-            with st.chat_message(message["role"], avatar=avatar):
+        for i, message in enumerate(st.session_state.messages):
+            with st.chat_message(message["role"]):
                 if message["role"] == "assistant":
+                    # Show thinking if present
+                    thinking = message.get("thinking", "")
+                    if thinking:
+                        with st.expander("Thought Process", expanded=False):
+                            st.markdown(thinking)
                     render_message_content(message["content"])
                 else:
                     st.markdown(message["content"])
+
+                # Show timestamp
+                timestamp = message.get("timestamp", "")
+                if timestamp:
+                    st.caption(timestamp)
+                else:
+                    # Add timestamp to message if not present
+                    from datetime import datetime
+
+                    st.caption(datetime.now().strftime("%H:%M"))
 
         # Execute Chat Event
         if prompt:

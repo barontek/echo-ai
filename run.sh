@@ -1,38 +1,51 @@
 #!/usr/bin/env bash
 set -e
 
-# Usage: ./run.sh [--docker]
+# Usage: 
+#   ./run.sh           - Run web UI
+#   ./run.sh api       - Run API only
+#   ./run.sh chat      - Run CLI chat
+#   ./run.sh --docker  - Run in Docker
 
+MODE="${1:-web}"
 DOCKER_MODE=0
 
 if [ "$1" == "--docker" ]; then
     DOCKER_MODE=1
+    MODE="docker"
 fi
 
 if [ $DOCKER_MODE -eq 1 ]; then
-    echo "Starting Echo AI Enterprise Cluster in Docker Mode..."
+    echo "Starting Echo AI in Docker Mode..."
     docker-compose up --build
-else
-    echo "Starting Echo AI Locally..."
-
-    # Check if .venv exists
-    if [ ! -d ".venv" ]; then
-        echo "Virtual environment not found. Please run 'uv sync' first."
-        exit 1
-    fi
-
-    # Start the API server in the background
-    echo "Starting FastAPI Server on port 8000..."
-    .venv/bin/python scripts/run_api.py --host 0.0.0.0 --port 8000 &
-    API_PID=$!
-
-    # Trap SIGINT to ensure we clean up the background API server on Ctrl+C
-    trap "echo 'Shutting down servers...'; kill $API_PID; exit 0" SIGINT SIGTERM
-
-    # Wait for API to boot
-    sleep 2
-
-    # Start Streamlit UI in the foreground
-    echo "Starting Streamlit UI on port 8501..."
-    .venv/bin/streamlit run scripts/run_web.py
+    exit 0
 fi
+
+# Check if .venv exists
+if [ ! -d ".venv" ]; then
+    echo "Virtual environment not found. Running make install..."
+    make install
+fi
+
+case $MODE in
+    web)
+        echo "Starting FastAPI Web UI on http://localhost:8080..."
+        .venv/bin/python scripts/run_web.py
+        ;;
+    api)
+        echo "Starting FastAPI API on http://localhost:8000..."
+        .venv/bin/python scripts/run_api.py --host 0.0.0.0 --port 8000
+        ;;
+    chat)
+        echo "Starting CLI Chat..."
+        .venv/bin/python -m agentframework.chat
+        ;;
+    tui)
+        echo "Starting TUI..."
+        .venv/bin/python scripts/run_tui.py
+        ;;
+    *)
+        echo "Usage: ./run.sh [web|api|chat|tui|--docker]"
+        exit 1
+        ;;
+esac

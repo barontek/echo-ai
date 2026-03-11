@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echo AI</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>Echo AI</h1>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Model</h3>
+                <select id="model-select">
+                    <option value="ollama">Ollama</option>
+                </select>
+                <select id="ollama-model">
+                    <option value="qwen3:4b-instruct">qwen3:4b-instruct</option>
+                </select>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Sessions</h3>
+                <button id="new-chat-btn" class="btn btn-primary">+ New Chat</button>
+                <div id="session-list" class="session-list"></div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <label class="theme-toggle">
+                    <input type="checkbox" id="theme-toggle" checked>
+                    <span>Dark Mode</span>
+                </label>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main">
+            <header class="chat-header">
+                <div class="header-info">
+                    <span id="model-badge">Model: qwen3:4b-instruct</span>
+                </div>
+            </header>
+            
+            <div id="chat-container" class="chat-container">
+                <!-- Messages will be inserted here -->
+            </div>
+            
+            <div class="chat-input-container">
+                <form id="chat-form">
+                    <input type="text" id="chat-input" placeholder="Type your message..." autocomplete="off">
+                    <button type="submit" id="send-btn" class="btn btn-primary">Send</button>
+                    <button type="button" id="stop-btn" class="btn btn-danger" style="display: none;">Stop</button>
+                </form>
+            </div>
+        </main>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

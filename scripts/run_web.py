@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Run the Echo AI Streamlit Web UI.
+"""Run the Echo AI FastAPI Web UI.
 
 Usage:
-    streamlit run scripts/run_web.py
+    python scripts/run_web.py
+    # or
+    uvicorn src.agentframework.web_api:app --reload --port 8501
 """
-# ruff: noqa: E402
-
 
 import sys
 from pathlib import Path
 
-# Add project root to PYTHONPATH
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.agentframework.web_ui import run_app
+from src.agentframework.web_api import run_server
 
 if __name__ == "__main__":
-    run_app()
+    run_server(host="0.0.0.0", port=8080)

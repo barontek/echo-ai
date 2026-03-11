@@ -4,11 +4,11 @@ A standalone AI agent framework built from scratch, similar to OpenCode but simp
 
 ## Features
 
-- 🤖 **Multiple LLM Providers**: Anthropic, OpenAI, Ollama
-- 🔧 **Tool Calling**: bash, read/write files, list directories, glob, grep, web fetch, web search, git, memory, notes
-- 🛡️ **Safety**: Workspace confinement, command allowlisting, dangerous pattern blocking
-- 💾 **Sessions**: Save/load conversations, undo file changes
-- 💬 **Chat Mode**: Interactive continuous conversation with command history
+- **Multiple LLM Providers**: Anthropic, OpenAI, Ollama
+- **Tool Calling**: bash, read/write files, list directories, glob, grep, web fetch, web search, git, memory, notes
+- **Safety**: Workspace confinement, command allowlisting, dangerous pattern blocking
+- **Sessions**: Save/load conversations, undo file changes
+- **Chat Mode**: Interactive continuous conversation with command history
 
 ## Quick Start
 

@@ -1,4 +1,5 @@
 """Streamlit web UI for the Echo AI agent."""
+
 import sys
 import os
 import asyncio
@@ -25,9 +26,11 @@ def initialize_session_state():
         config = AgentConfig(provider="ollama", model="qwen3:4b-instruct")
         st.session_state.agent = create_agent(config)
 
+
 def inject_custom_css():
     """Inject premium CSS to modernize Streamlit's base look."""
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         /* Hide main menu and footer */
         #MainMenu {visibility: hidden;}
@@ -69,7 +72,9 @@ def inject_custom_css():
             border-radius: 8px;
         }
         </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_data(ttl=60)
@@ -91,11 +96,11 @@ def get_ollama_models() -> list[str]:
 def setup_sidebar():
     """Configure the sidebar settings."""
     with st.sidebar:
-        st.title("🤖 Echo AI")
+        st.title("Echo AI")
         st.caption("v1.0.0 Orchestrator")
         st.divider()
 
-        with st.expander("⚙️ Provider Configuration", expanded=False):
+        with st.expander("Provider Configuration", expanded=False):
             provider = st.selectbox(
                 "Provider Backend", options=["ollama", "openai", "anthropic"], index=0
             )
@@ -106,7 +111,9 @@ def setup_sidebar():
                 model = st.selectbox("Model", available_models)
                 api_key = None
             elif provider == "openai":
-                model = st.selectbox("Model", ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"])
+                model = st.selectbox(
+                    "Model", ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
+                )
                 api_key = st.text_input(
                     "API Key", type="password", value=os.getenv("OPENAI_API_KEY", "")
                 )
@@ -122,17 +129,17 @@ def setup_sidebar():
                 config = AgentConfig(provider=provider, model=model)
                 st.session_state.agent = create_agent(config, api_key=api_key)
                 st.success(f"Backend hot-swapped => {provider} ({model})")
-                
+
         # Primary Navigation Switcher
         st.subheader("Navigation")
         active_tab = st.radio(
             "Primary Menu",
-            ["💬 Chat Interface", "⚙️ Workflow Orchestration"],
-            label_visibility="collapsed"
+            ["Chat Interface", "Workflow Orchestration"],
+            label_visibility="collapsed",
         )
         st.divider()
 
-        with st.expander("🗃️ Session History", expanded=active_tab == "💬 Chat Interface"):
+        with st.expander("Session History", expanded=active_tab == "Chat Interface"):
             agent = st.session_state.agent
             session_list = ["New Chat"]
             current_session_id = None
@@ -178,14 +185,16 @@ def setup_sidebar():
                     st.session_state.messages = []
                     st.rerun()
 
-            if st.button("🗑️ Erase Active Branch", use_container_width=True, type="secondary"):
+            if st.button(
+                "Erase Active Branch", use_container_width=True, type="secondary"
+            ):
                 st.session_state.messages = []
                 agent.messages = []
                 if agent.session_manager and agent.session_manager.current_session:
                     agent.session_manager.current_session.messages = []
                     agent.session_manager.save_session()
                 st.rerun()
-                
+
         return active_tab
 
 
@@ -221,18 +230,19 @@ def process_chat(prompt: str):
     """Process user input through the agent synchronously to avoid Streamlit event contention."""
     # Add user message to UI
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👤"):
+    with st.chat_message("user", avatar="User"):
         st.markdown(prompt)
 
     # Process assistant response natively avoiding global stream locks
-    with st.chat_message("assistant", avatar="🤖"):
+    with st.chat_message("assistant", avatar="AI"):
         try:
             message_placeholder = st.empty()
-            
+
             # Show a native loading spinner until the whole block resolves
             with st.spinner("Thinking..."):
                 # Run the execution natively across the thread without loop injection conflicts
                 import asyncio
+
                 # Set dummy loop
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -243,29 +253,37 @@ def process_chat(prompt: str):
             message_placeholder.empty()
             render_message_content(resp)
 
-            st.session_state.messages.append(
-                {"role": "assistant", "content": resp}
-            )
+            st.session_state.messages.append({"role": "assistant", "content": resp})
 
         except Exception as e:
             import traceback
+
             st.error(f"Execution fault: {str(e)}\n\n{traceback.format_exc()}")
 
 
 async def execute_workflow(graph: Any, topic: str):
     """Dynamically traverse a generic graph loaded from the registry container."""
     import streamlit as st
+
     status = st.status("Initializing Graph Execution Pipeline...", expanded=True)
     try:
         async for current_node, current_state in graph.run_streaming({"topic": topic}):
             if current_node == "__INTERRUPT__":
-                status.update(label="Pipeline Paused -> Awaiting Verification", state="error", expanded=False)
+                status.update(
+                    label="Pipeline Paused -> Awaiting Verification",
+                    state="error",
+                    expanded=False,
+                )
                 st.warning("This node requires explicit human-in-the-loop validation.")
                 break
             elif current_node == graph.END:
-                status.update(label="Workflow Complete!", state="complete", expanded=False)
+                status.update(
+                    label="Workflow Complete!", state="complete", expanded=False
+                )
                 st.success("Final Result:")
-                st.markdown(current_state.get("final", current_state.get("output", "Done.")))
+                st.markdown(
+                    current_state.get("final", current_state.get("output", "Done."))
+                )
             else:
                 status.write(f"Executing step: `{current_node}`...")
                 status.update(label=f"Tracking node => `{current_node}`")
@@ -273,13 +291,14 @@ async def execute_workflow(graph: Any, topic: str):
         status.update(label=f"Error Occurred: {e}", state="error")
         st.error(f"Fatal orchestration error: {e}")
 
+
 def get_available_workflows() -> dict[str, Any]:
     """Dynamically introspect out-of-box template DAG processes configured by the developer module hierarchy."""
     import pkgutil
     import importlib
     import os
     import sys
-    
+
     # Pre-add local path to pathspec explicitly
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
@@ -298,39 +317,60 @@ def get_available_workflows() -> dict[str, Any]:
                 registry[display_name] = module.get_workflow()
         except Exception:
             pass
-            
+
     return registry
 
 
 def render_workflows_tab():
     """Render the orchestration workflows UI."""
-    st.markdown("<h3 style='margin-bottom: 0.5rem;'>✨ Workflow Orchestration</h3>", unsafe_allow_html=True)
-    st.markdown("<p style='color: #888; margin-bottom: 2rem;'>Trigger autonomous multi-step Directed Acyclic Graph pipelines.</p>", unsafe_allow_html=True)
-    
+    st.markdown(
+        "<h3 style='margin-bottom: 0.5rem;'>✨ Workflow Orchestration</h3>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<p style='color: #888; margin-bottom: 2rem;'>Trigger autonomous multi-step Directed Acyclic Graph pipelines.</p>",
+        unsafe_allow_html=True,
+    )
+
     workflows = get_available_workflows()
     if not workflows:
-        st.info("No workflow templates found in `src/workflows/`. Define a python pipeline with `get_workflow()` to begin.")
+        st.info(
+            "No workflow templates found in `src/workflows/`. Define a python pipeline with `get_workflow()` to begin."
+        )
         return
 
     col1, col2 = st.columns([1, 2])
     with col1:
         st.markdown("##### Registry Catalog")
-        selected_name = st.selectbox("Select Target Pipeline", list(workflows.keys()), label_visibility="collapsed")
+        selected_name = st.selectbox(
+            "Select Target Pipeline",
+            list(workflows.keys()),
+            label_visibility="collapsed",
+        )
         graph = workflows[selected_name]
 
-        with st.expander("📊 View Architecture Blueprint", expanded=True):
+        with st.expander("View Architecture Blueprint", expanded=True):
             mermaid_syntax = graph.to_mermaid()
             st.markdown(f"```mermaid\n{mermaid_syntax}\n```")
 
     with col2:
         with st.container(border=True):
-            st.markdown(f"#### 🚀 Deploy: {selected_name}")
-            st.caption("Provide the entry payload to process through the designated architecture.")
-            topic = st.text_area("Execution Payload:", placeholder="e.g. Extract names from this text block...", height=150)
+            st.markdown(f"#### Deploy: {selected_name}")
+            st.caption(
+                "Provide the entry payload to process through the designated architecture."
+            )
+            topic = st.text_area(
+                "Execution Payload:",
+                placeholder="e.g. Extract names from this text block...",
+                height=150,
+            )
 
-            if st.button("Initialize Pipeline", type="primary", use_container_width=True):
+            if st.button(
+                "Initialize Pipeline", type="primary", use_container_width=True
+            ):
                 if topic:
                     import asyncio
+
                     asyncio.run(execute_workflow(graph, topic))
                 else:
                     st.warning("Please provide an execution payload.")
@@ -338,42 +378,46 @@ def render_workflows_tab():
 
 def run_app():
     """Main Streamlit application entry point."""
-    st.set_page_config(
-        page_title="Echo AI Dashboard", page_icon="🤖", layout="wide"
-    )
+    st.set_page_config(page_title="Echo AI Dashboard", page_icon="AI", layout="wide")
 
     inject_custom_css()
     initialize_session_state()
     active_tab = setup_sidebar()
 
-    st.title("🤖 Echo AI")
+    st.title("Echo AI")
     st.markdown(
         "Welcome to the Echo AI Web Interface. This terminal-free dashboard allows you to interact with the underlying execution agent using modern web components."
     )
 
-    if active_tab == "💬 Chat Interface":
+    if active_tab == "Chat Interface":
         prompt = st.chat_input("What would you like me to do?")
-        
+
         # Display Welcome Screen if Empty
         if not st.session_state.messages and not prompt:
-            st.markdown("<div style='margin-top: 5vh; text-align: center;'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='color: #888; font-weight: 400; margin-bottom: 2rem;'>How can I help you today?</h2>", unsafe_allow_html=True)
-            
+            st.markdown(
+                "<div style='margin-top: 5vh; text-align: center;'>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "<h2 style='color: #888; font-weight: 400; margin-bottom: 2rem;'>How can I help you today?</h2>",
+                unsafe_allow_html=True,
+            )
+
             c1, c2, c3 = st.columns(3)
             with c1:
-                if st.button("🌐 Search Latest AI News", use_container_width=True):
+                if st.button("Search Latest AI News", use_container_width=True):
                     prompt = "Search the web for the latest news on Artificial Intelligence and write a short summary."
             with c2:
-                if st.button("🐍 Write a Python Server", use_container_width=True):
+                if st.button("Write a Python Server", use_container_width=True):
                     prompt = "Write a python script that implements a simple FastAPI backend caching server."
             with c3:
-                if st.button("📊 Extract Data Elements", use_container_width=True):
+                if st.button("Extract Data Elements", use_container_width=True):
                     prompt = "Help me extract structured entity data (people/dates/locations) from a messy block of text."
             st.markdown("</div>", unsafe_allow_html=True)
 
         # Display chat history
         for message in st.session_state.messages:
-            avatar = "👤" if message["role"] == "user" else "🤖"
+            avatar = "User" if message["role"] == "user" else "AI"
             with st.chat_message(message["role"], avatar=avatar):
                 if message["role"] == "assistant":
                     render_message_content(message["content"])
@@ -384,7 +428,7 @@ def run_app():
         if prompt:
             process_chat(prompt)
 
-    elif active_tab == "⚙️ Workflow Orchestration":
+    elif active_tab == "Workflow Orchestration":
         render_workflows_tab()
 
 

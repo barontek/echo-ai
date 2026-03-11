@@ -58,7 +58,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
             destructive = validator.check_destructive_keywords(details)
             if destructive:
                 warning_msg = (
-                    " [red]⚠️ DESTRUCTIVE keywords detected: "
+                    " [red]WARNING DESTRUCTIVE keywords detected: "
                     + ", ".join(destructive)
                     + "[/red]"
                 )
@@ -68,7 +68,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
                 path_str = details.replace("write: ", "")
                 file_path = Path(path_str)
                 if file_path.exists():
-                    warning_msg = " [red]⚠️ File exists - will overwrite![/red]"
+                    warning_msg = " [red]WARNING File exists - will overwrite![/red]"
             except OSError:
                 pass
 
@@ -81,13 +81,15 @@ def get_safety_config(config: dict) -> SafetyConfig:
                     threshold = safety.get("read_size_threshold", 102400)
                     if size > threshold:
                         warning_msg = (
-                            f" [yellow]⚠️ Large file ({size // 1024} KB)[/yellow]"
+                            f" [yellow]WARNING Large file ({size // 1024} KB)[/yellow]"
                         )
             except OSError:
                 pass
 
         if tool == "memory":
-            warning_msg = " [red]⚠️ This will permanently delete stored memories![/red]"
+            warning_msg = (
+                " [red]WARNING This will permanently delete stored memories![/red]"
+            )
 
         console.print(
             f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}"
@@ -103,7 +105,9 @@ def get_safety_config(config: dict) -> SafetyConfig:
         allowed_domains=safety.get("allowed_domains", []),
         max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
         max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get("require_approval_for", ["bash", "write_file", "memory"]),
+        require_approval_for=safety.get(
+            "require_approval_for", ["bash", "write_file", "memory"]
+        ),
         approval_callback=approval_callback,
         audit_log_path=safety.get("audit_log_path"),
         read_requires_approval=safety.get("read_requires_approval", False),

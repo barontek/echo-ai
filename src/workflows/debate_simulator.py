@@ -16,21 +16,27 @@ def get_workflow() -> WorkflowGraph:
 
     async def argue_pro(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch: Pro-argument persona."""
-        sys_prompt = {"role": "system", "content": "You are a staunch advocate supporting the topic. You must fiercely argue in favor of it."}
+        sys_prompt = {
+            "role": "system",
+            "content": "You are a staunch advocate supporting the topic. You must fiercely argue in favor of it.",
+        }
         # Run explicitly with system message overriding standard behavior
         res = await st.session_state.agent.run(
             f"Construct a compelling 3-sentence argument in FAVOR of this topic: {state['topic']}",
-            system_injection=sys_prompt["content"]
+            system_injection=sys_prompt["content"],
         )
         state["pro_argument"] = res
         return state
 
     async def argue_con(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch: Anti-argument persona."""
-        sys_prompt = {"role": "system", "content": "You are a staunch critic opposing the topic. You must fiercely argue against it."}
+        sys_prompt = {
+            "role": "system",
+            "content": "You are a staunch critic opposing the topic. You must fiercely argue against it.",
+        }
         res = await st.session_state.agent.run(
             f"Construct a compelling 3-sentence argument AGAINST this topic: {state['topic']}",
-            system_injection=sys_prompt["content"]
+            system_injection=sys_prompt["content"],
         )
         state["con_argument"] = res
         return state
@@ -50,15 +56,15 @@ def get_workflow() -> WorkflowGraph:
             f"Pro Argument: {state['pro_argument']}\n\n"
             f"Con Argument: {state['con_argument']}\n\n"
             "Deliver your final impartial verdict.",
-            system_injection=sys_prompt
+            system_injection=sys_prompt,
         )
-        
+
         state["final"] = (
             f"### Debate Simulation: {state['topic']}\n\n"
-            f"**✅ PRO Argument:**\n{state['pro_argument']}\n\n"
-            f"**❌ CON Argument:**\n{state['con_argument']}\n\n"
+            f"**PRO Argument:**\n{state['pro_argument']}\n\n"
+            f"**CON Argument:**\n{state['con_argument']}\n\n"
             f"---\n\n"
-            f"**⚖️ The Verdict:**\n{res}"
+            f"**The Verdict:**\n{res}"
         )
         return state
 
@@ -66,16 +72,16 @@ def get_workflow() -> WorkflowGraph:
     graph.add_node("argue_pro", argue_pro)
     graph.add_node("argue_con", argue_con)
     graph.add_node("judge", judge)
-    
+
     graph.set_entry_point("start")
-    
+
     graph.add_parallel_edge(
         source="start",
         targets=["argue_pro", "argue_con"],
         reducer=reducer,
-        next_node="judge"
+        next_node="judge",
     )
-    
+
     graph.add_edge("judge", graph.END)
-    
+
     return graph

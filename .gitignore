@@ -43,6 +43,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Generated documentation build output
+site/
+
 # Temp files
 *.txt
 !requirements.txt

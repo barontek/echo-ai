@@ -4,7 +4,10 @@ import asyncio
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
 import markdownify
-from crawl4ai import AsyncWebCrawler
+try:
+    from crawl4ai import AsyncWebCrawler
+except ImportError:  # pragma: no cover - optional runtime dependency
+    AsyncWebCrawler = None
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
@@ -98,16 +101,24 @@ class WebFetchTool(Tool):
                 return ToolResult(error="Web fetch requires approval")
 
         try:
-            async with AsyncWebCrawler(verbose=True) as crawler:
-                res = await crawler.arun(url=url)
-                if hasattr(res, "success") and res.success: # type: ignore
-                    content = res.markdown if hasattr(res, "markdown") else "" # type: ignore
-                    if isinstance(content, str) and len(content) > 15000:
-                        content = content[:15000] + "\n... (truncated)"
-                    return ToolResult(content=str(content))
-                else:
-                    error_msg = getattr(res, "error_message", "Unknown error") # type: ignore
+            if AsyncWebCrawler is not None:
+                async with AsyncWebCrawler(verbose=True) as crawler:
+                    res = await crawler.arun(url=url)
+                    if hasattr(res, "success") and res.success:  # type: ignore
+                        content = res.markdown if hasattr(res, "markdown") else ""  # type: ignore
+                        if isinstance(content, str) and len(content) > 15000:
+                            content = content[:15000] + "\n... (truncated)"
+                        return ToolResult(content=str(content))
+
+                    error_msg = getattr(res, "error_message", "Unknown error")  # type: ignore
                     return ToolResult(error=f"Failed to fetch {url}: {error_msg}")
+
+            import httpx
+
+            response = await httpx.AsyncClient(follow_redirects=True, timeout=20).get(url)
+            response.raise_for_status()
+            content = html_to_markdown(response.text, max_length=15000)
+            return ToolResult(content=content)
         except Exception as e:
             return ToolResult(error=str(e))
 
@@ -175,6 +186,14 @@ class WebSearchTool(Tool):
                 return ToolResult(content="No results found.")
 
             formatted = []
+            if AsyncWebCrawler is None:
+                for r in results:
+                    title = r.get("title", "")
+                    url = r.get("href", "")
+                    snippet = r.get("body", "")
+                    formatted.append(f"- {title}: {url}\n  {snippet[:500]}")
+                return ToolResult(content="\n\n".join(formatted))
+
             async with AsyncWebCrawler(verbose=False) as crawler:
                 tasks = []
                 for r in results:
@@ -187,12 +206,10 @@ class WebSearchTool(Tool):
                         )
                     )
 
-                # Fetch all results concurrently
                 gathered_results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 for i, r in enumerate(gathered_results):
                     if isinstance(r, Exception):
-                        # Extreme fallback if task threw unhandled exception
                         snippet = results[i].get("body", "")
                         title = results[i].get("title", "")
                         url = results[i].get("href", "")

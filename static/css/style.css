@@ -130,7 +130,13 @@ body {
 .theme-toggle { display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); }
 
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.chat-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); background-color: var(--bg-secondary); }
+.chat-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); background-color: var(--bg-secondary); display: flex; align-items: center; gap: 0.75rem; }
+
+.sidebar-toggle {
+    display: none;
+    align-self: flex-start;
+}
+
 .header-info { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 #model-badge, #metrics-badge {
     font-size: 0.85rem;
@@ -253,3 +259,85 @@ body {
 #workflow-topic { width: 100%; border-radius: 8px; border: 1px solid var(--border); background-color: var(--bg-primary); color: var(--text-primary); padding: 0.6rem; resize: vertical; }
 .workflow-result h3 { margin-bottom: 0.5rem; }
 .workflow-output { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--bg-secondary); white-space: pre-wrap; }
+
+
+@media (max-width: 900px) {
+    body,
+    .app {
+        height: 100dvh;
+    }
+
+    .app {
+        position: relative;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: min(85vw, 320px);
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        z-index: 20;
+        box-shadow: 8px 0 24px var(--shadow);
+    }
+
+    .app.sidebar-open .sidebar {
+        transform: translateX(0);
+    }
+
+    .main {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .sidebar-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+    }
+
+    .chat-container {
+        padding: 1rem;
+    }
+
+    .message {
+        max-width: 92%;
+        padding: 0.85rem 1rem;
+    }
+
+    .chat-input-container {
+        padding: 0.75rem 1rem;
+    }
+
+    #chat-form {
+        flex-wrap: wrap;
+    }
+
+    #chat-input {
+        min-width: 0;
+        width: 100%;
+    }
+
+    #send-btn,
+    #stop-btn {
+        flex: 1;
+    }
+}
+
+@media (max-width: 560px) {
+    .chat-header {
+        padding: 0.75rem 1rem;
+        flex-wrap: wrap;
+    }
+
+    .header-info {
+        width: 100%;
+    }
+
+    .session-actions {
+        grid-template-columns: 1fr;
+    }
+}

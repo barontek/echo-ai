@@ -9,7 +9,7 @@
 <body>
     <div id="connection-banner" class="connection-banner" aria-live="polite" style="display: none;"></div>
     <div class="app">
-        <aside class="sidebar" aria-label="Sidebar">
+        <aside id="sidebar" class="sidebar" aria-label="Sidebar">
             <div class="sidebar-header">
                 <h1>Echo AI</h1>
             </div>
@@ -44,6 +44,7 @@
 
         <main class="main">
             <header class="chat-header">
+                <button id="sidebar-toggle" class="btn sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false">☰ Menu</button>
                 <div class="header-info">
                     <span id="model-badge">Model: qwen3:4b-instruct</span>
                     <span id="metrics-badge">Messages: 0</span>

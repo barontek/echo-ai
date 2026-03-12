@@ -12,6 +12,7 @@ class EchoAI {
         this.pendingThinking = null;
         this.renderScheduled = false;
         this.streamMetrics = { startMs: 0, firstTokenMs: 0 };
+        this.isMobileView = window.matchMedia('(max-width: 900px)');
         this.init();
     }
 
@@ -23,6 +24,7 @@ class EchoAI {
         this.applyTheme();
         this.connectWebSocket();
         this.updateMetrics();
+        this.syncSidebarWithViewport();
     }
 
     bindEvents() {
@@ -50,6 +52,16 @@ class EchoAI {
         document.getElementById('session-search').addEventListener('input', () => this.loadSessions());
 
         document.getElementById('open-workflows-btn').addEventListener('click', () => this.openWorkflowsWindow());
+
+        document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
+
+        this.isMobileView.addEventListener('change', () => this.syncSidebarWithViewport());
+
+        document.querySelector('.main').addEventListener('click', () => {
+            if (this.isMobileView.matches && document.querySelector('.app').classList.contains('sidebar-open')) {
+                this.toggleSidebar(false);
+            }
+        });
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -234,12 +246,42 @@ class EchoAI {
         this.messages = [];
         this.renderMessages();
         this.loadSessions();
+        this.closeSidebarOnMobile();
     }
 
 
 
     openWorkflowsWindow() {
         window.open('/workflows', '_blank', 'noopener,noreferrer');
+    }
+
+    syncSidebarWithViewport() {
+        const app = document.querySelector('.app');
+        if (!this.isMobileView.matches) {
+            app.classList.remove('sidebar-open');
+        }
+        this.updateSidebarToggleAria();
+    }
+
+    toggleSidebar(forceOpen) {
+        const app = document.querySelector('.app');
+        if (typeof forceOpen === 'boolean') {
+            app.classList.toggle('sidebar-open', forceOpen);
+        } else {
+            app.classList.toggle('sidebar-open');
+        }
+        this.updateSidebarToggleAria();
+    }
+
+    closeSidebarOnMobile() {
+        if (!this.isMobileView.matches) return;
+        this.toggleSidebar(false);
+    }
+
+    updateSidebarToggleAria() {
+        const toggle = document.getElementById('sidebar-toggle');
+        const isOpen = document.querySelector('.app').classList.contains('sidebar-open');
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
 
     async loadSession(sessionId) {
@@ -249,6 +291,7 @@ class EchoAI {
         this.messages = data.messages || [];
         this.renderMessages();
         this.loadSessions();
+        this.closeSidebarOnMobile();
     }
 
     async deleteCurrentSession() {
@@ -258,6 +301,7 @@ class EchoAI {
         this.messages = [];
         this.renderMessages();
         this.loadSessions();
+        this.closeSidebarOnMobile();
     }
 
     async renameCurrentSession() {
@@ -274,6 +318,7 @@ class EchoAI {
         if (!response.ok) return;
         this.currentSession = nextName;
         this.loadSessions();
+        this.closeSidebarOnMobile();
     }
 
     async updateModel(model) {

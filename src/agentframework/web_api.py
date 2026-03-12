@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from src.agentframework.agent import Agent, AgentConfig, create_agent
 from src.agentframework.config import get_safety_config, get_tools, load_config
 from src.agentframework.session import DBSessionModel
+from src.workflows import get_workflow, list_workflows
 
 
 app = FastAPI(title="Echo AI API")
@@ -98,11 +99,23 @@ class WsMessagePayload(BaseModel):
     content: str | None = None
 
 
+class WorkflowRunPayload(BaseModel):
+    workflow_id: str = Field(min_length=1)
+    topic: str = Field(min_length=1)
+
+
 @app.get("/")
 async def index():
     """Serve the main HTML page."""
     return FileResponse("static/index.html")
 
+
+
+
+@app.get("/workflows")
+async def workflows_page():
+    """Serve the dedicated workflows page."""
+    return FileResponse("static/workflows.html")
 
 @app.get("/static/{path:path}")
 async def static_files(path: str):
@@ -209,6 +222,39 @@ async def rename_session(payload: SessionRenamePayload):
         db.commit()
 
     return {"status": "ok", "session_id": payload.new_session_id}
+
+
+
+
+@app.get("/api/workflows")
+async def workflows_list():
+    """List available workflows for UI consumption."""
+    return {"workflows": list_workflows()}
+
+
+@app.post("/api/workflows/run")
+async def workflow_run(payload: WorkflowRunPayload):
+    """Run a selected workflow and return its final output."""
+    global agent, message_history
+
+    if agent is None:
+        agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
+
+    try:
+        workflow = get_workflow(payload.workflow_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    initial_state = {"topic": payload.topic, "agent": agent}
+    final_state = await workflow.compile_and_run(initial_state)
+    content = final_state.get("final") or final_state.get("result") or str(final_state)
+
+    timestamp = datetime.now().strftime("%H:%M")
+    user_content = f"[Workflow: {payload.workflow_id}] {payload.topic}"
+    message_history.append({"role": "user", "content": user_content, "timestamp": timestamp})
+    message_history.append({"role": "assistant", "content": content, "timestamp": timestamp})
+
+    return {"workflow_id": payload.workflow_id, "response": content, "timestamp": timestamp}
 
 
 @app.post("/api/chat")

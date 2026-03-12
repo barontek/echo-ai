@@ -124,6 +124,7 @@ body {
 .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-hover)); border: none; color: white; }
 .btn-danger { background: linear-gradient(135deg, #e53e3e, #fc8181); border: none; color: white; }
 #new-chat-btn { width: 100%; margin-bottom: 0.5rem; }
+#open-workflows-btn { width: 100%; margin-bottom: 0.5rem; }
 
 .sidebar-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border); }
 .theme-toggle { display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); }
@@ -231,3 +232,24 @@ body {
 @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
 }
+
+
+
+.workflow-window {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem;
+}
+
+.workflow-window-header h1 { color: var(--accent); margin-bottom: 0.25rem; }
+.workflow-window-header p { color: var(--text-secondary); margin-bottom: 1rem; }
+
+.workflow-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.workflow-item { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; cursor: pointer; background: var(--bg-secondary); color: var(--text-primary); }
+.workflow-item.active { border-color: var(--accent); background: var(--bg-tertiary); }
+.workflow-item-title { font-weight: 600; margin-bottom: 0.15rem; }
+.workflow-item-description { font-size: 0.8rem; color: var(--text-secondary); }
+.workflow-form { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+#workflow-topic { width: 100%; border-radius: 8px; border: 1px solid var(--border); background-color: var(--bg-primary); color: var(--text-primary); padding: 0.6rem; resize: vertical; }
+.workflow-result h3 { margin-bottom: 0.5rem; }
+.workflow-output { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--bg-secondary); white-space: pre-wrap; }

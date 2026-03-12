@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.agentframework import web_api
 
 
@@ -62,3 +64,39 @@ def test_create_runtime_agent_sets_default_system_prompt(monkeypatch):
 
     assert result.config.tools == []
     assert "You are an AI assistant with access to various tools." in result.config.system_prompt
+
+
+@pytest.mark.asyncio
+async def test_workflows_list_endpoint(monkeypatch):
+    monkeypatch.setattr(web_api, "list_workflows", lambda: [{"id": "w1", "title": "W1", "description": "d"}])
+
+    result = await web_api.workflows_list()
+
+    assert result == {"workflows": [{"id": "w1", "title": "W1", "description": "d"}]}
+
+
+@pytest.mark.asyncio
+async def test_workflow_run_endpoint(monkeypatch):
+    class FakeWorkflow:
+        async def compile_and_run(self, state):
+            assert state["topic"] == "hello"
+            assert state["agent"] == "agent"
+            return {"final": "done"}
+
+    monkeypatch.setattr(web_api, "agent", "agent")
+    monkeypatch.setattr(web_api, "message_history", [])
+    monkeypatch.setattr(web_api, "get_workflow", lambda _workflow_id: FakeWorkflow())
+
+    payload = web_api.WorkflowRunPayload(workflow_id="research_and_summarize", topic="hello")
+    result = await web_api.workflow_run(payload)
+
+    assert result["workflow_id"] == "research_and_summarize"
+    assert result["response"] == "done"
+    assert len(web_api.message_history) == 2
+
+
+@pytest.mark.asyncio
+async def test_workflows_page_serves_static_file():
+    response = await web_api.workflows_page()
+
+    assert response.path.endswith("static/workflows.html")

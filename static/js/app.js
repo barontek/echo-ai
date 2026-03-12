@@ -12,7 +12,6 @@ class EchoAI {
         this.pendingThinking = null;
         this.renderScheduled = false;
         this.streamMetrics = { startMs: 0, firstTokenMs: 0 };
-
         this.init();
     }
 
@@ -49,6 +48,8 @@ class EchoAI {
         document.getElementById('stop-btn').addEventListener('click', () => this.stopGeneration());
 
         document.getElementById('session-search').addEventListener('input', () => this.loadSessions());
+
+        document.getElementById('open-workflows-btn').addEventListener('click', () => this.openWorkflowsWindow());
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -233,6 +234,12 @@ class EchoAI {
         this.messages = [];
         this.renderMessages();
         this.loadSessions();
+    }
+
+
+
+    openWorkflowsWindow() {
+        window.open('/workflows', '_blank', 'noopener,noreferrer');
     }
 
     async loadSession(sessionId) {

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echo AI Workflows</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <main class="workflow-window" aria-label="Workflow window">
+        <header class="workflow-window-header">
+            <h1>Workflows</h1>
+            <p>Run existing workflows in a dedicated window.</p>
+        </header>
+
+        <div id="workflow-list" class="workflow-list"></div>
+
+        <form id="workflow-form" class="workflow-form">
+            <label for="workflow-topic">Topic / Input</label>
+            <textarea id="workflow-topic" rows="6" placeholder="Enter workflow input..." required></textarea>
+            <button type="submit" id="run-workflow-btn" class="btn btn-primary">Run Workflow</button>
+        </form>
+
+        <section class="workflow-result" aria-live="polite">
+            <h3>Latest Result</h3>
+            <div id="workflow-output" class="workflow-output">Run a workflow to see output.</div>
+        </section>
+    </main>
+
+    <script src="/static/js/workflows.js"></script>
+</body>
+</html>

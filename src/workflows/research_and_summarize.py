@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-import streamlit as st
+from src.workflows._agent_utils import run_with_agent
 
 def get_workflow() -> WorkflowGraph:
     """Return the configured pipeline template."""
@@ -12,7 +12,7 @@ def get_workflow() -> WorkflowGraph:
     async def node_research(state: dict[str, Any]) -> dict[str, Any]:
         await asyncio.sleep(1.0)
         # Assuming the UI sets up the active agent session for queries
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Write a comprehensive 2-sentence summary detailing: {state.get('topic', 'N/A')}"
         )
         state["research_result"] = res

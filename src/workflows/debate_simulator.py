@@ -2,7 +2,7 @@
 
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-import streamlit as st
+from src.workflows._agent_utils import run_with_agent
 
 
 def get_workflow() -> WorkflowGraph:
@@ -21,7 +21,7 @@ def get_workflow() -> WorkflowGraph:
             "content": "You are a staunch advocate supporting the topic. You must fiercely argue in favor of it.",
         }
         # Run explicitly with system message overriding standard behavior
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Construct a compelling 3-sentence argument in FAVOR of this topic: {state['topic']}",
             system_injection=sys_prompt["content"],
         )
@@ -34,7 +34,7 @@ def get_workflow() -> WorkflowGraph:
             "role": "system",
             "content": "You are a staunch critic opposing the topic. You must fiercely argue against it.",
         }
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Construct a compelling 3-sentence argument AGAINST this topic: {state['topic']}",
             system_injection=sys_prompt["content"],
         )
@@ -51,7 +51,7 @@ def get_workflow() -> WorkflowGraph:
     async def judge(state: dict[str, Any]) -> dict[str, Any]:
         """Sequential Node: Impartial arbiter evaluates arguments."""
         sys_prompt = "You are an impartial Supreme Court Judge. Review both arguments and synthesize a logical, objective conclusion."
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Topic: {state['topic']}\n\n"
             f"Pro Argument: {state['pro_argument']}\n\n"
             f"Con Argument: {state['con_argument']}\n\n"

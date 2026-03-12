@@ -1,6 +1,7 @@
 """Web tools for fetching and searching with network restrictions."""
 
 import asyncio
+from typing import Any
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
 import markdownify
@@ -139,7 +140,7 @@ class WebSearchTool(Tool):
         else:
             self.validator = SecurityValidator(SafetyConfig(allow_network=False))
 
-    async def _fetch_search_result(self, crawler: AsyncWebCrawler, url: str, title: str, snippet: str) -> str:
+    async def _fetch_search_result(self, crawler: Any, url: str, title: str, snippet: str) -> str:
         content = ""
         try:
             res = await crawler.arun(url=url)

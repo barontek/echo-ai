@@ -2,7 +2,7 @@
 
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-import streamlit as st
+from src.workflows._agent_utils import run_with_agent
 
 
 def get_workflow() -> WorkflowGraph:
@@ -12,7 +12,7 @@ def get_workflow() -> WorkflowGraph:
     async def generate_outline(state: dict[str, Any]) -> dict[str, Any]:
         """Node 1: Plan the post architecture."""
         state["topic"] = state.get("topic", "The Future of AI Automation")
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Write a 3-bullet point outline for a blog post about {state['topic']}."
         )
         state["outline"] = res
@@ -20,7 +20,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def draft_post(state: dict[str, Any]) -> dict[str, Any]:
         """Node 2: Expand the outline into body content."""
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Draft a short blog post using the following outline as a rigid guide:\n\n{state['outline']}"
         )
         state["draft"] = res
@@ -28,7 +28,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def seo_optimize(state: dict[str, Any]) -> dict[str, Any]:
         """Node 3: Analyze and editorialize the generated draft."""
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"You are an SEO expert. Refine and optimize this draft. Add a catchy H1 Title and inject high-value keywords seamlessly.\n\nDraft:\n{state['draft']}"
         )
         state["final"] = f"### Final Published Post\n\n{res}"

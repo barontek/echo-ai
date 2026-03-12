@@ -7,59 +7,60 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+    <div id="connection-banner" class="connection-banner" aria-live="polite" style="display: none;"></div>
     <div class="app">
-        <!-- Sidebar -->
-        <aside class="sidebar">
+        <aside class="sidebar" aria-label="Sidebar">
             <div class="sidebar-header">
                 <h1>Echo AI</h1>
             </div>
-            
+
             <div class="sidebar-section">
                 <h3>Model</h3>
-                <select id="model-select">
+                <select id="model-select" aria-label="Provider">
                     <option value="ollama">Ollama</option>
                 </select>
-                <select id="ollama-model">
-                    <option value="qwen3:4b-instruct">qwen3:4b-instruct</option>
-                </select>
+                <select id="ollama-model" aria-label="Model"></select>
             </div>
-            
+
             <div class="sidebar-section">
                 <h3>Sessions</h3>
+                <input id="session-search" type="search" placeholder="Search sessions" aria-label="Search sessions">
                 <button id="new-chat-btn" class="btn btn-primary">+ New Chat</button>
-                <div id="session-list" class="session-list"></div>
+                <div class="session-actions">
+                    <button id="rename-session-btn" class="btn" type="button">Rename</button>
+                    <button id="delete-session-btn" class="btn btn-danger" type="button">Delete</button>
+                </div>
+                <div id="session-list" class="session-list" role="list"></div>
             </div>
-            
+
             <div class="sidebar-footer">
-                <label class="theme-toggle">
+                <label class="theme-toggle" for="theme-toggle">
                     <input type="checkbox" id="theme-toggle" checked>
                     <span>Dark Mode</span>
                 </label>
             </div>
         </aside>
-        
-        <!-- Main Content -->
+
         <main class="main">
             <header class="chat-header">
                 <div class="header-info">
                     <span id="model-badge">Model: qwen3:4b-instruct</span>
+                    <span id="metrics-badge">Messages: 0</span>
                 </div>
             </header>
-            
-            <div id="chat-container" class="chat-container">
-                <!-- Messages will be inserted here -->
-            </div>
-            
+
+            <div id="chat-container" class="chat-container" aria-live="polite"></div>
+
             <div class="chat-input-container">
                 <form id="chat-form">
-                    <input type="text" id="chat-input" placeholder="Type your message..." autocomplete="off">
+                    <input type="text" id="chat-input" placeholder="Type your message..." autocomplete="off" aria-label="Message input">
                     <button type="submit" id="send-btn" class="btn btn-primary">Send</button>
                     <button type="button" id="stop-btn" class="btn btn-danger" style="display: none;">Stop</button>
                 </form>
             </div>
         </main>
     </div>
-    
+
     <script src="/static/js/app.js"></script>
 </body>
 </html>

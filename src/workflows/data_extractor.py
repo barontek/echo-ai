@@ -3,7 +3,7 @@
 import json
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-import streamlit as st
+from src.workflows._agent_utils import run_with_agent
 
 def get_workflow() -> WorkflowGraph:
     """Return the configured pipeline template."""
@@ -13,7 +13,7 @@ def get_workflow() -> WorkflowGraph:
         """Extract loose entities from unstructured text."""
         input_text = state.get("topic", "")
         # Ask the agent to find people, dates, and locations.
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Analyze the following text. Extract and list all People, Organizations, Locations, and Dates you can find. Text:\n\n{input_text}"
         )
         state["raw_extraction"] = res
@@ -31,7 +31,7 @@ def get_workflow() -> WorkflowGraph:
         }
         
         # Use underlying structured extraction tool
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Convert the following extracted entities strictly into the matching standard JSON format:\n{json.dumps(schema)}\n\nEntities: {raw}"
         )
         

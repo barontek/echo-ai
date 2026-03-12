@@ -2,7 +2,7 @@
 
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-import streamlit as st
+from src.workflows._agent_utils import run_with_agent
 
 def get_workflow() -> WorkflowGraph:
     """Return the configured pipeline template."""
@@ -15,7 +15,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def analyze_style(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch A: Style Analysis."""
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Analyze the following code strictly for style, formatting, and PEP8/convention compliance. Be brief.\n\n```\n{state['code_input']}\n```"
         )
         state["style_report"] = res
@@ -23,7 +23,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def analyze_bugs(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch B: Bug Analysis."""
-        res = await st.session_state.agent.run(
+        res = await run_with_agent(state, 
             f"Analyze the following code strictly for logical bugs, security flaws, and runtime errors. Be brief.\n\n```\n{state['code_input']}\n```"
         )
         state["bug_report"] = res

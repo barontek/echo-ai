@@ -161,15 +161,14 @@ async def rename_session(payload: SessionRenamePayload):
         if existing:
             raise HTTPException(status_code=409, detail="New session id already exists")
 
-        session = (
+        updated = (
             db.query(DBSessionModel)
             .filter(DBSessionModel.id == payload.session_id)
-            .first()
+            .update({"id": payload.new_session_id})
         )
-        if not session:
+        if updated == 0:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        session.id = payload.new_session_id
         db.commit()
 
     return {"status": "ok", "session_id": payload.new_session_id}

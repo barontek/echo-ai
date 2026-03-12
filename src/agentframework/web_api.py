@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from src.agentframework.agent import Agent, AgentConfig, create_agent
+from src.agentframework.config import get_safety_config, get_tools, load_config
 from src.agentframework.session import DBSessionModel
 
 
@@ -32,6 +33,43 @@ app.add_middleware(
 agent: Agent | None = None
 current_session_id: str | None = None
 message_history: list[dict[str, Any]] = []
+
+
+def _create_runtime_agent(
+    provider: str,
+    model: str,
+    api_key: str | None = None,
+) -> Agent:
+    """Create an agent for the web UI with the same tool config as CLI."""
+    config = load_config()
+    safety_config = get_safety_config(config)
+    tools = get_tools(config, safety_config)
+
+    agent_config = AgentConfig(
+        provider=provider,
+        model=model,
+        temperature=config.get("model", {}).get("temperature", 0.3),
+        max_iterations=config.get("agent", {}).get("max_iterations", 50),
+        system_prompt=config.get("agent", {}).get("system_prompt", ""),
+        tools=tools,
+        base_url=config.get("model", {}).get("base_url"),
+        session_enabled=config.get("agent", {}).get("session_enabled", True),
+        session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
+    )
+
+    env_info = (
+        "\n\n## Environment\n"
+        f"- Current working directory: {Path.cwd()}\n"
+        f"- Workspace (file operations confined to): {safety_config.workspace or '.'}\n"
+    )
+    if agent_config.system_prompt:
+        agent_config.system_prompt += env_info
+    else:
+        agent_config.system_prompt = (
+            "You are an AI assistant with access to various tools." + env_info
+        )
+
+    return create_agent(agent_config, api_key=api_key)
 
 
 class ConfigPayload(BaseModel):
@@ -90,8 +128,7 @@ async def list_models():
 async def update_config(config: ConfigPayload):
     """Update agent configuration."""
     global agent
-    agent_config = AgentConfig(provider=config.provider, model=config.model)
-    agent = create_agent(agent_config, api_key=config.api_key)
+    agent = _create_runtime_agent(config.provider, config.model, api_key=config.api_key)
     return {
         "status": "ok",
         "config": {"provider": config.provider, "model": config.model},
@@ -180,8 +217,7 @@ async def chat(message: ChatPayload):
     global agent, message_history
 
     if agent is None:
-        agent_config = AgentConfig(provider="ollama", model="qwen3:4b-instruct")
-        agent = create_agent(agent_config)
+        agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
 
     prompt = message.content
     message_history.append(
@@ -225,8 +261,11 @@ async def websocket_chat(websocket: WebSocket):
         raw_config = await websocket.receive_text()
         config = WsConfigPayload.model_validate_json(raw_config)
 
-        agent_config = AgentConfig(provider=config.provider, model=config.model)
-        agent = create_agent(agent_config, api_key=config.api_key)
+        agent = _create_runtime_agent(
+            config.provider,
+            config.model,
+            api_key=config.api_key,
+        )
         active_agent = agent
         await websocket.send_json({"type": "ready"})
 

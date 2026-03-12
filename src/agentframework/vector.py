@@ -4,7 +4,10 @@ import os
 import uuid
 import logging
 from typing import Any
-import chromadb
+try:
+    import chromadb
+except ImportError:  # pragma: no cover - optional runtime dependency
+    chromadb = None
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +20,16 @@ class VectorStore:
         # Ensure the directory exists
         os.makedirs(persist_directory, exist_ok=True)
 
+        if chromadb is None:
+            logger.warning("chromadb is not installed; vector features are disabled.")
+            self.collection = None
+            return
+
         try:
             self.client = chromadb.PersistentClient(path=persist_directory)
             self.collection = self.client.get_or_create_collection(
                 name=collection_name,
-                metadata={"hnsw:space": "cosine"} # Default similarity strategy
+                metadata={"hnsw:space": "cosine"},  # Default similarity strategy
             )
             logger.debug("Successfully initialized chromadb backend at %s", persist_directory)
         except Exception as e:

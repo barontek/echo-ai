@@ -1,12 +1,11 @@
 # Agent Framework Makefile
 
-.PHONY: help install install-dev run chat test lint typecheck verify security bench clean sessions
+.PHONY: help install run chat test lint typecheck verify security bench clean sessions
 
 help:
 	@echo "Agent Framework - Available commands:"
 	@echo ""
 	@echo "  make install          - Install dependencies"
-	@echo "  make install-dev     - Install with dev dependencies"
 	@echo "  make chat            - Start chat mode (continuous conversation)"
 	@echo "  make chat LOAD=name  - Load and resume a saved chat"
 	@echo "  make run 'task'      - Run single task"
@@ -23,11 +22,8 @@ help:
 
 install:
 	python3 -m venv .venv
-	.venv/bin/pip install -e .
+	.venv/bin/pip install -e . --ignore-requires-python
 
-install-dev:
-	python3 -m venv .venv
-	.venv/bin/pip install -e ".[dev]"
 
 chat:
 	.venv/bin/python -m agentframework.chat $(filter-out $@,$(MAKECMDGOALS))
@@ -36,7 +32,7 @@ run:
 	.venv/bin/python -m agentframework.cli $(ARGS)
 
 test:
-	.venv/bin/pytest --cov=src/agentframework --cov-report=term-missing tests/ -v
+	PYTHONPATH=src .venv/bin/pytest --cov=src/agentframework --cov-report=term-missing tests/ -v
 
 lint:
 	.venv/bin/ruff check src/
@@ -70,13 +66,11 @@ clean:
 	rm -rf site/
 	find . -name "*.pyc" -delete
 
-lock: requirements.txt requirements-dev.txt
+lock: requirements.txt
 
 requirements.txt: pyproject.toml
 	uv pip compile pyproject.toml -o requirements.txt
 
-requirements-dev.txt: pyproject.toml
-	uv pip compile pyproject.toml --extra dev -o requirements-dev.txt
 
 setup-precommit:
 	.venv/bin/pre-commit install

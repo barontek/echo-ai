@@ -16,15 +16,55 @@ class EchoAI {
         this.init();
     }
 
-    init() {
+    async init() {
         this.bindEvents();
         this.setLoadingModels();
-        this.loadModels();
+        const hasModels = await this.loadModels();
         this.loadSessions();
         this.applyTheme();
-        this.connectWebSocket();
+        if (hasModels) {
+            this.connectWebSocket();
+        } else {
+            this.showError('No models found. Please check if Ollama is running.');
+        }
         this.updateMetrics();
         this.syncSidebarWithViewport();
+    }
+
+    createSourcesContainer(content) {
+        const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+        const links = [];
+        let match;
+        while ((match = linkRegex.exec(content)) !== null) {
+            // Deduplicate URLs
+            if (!links.some(l => l.url === match[2])) {
+                links.push({ text: match[1], url: match[2] });
+            }
+        }
+
+        if (links.length === 0) return null;
+
+        const container = document.createElement('div');
+        container.className = 'sources-container';
+        container.innerHTML = `
+            <button type="button" class="sources-header" aria-label="Toggle sources">
+                <span class="sources-icon">▶</span> Sources (${links.length})
+            </button>
+            <div class="sources-content collapsed">
+                ${links.map(link => `<a href="${link.url}" target="_blank" rel="noopener noreferrer">🔗 ${link.text}</a>`).join('')}
+            </div>
+        `;
+
+        // Add toggle listener
+        const header = container.querySelector('.sources-header');
+        const contentDiv = container.querySelector('.sources-content');
+        const icon = container.querySelector('.sources-icon');
+        header.addEventListener('click', () => {
+            contentDiv.classList.toggle('collapsed');
+            icon.textContent = contentDiv.classList.contains('collapsed') ? '▼' : '▶';
+        });
+
+        return container;
     }
 
     bindEvents() {
@@ -90,8 +130,11 @@ class EchoAI {
         this.ws.onopen = () => {
             this.showConnectionBanner('Connected', false);
             this.clearReconnect();
-            const model = document.getElementById('ollama-model').value;
-            this.ws.send(JSON.stringify({ provider: 'ollama', model }));
+            const modelSelect = document.getElementById('ollama-model');
+            const model = modelSelect.value;
+            if (model && model !== 'Loading models...') {
+                this.ws.send(JSON.stringify({ provider: 'ollama', model }));
+            }
         };
 
         this.ws.onmessage = (event) => {
@@ -196,6 +239,8 @@ class EchoAI {
             const response = await fetch('/api/models');
             const data = await response.json();
             const select = document.getElementById('ollama-model');
+            if (!data.models || data.models.length === 0) return false;
+
             select.innerHTML = '';
             data.models.forEach((model) => {
                 const option = document.createElement('option');
@@ -204,8 +249,10 @@ class EchoAI {
                 if (model === 'qwen3:4b-instruct') option.selected = true;
                 select.appendChild(option);
             });
+            return true;
         } catch {
             this.setLoadingModels();
+            return false;
         }
     }
 
@@ -434,12 +481,32 @@ class EchoAI {
             msgEl.insertBefore(thinkingContainer, msgEl.querySelector('.message-meta'));
         }
 
+        // Handle Sources Dropdown
+        const existingSources = msgEl.querySelector('.sources-container');
+        if (existingSources) existingSources.remove();
+
+        const sourcesContainer = this.createSourcesContainer(content);
+        if (sourcesContainer) {
+            msgEl.insertBefore(sourcesContainer, msgEl.querySelector('.message-meta'));
+        }
+
+        // Handle Tool Badge
         const metaEl = msgEl.querySelector('.message-meta');
-        if (timestamp && metaEl && !metaEl.querySelector('.message-time')) {
-            const timeEl = document.createElement('span');
-            timeEl.className = 'message-time';
-            timeEl.textContent = timestamp;
-            metaEl.appendChild(timeEl);
+        if (metaEl) {
+            if (thinking && (thinking.toLowerCase().includes('tool') || thinking.toLowerCase().includes('search'))) {
+                if (!metaEl.querySelector('.tool-badge')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'tool-badge';
+                    badge.textContent = '🛠️ Tool Used';
+                    metaEl.insertBefore(badge, metaEl.firstChild);
+                }
+            }
+            if (timestamp && !metaEl.querySelector('.message-time')) {
+                const timeEl = document.createElement('span');
+                timeEl.className = 'message-time';
+                timeEl.textContent = timestamp;
+                metaEl.appendChild(timeEl);
+            }
         }
 
         const total = Math.round(performance.now() - this.streamMetrics.startMs);
@@ -487,7 +554,7 @@ class EchoAI {
         const div = document.createElement('div');
         div.className = `message message-${message.role === 'user' ? 'user' : 'bot'}`;
 
-        if (message.role === 'assistant' && message.thinking) {
+        if (message.thinking) {
             div.appendChild(this.createThinkingContainer(message.thinking, true));
         }
 
@@ -496,9 +563,23 @@ class EchoAI {
         contentDiv.innerHTML = this.formatContent(message.content || '');
         div.appendChild(contentDiv);
 
+
+        const sourcesContainer = this.createSourcesContainer(message.content || '');
+        if (sourcesContainer) {
+            div.appendChild(sourcesContainer);
+        }
+
         if (message.role === 'assistant') {
             const metaDiv = document.createElement('div');
             metaDiv.className = 'message-meta';
+
+            if (message.thinking && (message.thinking.toLowerCase().includes('tool') || message.thinking.toLowerCase().includes('search'))) {
+                const badge = document.createElement('span');
+                badge.className = 'tool-badge';
+                badge.textContent = '🛠️ Tool Used';
+                metaDiv.appendChild(badge);
+            }
+
             if (message.timestamp) {
                 const timeEl = document.createElement('span');
                 timeEl.className = 'message-time';

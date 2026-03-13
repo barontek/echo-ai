@@ -63,9 +63,28 @@ async def test_notes_tool(temp_notes_dir):
 
 
 @pytest.mark.asyncio
+@patch("httpx.AsyncClient.get")
 @patch("agentframework.tools.web.AsyncWebCrawler")
-async def test_web_fetch_tool(mock_crawler_class):
+async def test_web_fetch_tool(mock_crawler_class, mock_httpx_get):
     tool = WebFetchTool(safety_config=SafetyConfig(allow_network=True))
+
+    # Mock httpx response
+    class MockHttpxResponse:
+        def __init__(self, status_code, text=""):
+            self.status_code = status_code
+            self.text = text
+        def raise_for_status(self):
+            import httpx
+            if self.status_code >= 400:
+                raise httpx.HTTPStatusError(f"HTTP error: {self.status_code}", request=None, response=self)
+
+    async def mock_httpx_get_fn(url, **kwargs):
+        if "error.com" in url:
+            return MockHttpxResponse(404)
+        return MockHttpxResponse(200, "Fallback content")
+
+    mock_httpx_get.side_effect = mock_httpx_get_fn
+
 
     mock_crawler = mock_crawler_class.return_value.__aenter__.return_value
 
@@ -77,7 +96,7 @@ async def test_web_fetch_tool(mock_crawler_class):
 
     async def mock_arun(url, **kwargs):
         if url == "http://example.com":
-            return MockResult(success=True, markdown="# Test Page\nContent goes here")
+            return MockResult(success=True, markdown="# Test Page\nThis is a long enough content to pass the 50 characters threshold in the web fetch tool logic.")
         else:
             return MockResult(success=False, error_message="HTTP error: 404")
 
@@ -86,7 +105,7 @@ async def test_web_fetch_tool(mock_crawler_class):
     res = await tool.execute(url="http://example.com")
     assert not res.error
     assert "Test Page" in res.content
-    assert "Content goes here" in res.content
+    assert "long enough content" in res.content
     assert "alert" not in res.content
 
     # Status error
@@ -119,7 +138,7 @@ async def test_web_search_tool(mock_crawler_class):
 
     async def mock_arun(url, **kwargs):
         if url == "http://example.com/1":
-            return MockResult(success=True, markdown="Page 1 Content")
+            return MockResult(success=True, markdown="This is the content for page 1 which is more than fifty characters long to satisfy the anti-bloat check.")
         else:
             raise RuntimeError("Error")
 
@@ -135,6 +154,6 @@ async def test_web_search_tool(mock_crawler_class):
 
         res = await tool.execute(query="query")
         assert not res.error
-        assert "Page 1 Content" in res.content
+        assert "more than fifty characters" in res.content
         assert "Result 2: http://example.com/2" in res.content
         assert "Snippet 2" in res.content

@@ -36,12 +36,82 @@ current_session_id: str | None = None
 message_history: list[dict[str, Any]] = []
 
 
+def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
+    """Filter messages for UI rendering, removing raw tool/system noise."""
+    filtered = []
+
+    # Internal framework strings to ignore
+    internal_patterns = [
+        r"System Note: Tools executed",
+        r"Tool '.*' returned:",
+        r"^FAILED: .*",
+        r"\[Persistent Memory\]"
+    ]
+    import re
+
+    for msg in messages:
+        role = getattr(msg, "role", msg.get("role") if isinstance(msg, dict) else "")
+        content = getattr(msg, "content", msg.get("content") if isinstance(msg, dict) else "") or ""
+
+        # 1. Ignore system messages
+        if role == "system":
+            continue
+
+        # 2. Ignore tool messages
+        if role == "tool":
+            continue
+
+        # 3. Ignore assistant messages with no textual content (usually just tool calls)
+        tool_calls = getattr(msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None)
+        if role == "assistant" and not content.strip() and tool_calls:
+            continue
+
+        # 4. Ignore internal framework strings
+        is_internal = any(re.search(pattern, content) for pattern in internal_patterns)
+        if is_internal:
+            continue
+
+        # Extract thinking content if present (stored with markers)
+        thinking = getattr(msg, "thinking", msg.get("thinking") if isinstance(msg, dict) else "")
+        display_content = content
+        if not thinking and "__THINKING__" in content and "__THINKING_END__" in content:
+            parts = content.split("__THINKING_END__", 1)
+            thinking = parts[0].replace("__THINKING__", "").strip()
+            display_content = parts[1].strip()
+
+        timestamp = getattr(msg, "timestamp", msg.get("timestamp") if isinstance(msg, dict) else "")
+
+        # Fallback to metadata if the framework stores it there
+        metadata = getattr(msg, "metadata", msg.get("metadata") if isinstance(msg, dict) else None)
+        if metadata and isinstance(metadata, dict):
+            if not timestamp:
+                timestamp = metadata.get("timestamp", "")
+            if not thinking:
+                thinking = metadata.get("thinking", "")
+
+        msg_dict = {
+            "role": role,
+            "content": display_content,
+            "timestamp": timestamp,
+        }
+        if thinking:
+            msg_dict["thinking"] = thinking
+
+        filtered.append(msg_dict)
+
+    return filtered
+
+
+
 def _create_runtime_agent(
     provider: str,
     model: str,
     api_key: str | None = None,
 ) -> Agent:
     """Create an agent for the web UI with the same tool config as CLI."""
+    # Safety check for model name
+    if not model or model == "Loading models..." or "models..." in model:
+        model = "qwen3:4b-instruct"
     config = load_config()
     safety_config = get_safety_config(config)
     tools = get_tools(config, safety_config)
@@ -90,7 +160,7 @@ class SessionRenamePayload(BaseModel):
 
 class WsConfigPayload(BaseModel):
     provider: str = "ollama"
-    model: str = "qwen3:4b-instruct"
+    model: str = Field(default="qwen3:4b-instruct", min_length=1)
     api_key: str | None = None
 
 
@@ -165,6 +235,7 @@ async def create_session():
         agent.session_manager.create_session()
         if agent.session_manager.current_session:
             current_session_id = agent.session_manager.current_session.id
+            agent.messages = [] # Clear agent's internal message history
     message_history = []
     return {"session_id": current_session_id}
 
@@ -176,10 +247,9 @@ async def load_session(session_id: str):
     if agent and agent.session_manager:
         agent.load_session(session_id)
         current_session_id = session_id
-        message_history = [
-            {"role": msg.role, "content": msg.content} for msg in agent.messages
-        ]
+        message_history = filter_messages_for_ui(agent.messages)
         return {"session_id": session_id, "messages": message_history}
+
     return {"session_id": session_id, "messages": []}
 
 

@@ -103,16 +103,47 @@ class WebFetchTool(Tool):
 
         try:
             if AsyncWebCrawler is not None:
-                async with AsyncWebCrawler(verbose=True) as crawler:
-                    res = await crawler.arun(url=url)
-                    if hasattr(res, "success") and res.success:  # type: ignore
-                        content = res.markdown if hasattr(res, "markdown") else ""  # type: ignore
-                        if isinstance(content, str) and len(content) > 15000:
-                            content = content[:15000] + "\n... (truncated)"
-                        return ToolResult(content=str(content))
+                try:
+                    import re
+                    from crawl4ai import CrawlerRunConfig
+                    from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+                    from crawl4ai.content_filter_strategy import PruningContentFilter
 
-                    error_msg = getattr(res, "error_message", "Unknown error")  # type: ignore
-                    return ToolResult(error=f"Failed to fetch {url}: {error_msg}")
+                    run_config = CrawlerRunConfig(
+                        markdown_generator=DefaultMarkdownGenerator(
+                            options={"ignore_links": True, "ignore_images": True, "escape_html": True},
+                            content_filter=PruningContentFilter()
+                        )
+                    )
+
+                    async with AsyncWebCrawler(verbose=True) as crawler:
+                        res = await crawler.arun(url=url, magic=True, config=run_config)
+                        if getattr(res, "success", False):  # type: ignore
+                            content_obj = getattr(res, "markdown", "") # type: ignore
+
+                            fit_md = getattr(content_obj, "fit_markdown", None)
+                            raw_md = getattr(content_obj, "raw_markdown", None)
+
+                            if fit_md:
+                                content = fit_md
+                            elif raw_md:
+                                content = raw_md
+                            elif isinstance(content_obj, str):
+                                content = content_obj
+                            else:
+                                content = str(content_obj)
+
+                            if content:
+                                content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
+                                content = re.sub(r'\n\s*\n', '\n', content)
+                                content = content.strip()
+
+                            if content and len(str(content).strip()) > 50:
+                                if isinstance(content, str) and len(content) > 8000:
+                                    content = content[:8000] + "\n... (truncated)"
+                                return ToolResult(content=str(content))
+                except Exception:
+                    pass # Let it fall through to the httpx/bs4 fallback
 
             import httpx
 
@@ -143,17 +174,50 @@ class WebSearchTool(Tool):
     async def _fetch_search_result(self, crawler: Any, url: str, title: str, snippet: str) -> str:
         content = ""
         try:
-            res = await crawler.arun(url=url)
-            if hasattr(res, "success") and res.success: # type: ignore
-                content = getattr(res, "markdown", "") # type: ignore
-                if isinstance(content, str) and len(content) > 4000:
-                    content = content[:4000] + "\n... (truncated)"
-        except Exception:
-            # Use snippet from search result if fetch fails
-            content = snippet[:500] if snippet else ""
+            import uuid
+            import re
+            from crawl4ai import CrawlerRunConfig
+            from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+            from crawl4ai.content_filter_strategy import PruningContentFilter
 
-        if not content:
-            content = "[Content could not be fetched]"
+            # Natively strip images and links to prevent token bloat
+            run_config = CrawlerRunConfig(
+                markdown_generator=DefaultMarkdownGenerator(
+                    options={"ignore_links": True, "ignore_images": True, "escape_html": True},
+                    content_filter=PruningContentFilter()
+                )
+            )
+
+            res = await crawler.arun(url=url, session_id=str(uuid.uuid4()), magic=True, config=run_config)
+            if getattr(res, "success", False): # type: ignore
+                content_obj = getattr(res, "markdown", "") # type: ignore
+
+                fit_md = getattr(content_obj, "fit_markdown", None)
+                raw_md = getattr(content_obj, "raw_markdown", None)
+
+                if fit_md:
+                    content = fit_md
+                elif raw_md:
+                    content = raw_md
+                elif isinstance(content_obj, str):
+                    content = content_obj
+                else:
+                    content = str(content_obj)
+
+                if content:
+                    # Final regex sweep to catch lingering URLs and excessive whitespace
+                    content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
+                    content = re.sub(r'\n\s*\n', '\n', content)
+                    content = content.strip()
+
+                # DECREASED TRUNCATION: Limit to 1000 chars to force AI to focus on top data
+                if isinstance(content, str) and len(content) > 1000:
+                    content = content[:1000] + "\n... (truncated)"
+        except Exception:
+            pass
+
+        if not content or len(str(content).strip()) < 50:
+            content = snippet[:500] if snippet else "[Content could not be fetched]"
 
         return f"- {title}: {url}\n  {content}"
 

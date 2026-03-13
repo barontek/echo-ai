@@ -46,6 +46,7 @@ def serialize_messages(messages: list[Message]) -> list[dict]:
         {
             "role": m.role,
             "content": m.content,
+            "tool_calls": m.tool_calls,
             "tool_call_id": m.tool_call_id,
             "tool_name": m.tool_name,
             "tool_arguments": m.tool_arguments,
@@ -60,6 +61,7 @@ def deserialize_messages(messages: list[dict]) -> list[Message]:
         Message(
             role=m["role"],
             content=m["content"],
+            tool_calls=m.get("tool_calls"),
             tool_call_id=m.get("tool_call_id"),
             tool_name=m.get("tool_name"),
             tool_arguments=m.get("tool_arguments"),

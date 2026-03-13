@@ -1,5 +1,6 @@
 """Core agent implementation with session support."""
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -205,10 +206,48 @@ class Agent:
             if iteration == 0 and response.content:
                 has_thinking = True
 
+            # Record assistant's tool-calling message in history
+            tool_call_dicts = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments,
+                    },
+                }
+                for tc in response.tool_calls
+            ]
+            assistant_msg = Message(
+                role="assistant",
+                content=response.content or "",
+                tool_calls=tool_call_dicts,
+            )
+            current_messages.append(assistant_msg)
+            if self.session_manager:
+                self.session_manager.add_message(
+                    "assistant",
+                    assistant_msg.content,
+                    tool_calls=tool_call_dicts
+                )
+
             tool_messages, updated_messages = await self._execute_tool_calls(
                 response.tool_calls, current_messages, request_id=request_id, iteration=iteration
             )
             current_messages = updated_messages
+
+            # Persist tool execution results
+            if self.session_manager:
+                for msg in tool_messages:
+                    self.session_manager.add_message(
+                        msg.role,
+                        msg.content,
+                        tool_call_id=msg.tool_call_id,
+                        tool_name=msg.tool_name,
+                        tool_arguments=msg.tool_arguments
+                    )
+                # Save session to ensure everything is on disk
+                self.save_session()
 
         err_msg = "Max iterations reached. The agent could not complete the task."
         self.callback_manager.on_run_error(request_id, Exception(err_msg))
@@ -269,10 +308,48 @@ class Agent:
             if iteration == 0 and response.content:
                 has_thinking = True
 
+            # Record assistant's tool-calling message in history
+            tool_call_dicts = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments,
+                    },
+                }
+                for tc in response.tool_calls
+            ]
+            assistant_msg = Message(
+                role="assistant",
+                content=response.content or "",
+                tool_calls=tool_call_dicts,
+            )
+            current_messages.append(assistant_msg)
+            if self.session_manager:
+                self.session_manager.add_message(
+                    "assistant",
+                    assistant_msg.content,
+                    tool_calls=tool_call_dicts
+                )
+
             tool_messages, updated_messages = await self._execute_tool_calls(
                 response.tool_calls, current_messages, request_id=request_id, iteration=iteration
             )
             current_messages = updated_messages
+
+            # Persist tool execution results
+            if self.session_manager:
+                for msg in tool_messages:
+                    self.session_manager.add_message(
+                        msg.role,
+                        msg.content,
+                        tool_call_id=msg.tool_call_id,
+                        tool_name=msg.tool_name,
+                        tool_arguments=msg.tool_arguments
+                    )
+                # Save session to ensure everything is on disk
+                self.save_session()
 
         err_msg = "Max iterations reached. The agent could not complete the task."
         self.callback_manager.on_run_error(request_id, Exception(err_msg))

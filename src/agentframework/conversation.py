@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 from datetime import datetime
@@ -16,6 +17,7 @@ class Message:
 
     role: Literal["user", "assistant", "system", "tool"]
     content: str
+    tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     tool_name: str | None = None
     tool_arguments: dict | None = None
@@ -81,16 +83,28 @@ def format_messages_for_llm(
         result.append({"role": "system", "content": prompt})
 
     for msg in messages:
-        if msg.role == "tool":
+        if msg.role == "assistant" and (msg.tool_calls or msg.tool_call_id):
+            tool_calls = msg.tool_calls
+            if not tool_calls and msg.tool_call_id:
+                tool_calls = [
+                    {
+                        "id": msg.tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": msg.tool_name or "",
+                            "arguments": json.dumps(msg.tool_arguments or {}),
+                        },
+                    }
+                ]
+
             result.append(
                 {
                     "role": msg.role,
-                    "content": msg.content,
-                    "tool_call_id": msg.tool_call_id,
-                    "name": msg.tool_name,
+                    "content": msg.content or "",
+                    "tool_calls": tool_calls,
                 }
             )
-        elif msg.role == "assistant" and msg.tool_call_id:
+        elif msg.role == "tool":
             result.append(
                 {
                     "role": msg.role,

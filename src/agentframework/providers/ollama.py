@@ -100,6 +100,12 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
+            with open("/tmp/ollama_debug_payload.log", "a") as f:
+                f.write("\n--- CHAT REQUEST ---\n")
+                f.write(f"Messages: {json.dumps(messages, indent=2)}\n")
+                if tools:
+                    f.write(f"Tools: {[t['function']['name'] for t in tools]}\n")
+
             response = await self.client.post(
                 f"{self.base_url}/api/chat",
                 json=payload,
@@ -189,6 +195,12 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
+            with open("/tmp/ollama_debug_payload.log", "a") as f:
+                f.write("\n--- STREAMING CHAT REQUEST ---\n")
+                f.write(f"Messages: {json.dumps(messages, indent=2)}\n")
+                if tools:
+                    f.write(f"Tools: {[t['function']['name'] for t in tools]}\n")
+
             async with self.client.stream(
                 "POST", f"{self.base_url}/api/chat", json=payload, headers=headers
             ) as response:

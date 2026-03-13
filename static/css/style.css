@@ -341,3 +341,76 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* Sources Dropdown & Tool Badge */
+.sources-container {
+    margin-top: 0.75rem;
+    margin-bottom: 0.5rem;
+    background-color: rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+[data-theme="light"] .sources-container {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.sources-header {
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sources-header:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] .sources-header:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.sources-content {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border-top: 1px solid var(--border);
+}
+
+.sources-content.collapsed {
+    display: none;
+}
+
+.sources-content a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sources-content a:hover {
+    text-decoration: underline;
+}
+
+.tool-badge {
+    font-size: 0.7rem;
+    color: var(--accent);
+    background-color: rgba(255, 107, 107, 0.1);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    margin-right: auto;
+    display: inline-flex;
+    align-items: center;
+}

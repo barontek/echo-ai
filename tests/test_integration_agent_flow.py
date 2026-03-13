@@ -42,6 +42,7 @@ def test_tool_call_then_final_response_flow():
     out = asyncio.run(agent.run("do thing"))
     assert out == "Final summary"
     assert any(m.role == "tool" and "echo:hello" in m.content for m in agent.messages)
+    agent.close()
 
 
 def test_context_summarization_path_runs_when_budget_small():
@@ -53,6 +54,7 @@ def test_context_summarization_path_runs_when_budget_small():
     import asyncio
     prepared = asyncio.run(agent._prepare_messages(agent.messages))
     assert len(prepared) > 0
+    agent.close()
 
 
 def test_session_save_load_and_undo_redo(tmp_path):
@@ -76,3 +78,4 @@ def test_session_save_load_and_undo_redo(tmp_path):
     loaded = agent.load_session("t1")
     assert "loaded" in loaded.lower()
     assert agent.messages
+    agent.close()

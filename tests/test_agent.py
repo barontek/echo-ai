@@ -110,7 +110,9 @@ class TestParallelExecution:
             parallel_tool_execution=False,
         )
         provider = MockProvider()
-        return Agent(llm_provider=provider, config=config)
+        agent = Agent(llm_provider=provider, config=config)
+        yield agent
+        agent.close()
 
     @pytest.mark.asyncio
     async def test_sequential_execution_by_default(self, agent_with_mock_tool):
@@ -159,6 +161,7 @@ class TestParallelExecution:
         tool = agent.tool_map["mock"]
         assert isinstance(tool, MockTool)
         assert tool.executed is True
+        agent.close()
 
 
 class TestPydanticValidation:
@@ -168,7 +171,9 @@ class TestPydanticValidation:
     def agent_with_mock_tool(self):
         config = AgentConfig(tools=[MockTool()])
         provider = MockProvider()
-        return Agent(llm_provider=provider, config=config)
+        agent = Agent(llm_provider=provider, config=config)
+        yield agent
+        agent.close()
 
     @pytest.mark.asyncio
     async def test_validation_passes_with_valid_args(self, agent_with_mock_tool):
@@ -264,6 +269,7 @@ class TestSanitizeJsonIntegration:
 
         # Note: The arguments are already parsed by the provider before reaching _execute_tool
         # This test documents expected behavior
+        agent.close()
 
 
 class TestAgentConfig:

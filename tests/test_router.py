@@ -44,3 +44,5 @@ async def test_semantic_router_selection():
     agent.llm.extract_structured.return_value = RouteSelection(reasoning="Made up agent", selected_agent="fictional_agent")
     result4 = await router.route("Do something weird")
     assert result4 == "default"
+
+    agent.close()

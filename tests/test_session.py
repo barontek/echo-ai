@@ -70,7 +70,9 @@ class TestSessionManager:
 
     @pytest.fixture
     def manager(self, temp_dir):
-        return SessionManager(session_dir=temp_dir)
+        manager = SessionManager(session_dir=temp_dir)
+        yield manager
+        manager.close()
 
     def test_create_session(self, manager):
         session = manager.create_session("my-session")

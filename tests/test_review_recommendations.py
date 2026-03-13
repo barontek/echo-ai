@@ -61,7 +61,7 @@ async def test_safety_denial_then_recovery_flow():
         [
             LLMResponse(
                 content="Trying tool",
-                tool_calls=[LLMToolCall(id="1", name="deny_tool", arguments={})],
+                tool_calls=[LLMToolCall(id="call_1", name="deny_tool", arguments={})],
             ),
             LLMResponse(content="Recovered after denial"),
         ]
@@ -74,6 +74,7 @@ async def test_safety_denial_then_recovery_flow():
     tool_messages = [m for m in agent.messages if m.role == "tool"]
     assert tool_messages
     assert tool_messages[0].error_category == "policy_denied"
+    agent.close()
 
 
 @pytest.mark.asyncio
@@ -81,13 +82,13 @@ async def test_tool_failure_categories_surface():
     explode_tool = ExplodeTool()
 
     msg_exec, _ = await execute_single_tool(
-        LLMToolCall(id="1", name="explode", arguments={}),
+        LLMToolCall(id="call_1", name="explode", arguments={}),
         {"explode": explode_tool},
     )
     assert msg_exec.error_category == "execution_error"
 
     msg_missing, _ = await execute_single_tool(
-        LLMToolCall(id="2", name="missing", arguments={}),
+        LLMToolCall(id="call_2", name="missing", arguments={}),
         {"explode": explode_tool},
     )
     assert msg_missing.error_category == "tool_not_found"
@@ -112,6 +113,7 @@ def test_context_summarization_content_included():
         m["role"] == "system" and "summary: important context" in m["content"]
         for m in prepared
     )
+    agent.close()
 
 
 @pytest.mark.parametrize(

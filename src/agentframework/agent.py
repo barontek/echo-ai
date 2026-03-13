@@ -71,7 +71,7 @@ class Agent:
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
             self.session_manager.create_session()
-            
+
         self.memory_manager = MemoryManager(self.session_manager)
 
     def add_callback(self, callback: AgentCallback) -> None:
@@ -440,6 +440,19 @@ class Agent:
         if not self.session_manager:
             return []
         return [s.id for s in self.session_manager.list_sessions()]
+
+    def close(self) -> None:
+        """Close the agent and its associated managers."""
+        if self.session_manager:
+            self.session_manager.close()
+        if hasattr(self, "llm"):
+            # If the provider has a close method, call it
+            try:
+                close_method = getattr(self.llm, "close", None)
+                if close_method:
+                    close_method()
+            except Exception:
+                pass
 
 
 def create_agent(config: AgentConfig, api_key: str | None = None) -> Agent:

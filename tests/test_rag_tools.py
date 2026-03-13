@@ -12,7 +12,8 @@ def mock_vector_store():
     import uuid
     unique_name = f"test_memory_{uuid.uuid4().hex}"
     store.collection = store.client.get_or_create_collection(unique_name)
-    return store
+    yield store
+    store.close()
 
 @pytest.mark.asyncio
 async def test_rag_ingest_and_search(mock_vector_store):

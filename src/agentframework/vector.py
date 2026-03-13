@@ -87,3 +87,13 @@ class VectorStore:
                 })
 
         return structured_results
+    def close(self) -> None:
+        """Explicitly close the Chroma client connection."""
+        if hasattr(self, "client") and self.client:
+            try:
+                close_method = getattr(self.client, "close", None)
+                if close_method:
+                    close_method()
+                logger.debug("Successfully closed chromadb client.")
+            except Exception as e:
+                logger.error("Failed to close chromadb client: %s", e)

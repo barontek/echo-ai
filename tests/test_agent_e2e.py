@@ -64,6 +64,7 @@ async def test_agent_run_loop_e2e():
     assert len(tool_msgs) == 1
     assert tool_msgs[0].content == "12"
     assert tool_msgs[0].tool_name == "calc"
+    agent.close()
 
 @pytest.mark.asyncio
 async def test_agent_max_iterations():
@@ -82,6 +83,7 @@ async def test_agent_max_iterations():
 
     assert "Max iterations reached" in response
     assert provider.call_count == 3  # Hit max iterations bounds
+    agent.close()
 
 @pytest.mark.asyncio
 async def test_agent_run_streaming_e2e():
@@ -105,3 +107,4 @@ async def test_agent_run_streaming_e2e():
     assert response == "The answer is 30."
     assert "answer" in chunks
     assert provider.call_count == 2
+    agent.close()

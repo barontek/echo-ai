@@ -32,3 +32,5 @@ async def test_agent_extract_data():
     call_kwargs = agent.llm.extract_structured.call_args.kwargs
     assert call_kwargs["response_model"] == UserProfile
     assert call_kwargs["messages"][0]["content"] == "Hi, my name is Alice and I am 30 years old."
+
+    agent.close()

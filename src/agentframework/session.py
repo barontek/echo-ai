@@ -1,5 +1,6 @@
 """Session management for the agent framework using SQLite."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -7,6 +8,8 @@ from typing import Any
 
 from sqlalchemy import create_engine, Column, String, DateTime, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
@@ -144,7 +147,7 @@ class SessionManager:
         if self.current_session and self.current_session.id == workflow_id:
             if "checkpoints" not in self.current_session.metadata:
                 self.current_session.metadata["checkpoints"] = []
-            
+
             self.current_session.metadata["checkpoints"].append({
                 "node": current_node,
                 "state": state,
@@ -157,6 +160,15 @@ class SessionManager:
         if self.current_session:
             return self.current_session.messages
         return []
+
+    def close(self) -> None:
+        """Dispose of the database engine and any connections in its pool."""
+        if hasattr(self, "engine") and self.engine:
+            try:
+                self.engine.dispose()
+                logger.debug("Successfully disposed of SQLAlchemy engine.")
+            except Exception as e:
+                logger.error("Failed to dispose of SQLAlchemy engine: %s", e)
 
 
 class ChangeTracker:

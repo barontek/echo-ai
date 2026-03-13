@@ -198,7 +198,7 @@ class EchoAI {
                 break;
             case 'done':
                 this.flushPendingRender();
-                this.finishMessage(data.content, data.thinking, data.timestamp);
+                this.finishMessage(data.content, data.thinking, data.timestamp, data.has_tools);
                 break;
             case 'error':
                 this.showError(data.content);
@@ -461,7 +461,7 @@ class EchoAI {
         this.smartScroll();
     }
 
-    finishMessage(content, thinking, timestamp) {
+    finishMessage(content, thinking, timestamp, hasTools) {
         this.resetButtons();
         if (this.messages.length === 0) return;
 
@@ -469,6 +469,7 @@ class EchoAI {
         lastMessage.content = content;
         lastMessage.thinking = thinking;
         lastMessage.timestamp = timestamp;
+        lastMessage.has_tools = hasTools;
 
         const msgEl = document.querySelector('.message:last-child');
         if (!msgEl) return;
@@ -493,7 +494,7 @@ class EchoAI {
         // Handle Tool Badge
         const metaEl = msgEl.querySelector('.message-meta');
         if (metaEl) {
-            if (thinking && (thinking.toLowerCase().includes('tool') || thinking.toLowerCase().includes('search'))) {
+            if (lastMessage.has_tools === true) {
                 if (!metaEl.querySelector('.tool-badge')) {
                     const badge = document.createElement('span');
                     badge.className = 'tool-badge';
@@ -573,7 +574,7 @@ class EchoAI {
             const metaDiv = document.createElement('div');
             metaDiv.className = 'message-meta';
 
-            if (message.thinking && (message.thinking.toLowerCase().includes('tool') || message.thinking.toLowerCase().includes('search'))) {
+            if (message.has_tools === true) {
                 const badge = document.createElement('span');
                 badge.className = 'tool-badge';
                 badge.textContent = '🛠️ Tool Used';

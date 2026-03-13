@@ -53,46 +53,47 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         role = getattr(msg, "role", msg.get("role") if isinstance(msg, dict) else "")
         content = getattr(msg, "content", msg.get("content") if isinstance(msg, dict) else "") or ""
 
-        # 1. Ignore system messages
-        if role == "system":
-            continue
-
-        # 2. Ignore tool messages
-        if role == "tool":
-            continue
-
-        # 3. Ignore assistant messages with no textual content (usually just tool calls)
-        tool_calls = getattr(msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None)
-        if role == "assistant" and not content.strip() and tool_calls:
-            continue
-
-        # 4. Ignore internal framework strings
-        is_internal = any(re.search(pattern, content) for pattern in internal_patterns)
-        if is_internal:
-            continue
-
-        # Extract thinking content if present (stored with markers)
+        # Extract metadata if available
+        metadata = getattr(msg, "metadata", msg.get("metadata") if isinstance(msg, dict) else None)
+        timestamp = getattr(msg, "timestamp", msg.get("timestamp") if isinstance(msg, dict) else "")
         thinking = getattr(msg, "thinking", msg.get("thinking") if isinstance(msg, dict) else "")
+
+        if metadata and isinstance(metadata, dict):
+            timestamp = timestamp or metadata.get("timestamp", "")
+            thinking = thinking or metadata.get("thinking", "")
+
+        # 1. Handle assistant messages with tool calls first
+        tool_calls = getattr(msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None)
+        has_tools = bool(tool_calls)
+
+        # 2. Skip logic (system and tool messages are always skipped)
+        if role in ["system", "tool"]:
+            continue
+
+        # If it's an assistant message with tools, we NEVER continue/skip it here.
+        # Otherwise, check skip conditions:
+        if not has_tools:
+            # Drop if it's truly empty assistant message
+            if role == "assistant" and not content.strip():
+                continue
+
+            # Ignore internal framework strings
+            is_internal = any(re.search(pattern, content) for pattern in internal_patterns)
+            if is_internal:
+                continue
+
+        # 3. Extract thinking content if present (stored with markers)
         display_content = content
         if not thinking and "__THINKING__" in content and "__THINKING_END__" in content:
             parts = content.split("__THINKING_END__", 1)
             thinking = parts[0].replace("__THINKING__", "").strip()
             display_content = parts[1].strip()
 
-        timestamp = getattr(msg, "timestamp", msg.get("timestamp") if isinstance(msg, dict) else "")
-
-        # Fallback to metadata if the framework stores it there
-        metadata = getattr(msg, "metadata", msg.get("metadata") if isinstance(msg, dict) else None)
-        if metadata and isinstance(metadata, dict):
-            if not timestamp:
-                timestamp = metadata.get("timestamp", "")
-            if not thinking:
-                thinking = metadata.get("thinking", "")
-
         msg_dict = {
             "role": role,
             "content": display_content,
             "timestamp": timestamp,
+            "has_tools": has_tools,
         }
         if thinking:
             msg_dict["thinking"] = thinking
@@ -423,16 +424,20 @@ async def websocket_chat(websocket: WebSocket):
 
             sender_task = asyncio.create_task(sender_loop())
 
-            async def run_with_cancellation() -> str:
+            async def run_with_cancellation() -> tuple[str, bool]:
                 nonlocal accumulated_content, thinking_content, in_thinking
                 task = asyncio.current_task()
+                has_tools_executed = False
 
                 def on_chunk(chunk: str) -> None:
-                    nonlocal accumulated_content, thinking_content, in_thinking
+                    nonlocal accumulated_content, thinking_content, in_thinking, has_tools_executed
                     if task is not None and task.cancelled():
                         raise asyncio.CancelledError()
                     if stop_requested:
                         raise asyncio.CancelledError()
+
+                    if "__TOOL_CALL__" in chunk:
+                        has_tools_executed = True
 
                     if "__THINKING__" in chunk:
                         chunk = chunk.replace("__THINKING__", "")
@@ -452,16 +457,24 @@ async def websocket_chat(websocket: WebSocket):
                     with contextlib.suppress(asyncio.QueueFull):
                         send_queue.put_nowait(payload)
 
-                return await active_agent.run_streaming(prompt, on_chunk=on_chunk)
+                result = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
+                # Check agent's message history for tool calls if on_chunk didn't catch it
+                if not has_tools_executed and active_agent.messages:
+                    last_msg = active_agent.messages[-1]
+                    if getattr(last_msg, "tool_calls", None):
+                        has_tools_executed = True
+
+                return result, has_tools_executed
 
             streaming_task = asyncio.create_task(run_with_cancellation())
             response = ""
 
             try:
-                response = await streaming_task
+                response, has_tools = await streaming_task
             except asyncio.CancelledError:
                 accumulated_content = "Stopped."
                 thinking_content = ""
+                has_tools = False
             finally:
                 streaming_task = None
                 await send_queue.put(None)
@@ -482,6 +495,7 @@ async def websocket_chat(websocket: WebSocket):
                     "content": accumulated_content,
                     "timestamp": timestamp,
                     "thinking": thinking_content,
+                    "has_tools": has_tools,
                 }
             )
             await websocket.send_json(
@@ -490,6 +504,7 @@ async def websocket_chat(websocket: WebSocket):
                     "content": accumulated_content,
                     "thinking": thinking_content,
                     "timestamp": timestamp,
+                    "has_tools": has_tools,
                 }
             )
 

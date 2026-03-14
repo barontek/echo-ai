@@ -109,8 +109,9 @@ async def interactive_mode(agent: Agent):
         except Exception as e:
             console.print(f"[red]Error:[/red] {e}")
 
-    # Auto-save on exit
+    # Auto-save and cleanup on exit
     agent.save_session()
+    agent.close()
     console.print("\n[dim]Session saved. Goodbye![/dim]")
 
 
@@ -145,13 +146,16 @@ async def run_single(agent: Agent, task: str):
 def main():
     """Main entry point."""
     agent = setup_agent()
-
     args = [a for a in sys.argv[1:] if a not in {"--debug", "--debug-json"}]
+
     if args:
         task = " ".join(args)
         asyncio.run(run_single(agent, task))
     else:
         asyncio.run(interactive_mode(agent))
+
+    # Final cleanup
+    agent.close()
 
 
 if __name__ == "__main__":

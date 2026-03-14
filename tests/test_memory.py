@@ -3,7 +3,10 @@
 import pytest
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, AsyncMock
 
+from src.agentframework.agent import Message
+from src.agentframework.memory import MemoryManager
 from src.agentframework.tools.memory import MemoryTool
 
 
@@ -295,3 +298,71 @@ class TestMemoryDeletion:
         # Memory should still exist
         recall = await tool.execute(action="recall_fact", query="secret")
         assert "secret info" in recall.content
+
+
+# ---------------------------------------------------------------------------
+# MemoryManager summarization (from test_memory_extended.py)
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryManagerSummarization:
+    @pytest.fixture
+    def mock_session_manager(self):
+        sm = MagicMock()
+        sm.current_session = MagicMock()
+        sm.current_session.metadata = {}
+        sm.current_session.messages = []
+        return sm
+
+    @pytest.fixture
+    def mock_llm(self):
+        llm = MagicMock()
+        llm.chat = AsyncMock()
+        return llm
+
+    @pytest.mark.asyncio
+    async def test_summarize_if_needed_no_trip(self, mock_session_manager, mock_llm):
+        manager = MemoryManager(mock_session_manager)
+        messages = [Message(role="user", content="hi")] * 5
+        result = await manager.summarize_if_needed(messages, mock_llm)
+        assert len(result) == 5
+        assert not mock_llm.chat.called
+
+    @pytest.mark.asyncio
+    async def test_summarize_if_needed_no_session(self, mock_llm):
+        manager = MemoryManager(None)
+        messages = [Message(role="user", content="hi")] * 25
+        result = await manager.summarize_if_needed(messages, mock_llm)
+        assert len(result) == 25
+        assert not mock_llm.chat.called
+
+    @pytest.mark.asyncio
+    async def test_summarize_success(self, mock_session_manager, mock_llm):
+        manager = MemoryManager(mock_session_manager)
+        messages = [Message(role="user", content=f"msg {i}") for i in range(30)]
+        mock_llm.chat.return_value = MagicMock(content="Compact summary")
+        result = await manager.summarize_if_needed(messages, mock_llm)
+        assert len(result) == 6
+        assert mock_llm.chat.called
+        assert mock_session_manager.current_session.metadata["summary"] == "Compact summary"
+        assert mock_session_manager.save_session.called
+
+    @pytest.mark.asyncio
+    async def test_summarize_with_existing_summary(self, mock_session_manager, mock_llm):
+        manager = MemoryManager(mock_session_manager)
+        mock_session_manager.current_session.metadata["summary"] = "Old summary"
+        messages = [Message(role="user", content=f"msg {i}") for i in range(30)]
+        mock_llm.chat.return_value = MagicMock(content="New summary")
+        await manager.summarize_if_needed(messages, mock_llm)
+        args, kwargs = mock_llm.chat.call_args
+        prompt = kwargs["messages"][0]["content"]
+        assert "Existing State Summary:\nOld summary" in prompt
+
+    @pytest.mark.asyncio
+    async def test_summarize_failure(self, mock_session_manager, mock_llm):
+        manager = MemoryManager(mock_session_manager)
+        messages = [Message(role="user", content=f"msg {i}") for i in range(30)]
+        mock_llm.chat.side_effect = Exception("LLM connection failed")
+        result = await manager.summarize_if_needed(messages, mock_llm)
+        assert len(result) == 30
+        assert not mock_session_manager.save_session.called

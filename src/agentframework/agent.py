@@ -1,5 +1,6 @@
 """Core agent implementation with session support."""
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -56,7 +57,7 @@ def get_tool_schemas(tools: list[Tool]) -> list[dict[str, Any]]:
 class Agent:
     """An AI agent with tool-calling capabilities."""
 
-    def __init__(self, config: AgentConfig, llm_provider: LLMProvider):
+    def __init__(self, config: AgentConfig, llm_provider: LLMProvider, session_id: str | None = None):
         self.config = config
         self.llm = llm_provider
         self.messages: list[Message] = []
@@ -71,7 +72,14 @@ class Agent:
 
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
-            self.session_manager.create_session()
+            if session_id:
+                session = self.session_manager.load_session(session_id)
+                if session:
+                    self.messages = deserialize_messages(session.messages)
+                else:
+                    # If an ID was provided but not found, we don't create it immediately
+                    # to avoid ghost sessions. It will be created on the first message.
+                    pass
 
         self.memory_manager = MemoryManager(self.session_manager)
 
@@ -120,6 +128,7 @@ class Agent:
         self.add_user_message(user_input)
 
         if self.session_manager:
+            self._ensure_session()
             self.session_manager.add_message("user", user_input)
 
         response, updated_messages = await self._run_loop(self.messages)
@@ -141,6 +150,7 @@ class Agent:
         self.add_user_message(user_input)
 
         if self.session_manager:
+            self._ensure_session()
             self.session_manager.add_message("user", user_input)
 
         response, updated_messages = await self._run_loop_streaming(
@@ -153,6 +163,33 @@ class Agent:
             self.session_manager.add_message("assistant", response)
 
         return response
+
+    async def generate_title(self) -> str | None:
+        """Generate a short title for the session based on history."""
+        if not self.messages:
+            return None
+
+        # Try to find the first user message
+        first_user_msg = next((m.content for m in self.messages if m.role == "user"), None)
+        if not first_user_msg:
+            return None
+
+        prompt = (
+            "Summarize the following user request into a very short, "
+            "descriptive title (max 5 words). Do not use quotes or a period.\n\n"
+            f"User request: {first_user_msg}"
+        )
+
+        try:
+            # We use the LLM directly to get a short summary
+            title = await self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            return title.content.strip().strip('"').strip("'")
+        except Exception as e:
+            logger.error(f"Failed to generate session title: {e}")
+            return None
 
     async def extract_data(self, prompt: str, response_model: type[Any]) -> Any:
         """Extract strictly typed JSON data mapped to the given Pydantic model natively."""
@@ -490,11 +527,12 @@ class Agent:
 
     def save_session(self, session_id: str | None = None) -> str:
         """Save current session."""
-        if not self.session_manager or not self.session_manager.current_session:
+        if not self.session_manager:
             return "Session management not enabled."
 
-        if session_id:
-            self.session_manager.current_session.id = session_id
+        self._ensure_session(session_id)
+        if not self.session_manager.current_session:
+             return "Failed to create session."
 
         self.session_manager.current_session.messages = serialize_messages(self.messages)
         self.session_manager.save_session()
@@ -518,6 +556,16 @@ class Agent:
             return []
         return [s.id for s in self.session_manager.list_sessions()]
 
+    def _ensure_session(self, session_id: str | None = None, title: str | None = None) -> None:
+        """Ensure a session is created if it doesn't exist."""
+        if self.session_manager and not self.session_manager.current_session:
+            self.session_manager.create_session(session_id, title=title)
+        elif self.session_manager and self.session_manager.current_session:
+            if session_id:
+                self.session_manager.current_session.id = session_id
+            if title:
+                self.session_manager.current_session.title = title
+
     def close(self) -> None:
         """Close the agent and its associated managers."""
         if self.session_manager:
@@ -527,12 +575,34 @@ class Agent:
             try:
                 close_method = getattr(self.llm, "close", None)
                 if close_method:
-                    close_method()
+                    import inspect
+                    if inspect.iscoroutinefunction(close_method):
+                        try:
+                            # Try to run in current loop or create task
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                loop.create_task(close_method())
+                            else:
+                                loop.run_until_complete(close_method())
+                        except Exception:
+                            pass
+                    else:
+                        close_method()
             except Exception:
                 pass
 
+        # Shutdown OpenTelemetry if initialized
+        try:
+            from opentelemetry import trace
+            from opentelemetry.sdk.trace import TracerProvider
+            provider = trace.get_tracer_provider()
+            if isinstance(provider, TracerProvider):
+                provider.shutdown()
+        except Exception:
+            pass
 
-def create_agent(config: AgentConfig, api_key: str | None = None) -> Agent:
+
+def create_agent(config: AgentConfig, api_key: str | None = None, session_id: str | None = None) -> Agent:
     """Create an agent with the given configuration."""
     provider = get_provider(
         config.provider,
@@ -540,4 +610,4 @@ def create_agent(config: AgentConfig, api_key: str | None = None) -> Agent:
         api_key=api_key,
         base_url=config.base_url,
     )
-    return Agent(config, provider)
+    return Agent(config, provider, session_id=session_id)

@@ -43,6 +43,17 @@ class JsonFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key not in self.RESERVED:
                 payload[key] = value
+
+        # Include OpenTelemetry trace ID if active
+        try:
+            from opentelemetry import trace
+            span = trace.get_current_span()
+            if span and span.get_span_context().is_valid:
+                trace_id = span.get_span_context().trace_id
+                payload["trace_id"] = format(trace_id, "032x")
+        except ImportError:
+            pass
+
         return json.dumps(payload, default=str)
 
 

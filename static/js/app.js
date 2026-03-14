@@ -4,7 +4,7 @@ class EchoAI {
     constructor() {
         this.ws = null;
         this.messages = [];
-        this.currentSession = null;
+        this.currentSession = localStorage.getItem('currentSession');
         this.isStreaming = false;
         this.theme = localStorage.getItem('theme') || 'dark';
         this.reconnectTimer = null;
@@ -22,6 +22,9 @@ class EchoAI {
         const hasModels = await this.loadModels();
         this.loadSessions();
         this.applyTheme();
+        if (this.currentSession) {
+            this.loadSession(this.currentSession);
+        }
         if (hasModels) {
             this.connectWebSocket();
         } else {
@@ -82,6 +85,7 @@ class EchoAI {
         document.getElementById('new-chat-btn').addEventListener('click', () => this.newChat());
         document.getElementById('delete-session-btn').addEventListener('click', () => this.deleteCurrentSession());
         document.getElementById('rename-session-btn').addEventListener('click', () => this.renameCurrentSession());
+        document.getElementById('purge-sessions-btn').addEventListener('click', () => this.purgeSessions());
 
         document.getElementById('ollama-model').addEventListener('change', (e) => {
             this.updateModel(e.target.value);
@@ -133,7 +137,11 @@ class EchoAI {
             const modelSelect = document.getElementById('ollama-model');
             const model = modelSelect.value;
             if (model && model !== 'Loading models...') {
-                this.ws.send(JSON.stringify({ provider: 'ollama', model }));
+                const payload = { provider: 'ollama', model };
+                if (this.currentSession) {
+                    payload.session_id = this.currentSession;
+                }
+                this.ws.send(JSON.stringify(payload));
             }
         };
 
@@ -179,7 +187,21 @@ class EchoAI {
     }
 
     handleWebSocketMessage(data) {
+        if (data.session_id && data.session_id !== this.currentSession) {
+            this.currentSession = data.session_id;
+            localStorage.setItem('currentSession', this.currentSession);
+            this.loadSessions();
+        }
+
+        if (data.title && data.session_id === this.currentSession) {
+             // Successfully captured an auto-generated or updated title
+             this.loadSessions();
+        }
+
         switch (data.type) {
+            case 'ready':
+                // Handled session_id above
+                break;
             case 'message':
                 if (data.role !== 'user') {
                     this.addMessage(data.role, data.content, data.timestamp);
@@ -268,7 +290,11 @@ class EchoAI {
 
     renderSessions(sessions) {
         const filter = document.getElementById('session-search').value.trim().toLowerCase();
-        const visibleSessions = sessions.filter((s) => s.toLowerCase().includes(filter));
+        const visibleSessions = sessions.filter((s) => {
+            const titleMatch = s.title && s.title.toLowerCase().includes(filter);
+            const idMatch = s.id && s.id.toLowerCase().includes(filter);
+            return titleMatch || idMatch;
+        });
 
         const container = document.getElementById('session-list');
         container.innerHTML = '';
@@ -279,17 +305,20 @@ class EchoAI {
 
         visibleSessions.forEach((session) => {
             const div = document.createElement('button');
-            div.className = 'session-item' + (session === this.currentSession ? ' active' : '');
-            div.textContent = session;
+            div.className = 'session-item' + (session.id === this.currentSession ? ' active' : '');
+            div.textContent = session.title || session.id;
+            div.title = session.id; // Tooltip shows raw ID
             div.type = 'button';
-            div.addEventListener('click', () => this.loadSession(session));
+            div.addEventListener('click', () => this.loadSession(session.id));
             container.appendChild(div);
         });
     }
 
     async newChat() {
-        await fetch('/api/sessions', { method: 'POST' });
-        this.currentSession = null;
+        const response = await fetch('/api/sessions', { method: 'POST' });
+        const data = await response.json();
+        this.currentSession = data.session_id;
+        localStorage.setItem('currentSession', this.currentSession);
         this.messages = [];
         this.renderMessages();
         this.loadSessions();
@@ -335,6 +364,7 @@ class EchoAI {
         const response = await fetch(`/api/sessions/${sessionId}`);
         const data = await response.json();
         this.currentSession = sessionId;
+        localStorage.setItem('currentSession', this.currentSession);
         this.messages = data.messages || [];
         this.renderMessages();
         this.loadSessions();
@@ -344,7 +374,9 @@ class EchoAI {
     async deleteCurrentSession() {
         if (!this.currentSession) return;
         await fetch(`/api/sessions/${this.currentSession}`, { method: 'DELETE' });
+        const deletedId = this.currentSession;
         this.currentSession = null;
+        localStorage.removeItem('currentSession');
         this.messages = [];
         this.renderMessages();
         this.loadSessions();
@@ -353,19 +385,38 @@ class EchoAI {
 
     async renameCurrentSession() {
         if (!this.currentSession) return;
-        const nextName = window.prompt('Rename session to:', this.currentSession);
-        if (!nextName || nextName === this.currentSession) return;
+        const currentItem = document.querySelector('.session-item.active');
+        const currentTitle = currentItem ? currentItem.textContent : this.currentSession;
+        const nextTitle = window.prompt('Rename session to:', currentTitle);
+        if (!nextTitle || nextTitle === currentTitle) return;
 
         const response = await fetch('/api/sessions/rename', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: this.currentSession, new_session_id: nextName }),
+            body: JSON.stringify({ session_id: this.currentSession, new_title: nextTitle }),
         });
 
         if (!response.ok) return;
-        this.currentSession = nextName;
         this.loadSessions();
-        this.closeSidebarOnMobile();
+    }
+
+    async purgeSessions() {
+        if (!window.confirm('Are you sure you want to purge ALL session history? This cannot be undone.')) {
+            return;
+        }
+
+        const response = await fetch('/api/sessions/purge', { method: 'POST' });
+        if (response.ok) {
+            const data = await response.json();
+            this.currentSession = null;
+            localStorage.removeItem('currentSession');
+            this.messages = [];
+            this.renderMessages();
+            this.loadSessions();
+            alert(`Successfully purged ${data.purged_count} sessions.`);
+        } else {
+            this.showError('Failed to purge sessions.');
+        }
     }
 
     async updateModel(model) {

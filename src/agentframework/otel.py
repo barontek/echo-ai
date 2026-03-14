@@ -2,7 +2,7 @@
 
 import json
 from typing import Any
-from opentelemetry import trace
+from opentelemetry import trace, context
 from opentelemetry.trace.status import Status, StatusCode
 from .callbacks import AgentCallback
 
@@ -14,6 +14,7 @@ class OpenTelemetryCallback(AgentCallback):
         self.run_spans = {}
         self.llm_spans = {}
         self.tool_spans = {}
+        self.tokens = {}
 
     def on_run_start(self, run_id: str, prompt: str) -> None:
         span = self.tracer.start_span("agent_run")
@@ -21,23 +22,32 @@ class OpenTelemetryCallback(AgentCallback):
         span.set_attribute("run.prompt", prompt)
         self.run_spans[run_id] = span
 
+        # Make the span current for logging
+        self.tokens[run_id] = context.attach(trace.set_span_in_context(span))
+
     def on_run_end(self, run_id: str, response: str) -> None:
+        if token := self.tokens.pop(run_id, None):
+            context.detach(token)
+
         if span := self.run_spans.pop(run_id, None):
             span.set_attribute("run.response", response)
             span.set_status(Status(StatusCode.OK))
             span.end()
 
     def on_run_error(self, run_id: str, error: Exception) -> None:
+        if token := self.tokens.pop(run_id, None):
+            context.detach(token)
+
         if span := self.run_spans.pop(run_id, None):
             span.record_exception(error)
             span.set_status(Status(StatusCode.ERROR, str(error)))
             span.end()
 
     def on_llm_start(self, run_id: str, messages: list[dict[str, Any]]) -> None:
-        # Link to the parent run span if available
-        # Note: in a real implementation we might use a context manager
-        # but here we span manually
-        span = self.tracer.start_span("llm_chat")
+        parent_span = self.run_spans.get(run_id)
+        context = trace.set_span_in_context(parent_span) if parent_span else None
+
+        span = self.tracer.start_span("llm_chat", context=context)
         span.set_attribute("run.id", run_id)
         span.set_attribute("llm.messages_count", len(messages))
         self.llm_spans[run_id] = span
@@ -52,7 +62,10 @@ class OpenTelemetryCallback(AgentCallback):
             span.end()
 
     def on_tool_start(self, run_id: str, tool_name: str, tool_kwargs: dict[str, Any]) -> None:
-        span = self.tracer.start_span(f"tool_{tool_name}")
+        parent_span = self.run_spans.get(run_id)
+        context = trace.set_span_in_context(parent_span) if parent_span else None
+
+        span = self.tracer.start_span(f"tool_{tool_name}", context=context)
         span.set_attribute("run.id", run_id)
         span.set_attribute("tool.name", tool_name)
 

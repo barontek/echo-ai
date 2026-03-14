@@ -18,6 +18,7 @@ class DBSessionModel(Base):
     __tablename__ = 'agent_sessions'
 
     id = Column(String, primary_key=True)
+    title = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     messages = Column(JSON, default=list)
     session_metadata = Column(JSON, default=dict)
@@ -27,6 +28,7 @@ class Session:
     """A conversation session."""
 
     id: str
+    title: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     messages: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -34,6 +36,7 @@ class Session:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "title": self.title,
             "created_at": self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
             "messages": self.messages,
             "metadata": self.metadata,
@@ -46,6 +49,7 @@ class Session:
             created_at = datetime.fromisoformat(created_at)
         return cls(
             id=data["id"],
+            title=data.get("title"),
             created_at=created_at,
             messages=data.get("messages", []),
             metadata=data.get("metadata", {}),
@@ -68,14 +72,32 @@ class SessionManager:
         Base.metadata.create_all(self.engine)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 
+        # Lightweight migration: add 'title' column if it doesn't exist yet
+        self._migrate_add_title_column()
+
         self.current_session: Session | None = None
 
-    def create_session(self, session_id: str | None = None) -> Session:
+    def _migrate_add_title_column(self) -> None:
+        """Add the 'title' column to agent_sessions if it's missing (pre-existing DBs)."""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.execute("PRAGMA table_info(agent_sessions)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "title" not in columns:
+                conn.execute("ALTER TABLE agent_sessions ADD COLUMN title TEXT")
+                conn.commit()
+                logger.info("Migrated agent_sessions: added 'title' column.")
+            conn.close()
+        except Exception as e:
+            logger.error("Migration check for 'title' column failed: %s", e)
+
+    def create_session(self, session_id: str | None = None, title: str | None = None) -> Session:
         """Create a new session."""
         if session_id is None:
             session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        session = Session(id=session_id)
+        session = Session(id=session_id, title=title)
         self.current_session = session
         self.save_session(session)
         return session
@@ -89,6 +111,7 @@ class SessionManager:
 
             session = Session(
                 id=db_session.id,  # type: ignore
+                title=db_session.title,  # type: ignore
                 created_at=db_session.created_at,  # type: ignore
                 messages=db_session.messages,  # type: ignore
                 metadata=db_session.session_metadata  # type: ignore
@@ -108,6 +131,7 @@ class SessionManager:
             if not db_session:
                 db_session = DBSessionModel(
                     id=session.id,
+                    title=session.title,
                     created_at=session.created_at,
                     messages=session.messages,
                     session_metadata=session.metadata
@@ -117,6 +141,7 @@ class SessionManager:
                 # SQLAlchemy JSON columns sometimes need explicit flagging if mutated in place
                 # To be safe, reassign the dict/list natively
                 db.query(DBSessionModel).filter(DBSessionModel.id == session.id).update({
+                    "title": session.title,
                     "messages": session.messages,
                     "session_metadata": session.metadata
                 })
@@ -129,6 +154,7 @@ class SessionManager:
             for db_session in db.query(DBSessionModel).order_by(DBSessionModel.created_at.desc()).all():
                 sessions.append(Session(
                     id=db_session.id,  # type: ignore
+                    title=db_session.title,  # type: ignore
                     created_at=db_session.created_at,  # type: ignore
                     messages=db_session.messages,  # type: ignore
                     metadata=db_session.session_metadata  # type: ignore
@@ -160,6 +186,27 @@ class SessionManager:
         if self.current_session:
             return self.current_session.messages
         return []
+
+    def purge_sessions(self, older_than_days: int | None = None) -> int:
+        """Purge old sessions from the database."""
+        with self.SessionLocal() as db:
+            query = db.query(DBSessionModel)
+            if older_than_days is not None:
+                from datetime import timedelta
+                cutoff = datetime.now() - timedelta(days=older_than_days)
+                query = query.filter(DBSessionModel.created_at < cutoff)
+
+            count = query.count()
+            query.delete(synchronize_session=False)
+            db.commit()
+
+            # If current session was deleted, reset it
+            if self.current_session:
+                exists = db.query(DBSessionModel).filter(DBSessionModel.id == self.current_session.id).first()
+                if not exists:
+                    self.current_session = None
+
+            return count
 
     def close(self) -> None:
         """Dispose of the database engine and any connections in its pool."""

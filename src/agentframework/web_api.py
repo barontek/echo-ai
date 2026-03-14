@@ -20,7 +20,22 @@ from src.agentframework.session import DBSessionModel
 from src.workflows import get_workflow, list_workflows
 
 
-app = FastAPI(title="Echo AI API")
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for the agent framework."""
+    global agent
+    if agent is None:
+        try:
+            agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
+        except Exception:
+            # Fallback if Ollama is not initialized yet
+            pass
+    yield
+    if agent:
+        agent.close()
+
+
+app = FastAPI(title="Echo AI API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +49,8 @@ app.add_middleware(
 agent: Agent | None = None
 current_session_id: str | None = None
 message_history: list[dict[str, Any]] = []
+
+
 
 
 def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
@@ -108,6 +125,7 @@ def _create_runtime_agent(
     provider: str,
     model: str,
     api_key: str | None = None,
+    session_id: str | None = None,
 ) -> Agent:
     """Create an agent for the web UI with the same tool config as CLI."""
     # Safety check for model name
@@ -141,7 +159,7 @@ def _create_runtime_agent(
             "You are an AI assistant with access to various tools." + env_info
         )
 
-    return create_agent(agent_config, api_key=api_key)
+    return create_agent(agent_config, api_key=api_key, session_id=session_id)
 
 
 class ConfigPayload(BaseModel):
@@ -156,13 +174,14 @@ class ChatPayload(BaseModel):
 
 class SessionRenamePayload(BaseModel):
     session_id: str
-    new_session_id: str = Field(min_length=1)
+    new_title: str = Field(min_length=1)
 
 
 class WsConfigPayload(BaseModel):
     provider: str = "ollama"
     model: str = Field(default="qwen3:4b-instruct", min_length=1)
     api_key: str | None = None
+    session_id: str | None = None
 
 
 class WsMessagePayload(BaseModel):
@@ -222,8 +241,18 @@ async def update_config(config: ConfigPayload):
 @app.get("/api/sessions")
 async def list_sessions():
     """List all sessions."""
+    global agent
+    if agent is None:
+        try:
+            agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
+        except Exception:
+            pass
+
     if agent and agent.session_manager:
-        sessions = [s.id for s in agent.session_manager.list_sessions()]
+        sessions = [
+            {"id": s.id, "title": s.title, "created_at": s.created_at.isoformat()}
+            for s in agent.session_manager.list_sessions()
+        ]
         return {"sessions": sessions}
     return {"sessions": []}
 
@@ -249,9 +278,16 @@ async def load_session(session_id: str):
         agent.load_session(session_id)
         current_session_id = session_id
         message_history = filter_messages_for_ui(agent.messages)
-        return {"session_id": session_id, "messages": message_history}
+        title = None
+        if agent.session_manager.current_session:
+            title = agent.session_manager.current_session.title
+        return {
+            "session_id": session_id,
+            "title": title,
+            "messages": message_history
+        }
 
-    return {"session_id": session_id, "messages": []}
+    return {"session_id": session_id, "messages": [], "title": None}
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -269,32 +305,34 @@ async def delete_session(session_id: str):
 
 @app.post("/api/sessions/rename")
 async def rename_session(payload: SessionRenamePayload):
-    """Rename a session by changing its primary key."""
+    """Rename a session by changing its title."""
     if not (agent and agent.session_manager):
         raise HTTPException(status_code=400, detail="Session manager unavailable")
 
     with agent.session_manager.SessionLocal() as db:
-        existing = (
-            db.query(DBSessionModel)
-            .filter(DBSessionModel.id == payload.new_session_id)
-            .first()
-        )
-        if existing:
-            raise HTTPException(status_code=409, detail="New session id already exists")
-
         updated = (
             db.query(DBSessionModel)
             .filter(DBSessionModel.id == payload.session_id)
-            .update({"id": payload.new_session_id})
+            .update({"title": payload.new_title})
         )
         if updated == 0:
             raise HTTPException(status_code=404, detail="Session not found")
-
         db.commit()
 
-    return {"status": "ok", "session_id": payload.new_session_id}
+    if agent.session_manager.current_session and agent.session_manager.current_session.id == payload.session_id:
+        agent.session_manager.current_session.title = payload.new_title
+
+    return {"status": "ok", "session_id": payload.session_id, "title": payload.new_title}
 
 
+@app.post("/api/sessions/purge")
+async def purge_sessions(days: int | None = None):
+    """Purge old or all sessions."""
+    if not (agent and agent.session_manager):
+        raise HTTPException(status_code=400, detail="Session manager unavailable")
+
+    count = agent.session_manager.purge_sessions(older_than_days=days)
+    return {"status": "ok", "purged_count": count}
 
 
 @app.get("/api/workflows")
@@ -360,32 +398,150 @@ async def chat(message: ChatPayload):
 
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
-    """WebSocket chat with streaming."""
-    global agent, message_history
-
+    """Handle chat WebSocket connection with non-blocking stop support."""
     await websocket.accept()
-    stop_requested = False
+
+    active_agent: Agent | None = None
     streaming_task: asyncio.Task | None = None
+    stop_requested = False
 
     async def send_keepalive() -> None:
-        while True:
-            await asyncio.sleep(15)
-            await websocket.send_json({"type": "ping"})
+        try:
+            while True:
+                await asyncio.sleep(15)
+                await websocket.send_json({"type": "ping"})
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     keepalive_task = asyncio.create_task(send_keepalive())
 
+    async def run_agent(prompt: str):
+        nonlocal streaming_task, stop_requested
+        if not active_agent:
+            return
+
+        timestamp = datetime.now().strftime("%H:%M")
+        message_history.append({"role": "user", "content": prompt, "timestamp": timestamp})
+        await websocket.send_json(
+            {"type": "message", "role": "user", "content": prompt, "timestamp": timestamp}
+        )
+
+        accumulated_content = ""
+        thinking_content = ""
+        in_thinking = False
+        send_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=1024)
+
+        async def sender_loop():
+            try:
+                while True:
+                    msg = await send_queue.get()
+                    if msg is None:
+                        break
+                    await websocket.send_json(msg)
+            except Exception:
+                pass
+
+        sender_task = asyncio.create_task(sender_loop())
+
+        def on_chunk(chunk: str) -> None:
+            nonlocal accumulated_content, thinking_content, in_thinking
+            if stop_requested:
+                raise asyncio.CancelledError()
+
+            if "__THINKING__" in chunk:
+                chunk = chunk.replace("__THINKING__", "")
+                in_thinking = True
+            if "__THINKING_END__" in chunk:
+                chunk = chunk.replace("__THINKING_END__", "")
+                in_thinking = False
+
+            if in_thinking:
+                thinking_content += chunk
+                payload = {"type": "thinking", "content": thinking_content}
+            else:
+                accumulated_content += chunk
+                payload = {"type": "content", "content": accumulated_content}
+
+            with contextlib.suppress(asyncio.QueueFull):
+                send_queue.put_nowait(payload)
+
+        has_tools = False
+        try:
+            response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
+
+            # Check for tool calls
+            if active_agent.messages:
+                last_msg = active_agent.messages[-1]
+                if getattr(last_msg, "tool_calls", None):
+                    has_tools = True
+
+            if not accumulated_content:
+                accumulated_content = response
+
+        except asyncio.CancelledError:
+            accumulated_content = "Stopped."
+            thinking_content = ""
+            has_tools = False
+        except Exception as e:
+            await websocket.send_json({"type": "error", "content": str(e)})
+            return
+        finally:
+            await send_queue.put(None)
+            await sender_task
+            streaming_task = None
+
+        timestamp = datetime.now().strftime("%H:%M")
+        message_history.append({
+            "role": "assistant",
+            "content": accumulated_content,
+            "timestamp": timestamp,
+            "thinking": thinking_content,
+            "has_tools": has_tools,
+        })
+
+        # Trigger auto-title during conversation if it was a new session
+        if active_agent.session_manager and active_agent.session_manager.current_session and not active_agent.session_manager.current_session.title:
+             new_title = await active_agent.generate_title()
+             if new_title:
+                 active_agent.session_manager.current_session.title = new_title
+                 active_agent.save_session()
+
+        await websocket.send_json({
+            "type": "done",
+            "content": accumulated_content,
+            "thinking": thinking_content,
+            "timestamp": timestamp,
+            "has_tools": has_tools,
+            "session_id": active_agent.session_manager.current_session.id if active_agent.session_manager and active_agent.session_manager.current_session else None,
+            "title": active_agent.session_manager.current_session.title if active_agent.session_manager and active_agent.session_manager.current_session else None
+        })
+
     try:
+        # 1. Wait for config
         raw_config = await websocket.receive_text()
         config = WsConfigPayload.model_validate_json(raw_config)
-
-        agent = _create_runtime_agent(
+        active_agent = _create_runtime_agent(
             config.provider,
             config.model,
             api_key=config.api_key,
+            session_id=config.session_id,
         )
-        active_agent = agent
-        await websocket.send_json({"type": "ready"})
+        # Trigger auto-title if needed
+        if active_agent.session_manager and active_agent.session_manager.current_session and not active_agent.session_manager.current_session.title:
+            new_title = await active_agent.generate_title()
+            if new_title:
+                active_agent.session_manager.current_session.title = new_title
+                active_agent.save_session()
 
+        await websocket.send_json({
+            "type": "ready",
+            "session_id": active_agent.session_manager.current_session.id if active_agent.session_manager and active_agent.session_manager.current_session else None,
+            "title": active_agent.session_manager.current_session.title if active_agent.session_manager and active_agent.session_manager.current_session else None
+        })
+
+        # 2. Continuous message loop
         while True:
             raw_message = await websocket.receive_text()
             message = WsMessagePayload.model_validate_json(raw_message)
@@ -399,114 +555,17 @@ async def websocket_chat(websocket: WebSocket):
                     streaming_task.cancel()
                 continue
 
-            prompt = (message.content or "").strip()
-            if not prompt:
-                continue
+            if message.type == "message" or not message.type:
+                prompt = (message.content or "").strip()
+                if not prompt:
+                    continue
 
-            timestamp = datetime.now().strftime("%H:%M")
-            stop_requested = False
-            message_history.append({"role": "user", "content": prompt, "timestamp": timestamp})
-            await websocket.send_json(
-                {"type": "message", "role": "user", "content": prompt, "timestamp": timestamp}
-            )
+                if streaming_task and not streaming_task.done():
+                    streaming_task.cancel()
+                    await asyncio.sleep(0.1) # Small delay to ensure cleanup
 
-            accumulated_content = ""
-            thinking_content = ""
-            in_thinking = False
-            send_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=256)
-
-            async def sender_loop() -> None:
-                while True:
-                    msg = await send_queue.get()
-                    if msg is None:
-                        break
-                    await websocket.send_json(msg)
-
-            sender_task = asyncio.create_task(sender_loop())
-
-            async def run_with_cancellation() -> tuple[str, bool]:
-                nonlocal accumulated_content, thinking_content, in_thinking
-                task = asyncio.current_task()
-                has_tools_executed = False
-
-                def on_chunk(chunk: str) -> None:
-                    nonlocal accumulated_content, thinking_content, in_thinking, has_tools_executed
-                    if task is not None and task.cancelled():
-                        raise asyncio.CancelledError()
-                    if stop_requested:
-                        raise asyncio.CancelledError()
-
-                    if "__TOOL_CALL__" in chunk:
-                        has_tools_executed = True
-
-                    if "__THINKING__" in chunk:
-                        chunk = chunk.replace("__THINKING__", "")
-                        in_thinking = True
-                    if "__THINKING_END__" in chunk:
-                        chunk = chunk.replace("__THINKING_END__", "")
-                        in_thinking = False
-
-                    payload: dict[str, Any]
-                    if in_thinking:
-                        thinking_content += chunk
-                        payload = {"type": "thinking", "content": thinking_content}
-                    else:
-                        accumulated_content += chunk
-                        payload = {"type": "content", "content": accumulated_content}
-
-                    with contextlib.suppress(asyncio.QueueFull):
-                        send_queue.put_nowait(payload)
-
-                result = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
-                # Check agent's message history for tool calls if on_chunk didn't catch it
-                if not has_tools_executed and active_agent.messages:
-                    last_msg = active_agent.messages[-1]
-                    if getattr(last_msg, "tool_calls", None):
-                        has_tools_executed = True
-
-                return result, has_tools_executed
-
-            streaming_task = asyncio.create_task(run_with_cancellation())
-            response = ""
-
-            try:
-                response, has_tools = await streaming_task
-            except asyncio.CancelledError:
-                accumulated_content = "Stopped."
-                thinking_content = ""
-                has_tools = False
-            finally:
-                streaming_task = None
-                await send_queue.put(None)
-                await sender_task
-
-            if not accumulated_content and not stop_requested:
-                accumulated_content = response if "response" in locals() else ""
-
-            if stop_requested:
-                accumulated_content = "Stopped."
-                thinking_content = ""
                 stop_requested = False
-
-            timestamp = datetime.now().strftime("%H:%M")
-            message_history.append(
-                {
-                    "role": "assistant",
-                    "content": accumulated_content,
-                    "timestamp": timestamp,
-                    "thinking": thinking_content,
-                    "has_tools": has_tools,
-                }
-            )
-            await websocket.send_json(
-                {
-                    "type": "done",
-                    "content": accumulated_content,
-                    "thinking": thinking_content,
-                    "timestamp": timestamp,
-                    "has_tools": has_tools,
-                }
-            )
+                streaming_task = asyncio.create_task(run_agent(prompt))
 
     except (WebSocketDisconnect, json.JSONDecodeError, ValueError):
         pass

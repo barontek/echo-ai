@@ -57,7 +57,7 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
         )
 
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
-    
+
     try:
         agent = create_agent(agent_config, api_key)
     except ValueError as e:
@@ -76,5 +76,43 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
             tools=sub_cfg.get("tools", []),
             system_prompt=sub_cfg.get("system_prompt", ""),
         )
+
+    # Initialize OpenTelemetry if enabled
+    obs_config = config.get("observability", {})
+    if obs_config.get("otel_enabled", False):
+        try:
+            from opentelemetry import trace
+            from opentelemetry.sdk.resources import Resource
+            from opentelemetry.sdk.trace import TracerProvider
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+            from .otel import OpenTelemetryCallback
+
+            # Setup provider if not already setup
+            if not isinstance(trace.get_tracer_provider(), TracerProvider):
+                resource = Resource.create({
+                    "service.name": obs_config.get("service_name", "echo-ai")
+                })
+                provider = TracerProvider(resource=resource)
+
+                if obs_config.get("console_export", False):
+                    processor = BatchSpanProcessor(ConsoleSpanExporter())
+                    provider.add_span_processor(processor)
+
+                otlp_endpoint = obs_config.get("otlp_endpoint")
+                if otlp_endpoint:
+                    try:
+                        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+                        otlp_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True, timeout=1))
+                        provider.add_span_processor(otlp_processor)
+                        console.print(f"[dim]Observability: OTLP exporter enabled ({otlp_endpoint})[/dim]")
+                    except (ImportError, Exception) as e:
+                        console.print(f"[yellow]Warning: Could not initialize OTLP exporter: {e}[/yellow]")
+
+                trace.set_tracer_provider(provider)
+
+            agent.add_callback(OpenTelemetryCallback())
+            console.print("[dim]Observability: OpenTelemetry enabled[/dim]")
+        except ImportError as e:
+            console.print(f"[yellow]Warning: Could not initialize OpenTelemetry: {e}[/yellow]")
 
     return agent

@@ -112,7 +112,13 @@ agent:
 
     IMPORTANT: You fully support UTF-8. Handle all Unicode characters (e.g. ş, ç, ı, ö, ü, ğ) correctly.
 
-api_keys:
-  # Set via environment variables if needed:
-  # ANTHROPIC_API_KEY
-  # OPENAI_API_KEY
+# api_keys:
+#   # Set via environment variables if needed:
+#   # ANTHROPIC_API_KEY
+#   # OPENAI_API_KEY
+
+observability:
+  otel_enabled: false
+  console_export: false
+  otlp_endpoint: "http://localhost:4317"
+  service_name: "echo-ai"

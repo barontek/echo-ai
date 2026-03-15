@@ -100,7 +100,7 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            with open("/tmp/ollama_debug_payload.log", "a") as f:
+            with open("/tmp/ollama_debug_payload.log", "a") as f:  # nosec B108
                 f.write("\n--- CHAT REQUEST ---\n")
                 f.write(f"Messages: {json.dumps(messages, indent=2)}\n")
                 if tools:
@@ -195,7 +195,7 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            with open("/tmp/ollama_debug_payload.log", "a") as f:
+            with open("/tmp/ollama_debug_payload.log", "a") as f:  # nosec B108
                 f.write("\n--- STREAMING CHAT REQUEST ---\n")
                 f.write(f"Messages: {json.dumps(messages, indent=2)}\n")
                 if tools:

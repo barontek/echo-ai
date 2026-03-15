@@ -280,7 +280,7 @@ class MemoryTool(Tool):
             if categories:
                 placeholders = ",".join("?" * len(categories))
                 cursor.execute(
-                    f"SELECT content, category FROM memories WHERE category IN ({placeholders}) ORDER BY category, created_at DESC",
+                    f"SELECT content, category FROM memories WHERE category IN ({placeholders}) ORDER BY category, created_at DESC",  # nosec B608
                     categories,
                 )
             else:

@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ from src.agentframework.config import get_safety_config, get_tools, load_config
 from src.agentframework.session import DBSessionModel
 from src.workflows import get_workflow, list_workflows
 
+logger = logging.getLogger(__name__)
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,9 +30,9 @@ async def lifespan(app: FastAPI):
     if agent is None:
         try:
             agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
-        except Exception:
+        except Exception as e:
             # Fallback if Ollama is not initialized yet
-            pass
+            logger.debug(f"Ollama agent initialization deferred: {e}")
     yield
     if agent:
         agent.close()
@@ -222,8 +225,8 @@ async def list_models():
             if response.status_code == 200:
                 models = response.json().get("models", [])
                 return {"models": [m["name"] for m in models]}
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to fetch Ollama models: {e}")
     return {"models": ["qwen3:4b-instruct", "llama3.2:latest", "phi3.5:latest"]}
 
 
@@ -245,8 +248,8 @@ async def list_sessions():
     if agent is None:
         try:
             agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Deferred agent creation failed: {e}")
 
     if agent and agent.session_manager:
         sessions = [
@@ -412,8 +415,8 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_json({"type": "ping"})
         except asyncio.CancelledError:
             pass
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Keepalive error: {e}")
 
     keepalive_task = asyncio.create_task(send_keepalive())
 
@@ -440,8 +443,8 @@ async def websocket_chat(websocket: WebSocket):
                     if msg is None:
                         break
                     await websocket.send_json(msg)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"WebSocket sender loop error: {e}")
 
         sender_task = asyncio.create_task(sender_loop())
 
@@ -595,7 +598,7 @@ async def review_document():
     return {"sections": sections}
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8501):
+def run_server(host: str = "127.0.0.1", port: int = 8501):
     """Run the FastAPI server."""
     uvicorn.run(app, host=host, port=port)
 

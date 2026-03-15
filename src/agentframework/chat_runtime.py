@@ -98,7 +98,8 @@ async def fetch_titles(url_pairs: list[tuple[str, str]]) -> dict[str, str]:
                     if match:
                         return url, match.group(1).strip()[:60]
         except Exception:
-            pass
+            # Fallback if URL extraction fails
+            pass  # nosec B110
         return url, None
 
     results = await asyncio.gather(*[fetch_single(url) for _, url in url_pairs])

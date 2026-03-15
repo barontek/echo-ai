@@ -12,10 +12,10 @@ from agentframework.providers import LLMProvider, LLMResponse
 
 
 class FastMockProvider(LLMProvider):
+    def __init__(self):
+        self.call_count = 0
+
     async def chat(self, messages: list[dict[str, str]], tools: list | None = None, temperature: float = 0.3) -> LLMResponse:
-        # Note: self.call_count is not initialized in this mock provider,
-        # so this line will cause an AttributeError if executed.
-        # This is kept as per the user's explicit instruction in the provided code edit.
         self.call_count += 1
         return LLMResponse(content="Benchmarking response")
 

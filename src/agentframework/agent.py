@@ -584,12 +584,12 @@ class Agent:
                                 loop.create_task(close_method())
                             else:
                                 loop.run_until_complete(close_method())
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Async close method failed: {e}")
                     else:
                         close_method()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Provider shutdown failed: {e}")
 
         # Shutdown OpenTelemetry if initialized
         try:
@@ -598,8 +598,8 @@ class Agent:
             provider = trace.get_tracer_provider()
             if isinstance(provider, TracerProvider):
                 provider.shutdown()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"OpenTelemetry shutdown failed: {e}")
 
 
 def create_agent(config: AgentConfig, api_key: str | None = None, session_id: str | None = None) -> Agent:

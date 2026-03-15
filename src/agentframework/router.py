@@ -37,7 +37,7 @@ class SemanticRouter:
             "Your job is to analyze the user's query and select the single most appropriate "
             "specialized sub-agent from the registry below to handle it.\n\n"
             "### Available Agents\n"
-            f"{''.join(agent_descriptions)}\n"
+            f"{''.join(agent_descriptions)}\n"  # nosec B608
             "- **default**: Use this agent ONLY if the query is a generic conversation "
             "or does not strictly fit any of the specialized profiles above.\n\n"
             "Return the exact name of the chosen agent and your reasoning."

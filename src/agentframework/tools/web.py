@@ -10,8 +10,11 @@ try:
 except ImportError:  # pragma: no cover - optional runtime dependency
     AsyncWebCrawler = None
 
+import logging
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 def html_to_markdown(html: str, max_length: int = 10000) -> str:
@@ -142,8 +145,8 @@ class WebFetchTool(Tool):
                                 if isinstance(content, str) and len(content) > 8000:
                                     content = content[:8000] + "\n... (truncated)"
                                 return ToolResult(content=str(content))
-                except Exception:
-                    pass # Let it fall through to the httpx/bs4 fallback
+                except Exception as e:
+                    logger.debug(f"Crawl4AI fetch failed, falling back to httpx: {e}")
 
             import httpx
 
@@ -213,8 +216,8 @@ class WebSearchTool(Tool):
                 # DECREASED TRUNCATION: Limit to 1000 chars to force AI to focus on top data
                 if isinstance(content, str) and len(content) > 1000:
                     content = content[:1000] + "\n... (truncated)"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Crawl4AI search result fetch failed: {e}")
 
         if not content or len(str(content).strip()) < 50:
             content = snippet[:500] if snippet else "[Content could not be fetched]"

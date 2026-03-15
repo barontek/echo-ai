@@ -8,7 +8,7 @@ from src.agentframework.web_api import run_server
 
 def run_app() -> None:
     """Run the FastAPI-based web UI server."""
-    run_server(host="0.0.0.0", port=8080)
+    run_server(host="127.0.0.1", port=8080)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 """FastAPI server for the Echo AI framework."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -9,29 +11,13 @@ import json
 from src.agentframework.agent import AgentConfig, create_agent
 from src.agentframework.router import SemanticRouter
 
-app = FastAPI(
-    title="Echo AI API",
-    description="High-performance async server for multi-agent capabilities.",
-    version="1.0.0"
-)
-
 # A global dictionary holding active agent instances.
 # In a true deployment, you'd use a redis cache or dependency injection.
 agents = {}
 
-class ChatRequest(BaseModel):
-    session_id: str | None = None
-    prompt: str
-    provider: str = "ollama"
-    model: str = "qwen3:4b-instruct"
-    api_key: str | None = None
-    stream: bool = False
 
-class RouteRequest(BaseModel):
-    prompt: str
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(application: FastAPI):
     """Initialize a default agent and router on startup."""
     config = AgentConfig(provider="ollama", model="qwen3:4b-instruct")
     agent = create_agent(config)
@@ -47,7 +33,29 @@ async def startup_event():
     )
 
     agents["default"] = agent
-    app.state.router = SemanticRouter(agent)
+    application.state.router = SemanticRouter(agent)
+    yield
+
+
+app = FastAPI(
+    title="Echo AI API",
+    description="High-performance async server for multi-agent capabilities.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+
+class ChatRequest(BaseModel):
+    session_id: str | None = None
+    prompt: str
+    provider: str = "ollama"
+    model: str = "qwen3:4b-instruct"
+    api_key: str | None = None
+    stream: bool = False
+
+
+class RouteRequest(BaseModel):
+    prompt: str
 
 def get_or_create_agent(req: ChatRequest):
     """Retrieve an existing agent for a session or create a new one."""

@@ -4,11 +4,12 @@
 
 Echo AI includes several safety mechanisms to ensure secure operation:
 
-- **Workspace confinement**: Files outside the workspace are blocked
-- **Command allowlisting**: Only permitted commands can be executed
+- **Workspace confinement**: Files outside the workspace are blocked.
+- **Command allowlisting**: Only permitted commands can be executed.
 - **Dangerous pattern blocking**: Blocks harmful commands like `rm -rf`, `curl|sh`, etc.
-- **Approval prompts**: Prompts for user approval before sensitive operations
-- **Network access controls**: Limits unauthorized network access
+- **Approval prompts**: Prompts for user approval before sensitive operations.
+- **Network access controls**: Limits unauthorized network access.
+- **Security Audits**: Regular scans using `pip-audit` and `bandit` to identify and fix vulnerabilities in dependencies and code.
 
 ## Compatibility Policy
 

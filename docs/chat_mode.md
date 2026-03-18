@@ -1,74 +1,44 @@
 # Chat Mode
 
-Enable and use chat mode in the Echo AI system for natural language interactions.
+Echo AI provides a modern, interactive web-based chat interface for natural language interactions with the AI agent.
 
-## What is Chat Mode?
+## Web Interface
 
-Chat Mode allows users to interact with the AI system using natural language prompts. Instead of structured API calls, users can type free-form messages and receive intelligent, context-aware responses.
+The web interface is the primary way to interact with Chat Mode. It supports real-time streaming, tool usage visualization, and session management.
 
-## How to Enable Chat Mode
+### Key Features
 
-1. Start the Echo AI service with the --chat-mode flag:
+- **Real-time Streaming**: Responses are streamed via WebSockets, providing immediate feedback.
+- **Thought Process**: For models that support reasoning, the "Thought Process" section shows the agent's internal logic. This section is collapsible.
+- **Tool used Badge**: When the agent uses a tool (like web search or bash), a badge indicates that a tool was used.
+- **Sources Dropdown**: If the agent performs a web search, a "Sources" dropdown lists the referenced links.
+- **Streaming Metrics**: Performance metrics including Time To First Byte (TTFB) and total generation time are displayed.
+- **Mobile Support**: The interface is fully responsive, with a collapsible sidebar for smaller screens.
 
-bash
-   echo-ai serve --chat-mode
+## How to Start
 
+1. Ensure the backend server is running:
+   ```bash
+   python -m src.agentframework.web_api
+   ```
+2. Open your browser and navigate to the server address (default is `http://127.0.0.1:8501`).
 
-2. Or enable it via the API endpoint:
+## Session Management
 
-http
-   POST /api/v1/chat
-   {
-     "prompt": "Hello, how are you?",
-     "session_id": "user_123"
-   }
+- **Auto-titling**: The agent automatically generates a title for your session based on the initial conversation.
+- **Rename/Delete**: You can manually rename or delete sessions from the sidebar.
+- **Purge History**: A "Purge" option allows you to clear all session history.
 
+## Technical Details
 
-3. The system will respond with a natural language reply, maintaining context across turns.
+The web interface communicates with the FastAPI backend using:
+- **REST API**: For configuration, session listing, and management.
+- **WebSockets**: For real-time chat streaming and control (e.g., stopping generation).
 
-## Features
+### API Endpoints
 
-- Context-aware conversation history
-- Dynamic response generation
-- Support for multi-turn dialogues
-- Real-time feedback on user intent
-
-## Example Interaction
-
-> User: "What’s the weather like today?"
-> AI: "It's sunny with a high of 24°C. Perfect for a walk!"
-
-> User: "Can you recommend a book?"
-> AI: "Sure! I recommend The Midnight Library by Matt Haig — it’s a beautiful story about second chances."
-
-## Next Steps
-
-- Explore the /api/v1/chat endpoint in the API docs.
-- Try using chat mode in the CLI with echo-ai chat.
-- Feedback? Submit suggestions at feedback.echotek.ai.
-
----
-
-> 📝 This page was generated automatically by the Echo AI documentation system.
-
-
----
-
-## ✅ Where to Place It
-
-### 📁 Final Path:
-docs/chat_mode.md
-
-
-> ✅ This means:
-> Create a file named chat_mode.md in the docs/ directory of your project.
-
-### 📂 Project Structure Example:
-your-project/
-├── docs/
-│   └── chat_mode.md        ← ✅ Place this file here
-├── mkdocs.yml
-├── ...
-
-
-> 🔍 Make sure your docs/ folder is at the root of your project (same level as mkdocs.yml).
+- `GET /api/sessions`: List all available chat sessions.
+- `POST /api/sessions`: Create a new session.
+- `DELETE /api/sessions/{id}`: Delete a specific session.
+- `POST /api/sessions/rename`: Rename an existing session.
+- `WS /ws/chat`: WebSocket endpoint for interactive streaming chat.

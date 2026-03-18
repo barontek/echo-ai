@@ -57,6 +57,7 @@ message_history: list[dict[str, Any]] = []
 def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
     """Filter messages for UI rendering, removing raw tool/system noise."""
     filtered = []
+    pending_tool_calls = None  # Track tool_calls from skipped intermediate messages
 
     # Internal framework strings to ignore
     internal_patterns = [
@@ -93,32 +94,25 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         tool_calls = getattr(
             msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None
         )
-        print(
-            f"DEBUG filter: msg role={role}, tool_calls attr={getattr(msg, 'tool_calls', 'NOT_FOUND')}, tool_calls var={tool_calls}",
-            flush=True,
-        )
         has_tools = bool(tool_calls)
 
-        # Skip system and tool messages
-        if role in ["system", "tool"]:
+        # Skip system and tool messages (but track tool calls for next assistant)
+        if role == "tool":
             continue
-
-        # Skip assistant messages with tool_calls but no content
-        if role == "assistant" and tool_calls and not content.strip():
+        if role == "system":
             continue
 
         # Skip assistant messages with tool_calls but no content (intermediate tool call requests)
+        # Remember the tool_calls for the next assistant message
         if role == "assistant" and tool_calls and not content.strip():
-            print(
-                f"DEBUG: Skipping msg due to no content, content='{content}'",
-                flush=True,
-            )
+            pending_tool_calls = tool_calls
             continue
 
-        print(
-            f"DEBUG: Processing msg role={role}, has tool_calls={bool(tool_calls)}, content_len={len(content)}",
-            flush=True,
-        )
+        # Apply pending tool_calls to this assistant message if any
+        if role == "assistant" and pending_tool_calls:
+            tool_calls = pending_tool_calls
+            has_tools = True
+            pending_tool_calls = None
 
         # If it's an assistant message with tools, we DON'T skip it.
         # Otherwise, check skip conditions:
@@ -150,10 +144,6 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         if thinking:
             msg_dict["thinking"] = thinking
         if tool_calls:
-            print(
-                f"DEBUG: Adding tool_calls to msg_dict for role={role}, tool_calls={tool_calls}",
-                flush=True,
-            )
             # Normalize tool_calls structure for frontend
             normalized = []
             for tc in tool_calls:
@@ -342,16 +332,6 @@ async def load_session(session_id: str):
         agent.load_session(session_id)
         current_session_id = session_id
         message_history = filter_messages_for_ui(agent.messages)
-        # Debug: check filtered messages
-        for i, m in enumerate(message_history):
-            print(
-                f"DEBUG filter_output: msg {i} role={m['role']}, has_tool_calls={bool(m.get('tool_calls'))}",
-                flush=True,
-            )
-            if m.get("tool_calls"):
-                print(
-                    f"DEBUG filter_output: tool_calls = {m['tool_calls']}", flush=True
-                )
         title = None
         if agent.session_manager.current_session:
             title = agent.session_manager.current_session.title

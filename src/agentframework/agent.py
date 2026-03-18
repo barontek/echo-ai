@@ -606,15 +606,6 @@ class Agent:
             return f"Session not found: {session_id}"
 
         self.messages = deserialize_messages(session.messages)
-
-        # Debug: check loaded messages
-        print(f"DEBUG load: loaded {len(self.messages)} messages", flush=True)
-        for i, m in enumerate(self.messages):
-            print(
-                f"DEBUG load: msg {i} role={m.role}, has_tool_calls={bool(m.tool_calls)}",
-                flush=True,
-            )
-
         return f"Session loaded: {session_id}"
 
     def list_sessions(self) -> list:

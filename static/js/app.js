@@ -741,15 +741,14 @@ class EchoAI {
         }
 
         if (message.role === 'assistant') {
+            // Add tools dropdown if tool_calls exist
+            const toolsContainer = this.createToolsContainer(message.tool_calls);
+            if (toolsContainer) {
+                div.appendChild(toolsContainer);
+            }
+
             const metaDiv = document.createElement('div');
             metaDiv.className = 'message-meta';
-
-            if (message.has_tools === true) {
-                const badge = document.createElement('span');
-                badge.className = 'tool-badge';
-                badge.textContent = '🛠️ Tool Used';
-                metaDiv.appendChild(badge);
-            }
 
             if (message.timestamp) {
                 const timeEl = document.createElement('span');

@@ -774,7 +774,7 @@ class EchoAI {
     formatContent(content) {
         if (!content) return '';
         try {
-            const html = marked.parse(content, { breaks: true, gfm: true });
+            const html = marked.parse(content, { gfm: true });
             return DOMPurify.sanitize(html);
         } catch (e) {
             return this.escapeHtml(content);

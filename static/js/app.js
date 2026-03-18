@@ -848,12 +848,13 @@ class EchoAI {
     }
 
     formatInline(text) {
-        let processed = text
+        // Escape first, then add HTML tags
+        let escaped = this.escapeHtml(text);
+        return escaped
             .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
             .replace(/\*([^*]+)\*/g, '<em>$1</em>')
             .replace(/`([^`]+)`/g, '<code>$1</code>')
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-        return this.escapeHtml(processed);
     }
 
     escapeAndFormatLine(line) {

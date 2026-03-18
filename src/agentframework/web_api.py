@@ -93,6 +93,10 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         tool_calls = getattr(
             msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None
         )
+        print(
+            f"DEBUG filter: msg role={role}, tool_calls attr={getattr(msg, 'tool_calls', 'NOT_FOUND')}, tool_calls var={tool_calls}",
+            flush=True,
+        )
         has_tools = bool(tool_calls)
 
         # Skip system and tool messages

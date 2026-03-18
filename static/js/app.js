@@ -772,83 +772,115 @@ class EchoAI {
     }
 
     formatContent(content) {
-        let formatted = this.escapeHtml(content);
+        if (!content) return '';
 
-        // Process tables first (before other formatting)
-        const lines = formatted.split('\n');
-        const processed = [];
+        // Split into lines for processing
+        let lines = content.split('\n');
         let inTable = false;
         let tableRows = [];
+        let inList = false;
+        let listItems = [];
+        let result = [];
 
-        for (const line of lines) {
+        const flushList = () => {
+            if (listItems.length > 0) {
+                result.push('<ul>' + listItems.join('') + '</ul>');
+                listItems = [];
+            }
+            inList = false;
+        };
+
+        for (let line of lines) {
             const trimmed = line.trim();
+
+            // Table detection
             if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
-                inTable = true;
-                tableRows.push(trimmed);
-            } else {
-                if (inTable && tableRows.length > 0) {
-                    processed.push(this.renderTable(tableRows));
+                flushList();
+                if (!inTable) {
+                    inTable = true;
                     tableRows = [];
                 }
+                tableRows.push(trimmed);
+                continue;
+            } else if (inTable) {
+                // End of table
+                result.push(this.renderTable(tableRows));
                 inTable = false;
-                processed.push(line);
+                tableRows = [];
             }
+
+            // Headers (#### to #)
+            const headerMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+            if (headerMatch) {
+                flushList();
+                const level = headerMatch[1].length;
+                const text = headerMatch[2];
+                result.push(`<h${level}>${this.escapeHtml(text)}</h${level}>`);
+                continue;
+            }
+
+            // List items
+            const listMatch = trimmed.match(/^[\-\*]\s+(.+)$/);
+            if (listMatch) {
+                inList = true;
+                listItems.push(`<li>${this.escapeHtml(listMatch[1])}</li>`);
+                continue;
+            } else if (inList) {
+                flushList();
+            }
+
+            // Empty lines
+            if (trimmed === '') {
+                flushList();
+                continue;
+            }
+
+            result.push(this.escapeAndFormatLine(line));
         }
+
+        // Handle trailing content
         if (inTable && tableRows.length > 0) {
-            processed.push(this.renderTable(tableRows));
+            result.push(this.renderTable(tableRows));
         }
-        formatted = processed.join('\n');
+        flushList();
 
-        // Headers (must be at start of line)
-        formatted = formatted.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-        formatted = formatted.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-        formatted = formatted.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+        return result.join('<br>');
+    }
 
-        // Code blocks
-        formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-        formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-        // Bold and italic
-        formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-        // Links
-        formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-
-        // Lists (simple)
-        formatted = formatted.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-        formatted = formatted.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-        // Line breaks
-        formatted = formatted.replace(/\n/g, '<br>');
-
-        return formatted;
+    escapeAndFormatLine(line) {
+        let escaped = this.escapeHtml(line);
+        escaped = escaped.replace(/```(\w+)?\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+        escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+        escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        escaped = escaped.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+        escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        return escaped;
     }
 
     renderTable(rows) {
-        if (rows.length < 2) return rows.join('\n');
+        if (rows.length < 2) return rows.join(' ');
 
-        const parseRow = (row) => row.split('|').slice(1, -1).map(cell => cell.trim());
-        const headers = parseRow(rows[0]);
-        const isHeaderRow = (row) => row.split('|').slice(1, -1).every(cell => /^[\-\s:]+$/.test(cell));
+        const parseCells = (row) => row.split('|').slice(1, -1).map(c => c.trim());
+        const headers = parseCells(rows[0]);
 
         let html = '<div class="table-wrapper"><table class="md-table">';
 
-        // Header
+        // Header row
         html += '<thead><tr>';
         for (const h of headers) {
-            html += `<th>${h}</th>`;
+            html += `<th>${this.escapeHtml(h)}</th>`;
         }
         html += '</tr></thead>';
 
-        // Body
+        // Body rows
         html += '<tbody>';
         for (let i = 1; i < rows.length; i++) {
-            if (isHeaderRow(rows[i])) continue;
-            const cells = parseRow(rows[i]);
+            const cells = parseCells(rows[i]);
+            // Skip separator rows (---, :--, etc)
+            if (cells.every(c => /^[:\-\s]+$/.test(c))) continue;
             html += '<tr>';
             for (const c of cells) {
-                html += `<td>${c}</td>`;
+                html += `<td>${this.escapeHtml(c)}</td>`;
             }
             html += '</tr>';
         }

@@ -815,7 +815,7 @@ class EchoAI {
                 flushList();
                 const level = headerMatch[1].length;
                 const text = headerMatch[2];
-                result.push(`<h${level}>${this.escapeHtml(text)}</h${level}>`);
+                result.push(`<h${level}>${this.formatInline(text)}</h${level}>`);
                 continue;
             }
 

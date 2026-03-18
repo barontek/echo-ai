@@ -128,6 +128,8 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         }
         if thinking:
             msg_dict["thinking"] = thinking
+        if tool_calls:
+            msg_dict["tool_calls"] = tool_calls
 
         filtered.append(msg_dict)
 

@@ -58,8 +58,6 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
     """Filter messages for UI rendering, removing raw tool/system noise."""
     filtered = []
 
-    print(f"DEBUG filter: input messages count: {len(messages)}", flush=True)
-
     # Internal framework strings to ignore
     internal_patterns = [
         r"System Note: Tools executed",
@@ -91,20 +89,18 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
             timestamp = timestamp or metadata.get("timestamp", "")
             thinking = thinking or metadata.get("thinking", "")
 
-        # 1. Handle assistant messages with tool calls first
+        # Handle tool calls
         tool_calls = getattr(
             msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None
         )
-        print(
-            f"DEBUG filter: msg role={role}, has_tool_calls={bool(tool_calls)}, content_len={len(content)}",
-            flush=True,
-        )
-        if tool_calls:
-            print(f"DEBUG filter: tool_calls = {tool_calls}", flush=True)
         has_tools = bool(tool_calls)
 
-        # 2. Skip logic (system and tool messages are always skipped)
+        # Skip system and tool messages
         if role in ["system", "tool"]:
+            continue
+
+        # Skip assistant messages with tool_calls but no content
+        if role == "assistant" and tool_calls and not content.strip():
             continue
 
         # Skip assistant messages with tool_calls but no content (intermediate tool call requests)
@@ -169,14 +165,6 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
             msg_dict["tool_calls"] = normalized
 
         filtered.append(msg_dict)
-
-    print(f"DEBUG filter: output messages count: {len(filtered)}", flush=True)
-    for i, m in enumerate(filtered):
-        if m.get("tool_calls"):
-            print(
-                f"DEBUG filter: output msg {i} has tool_calls: {m['tool_calls']}",
-                flush=True,
-            )
 
     return filtered
 

@@ -383,6 +383,7 @@ class EchoAI {
     async loadSession(sessionId) {
         const response = await fetch(`/api/sessions/${sessionId}`);
         const data = await response.json();
+        console.log('Loaded session messages:', data.messages);
         this.currentSession = sessionId;
         localStorage.setItem('currentSession', this.currentSession);
         this.messages = data.messages || [];

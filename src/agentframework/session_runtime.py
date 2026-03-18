@@ -42,7 +42,7 @@ def redo_change(change_tracker) -> str:
 
 
 def serialize_messages(messages: list[Message]) -> list[dict]:
-    return [
+    result = [
         {
             "role": m.role,
             "content": m.content,
@@ -54,6 +54,14 @@ def serialize_messages(messages: list[Message]) -> list[dict]:
         }
         for m in messages
     ]
+    # Debug: check if any have tool_calls
+    for i, msg in enumerate(result):
+        if msg.get("tool_calls"):
+            print(
+                f"DEBUG serialize: msg {i} has tool_calls: {msg['tool_calls']}",
+                flush=True,
+            )
+    return result
 
 
 def deserialize_messages(messages: list[dict]) -> list[Message]:

@@ -99,7 +99,11 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         if role in ["system", "tool"]:
             continue
 
-        # If it's an assistant message with tools, we NEVER continue/skip it here.
+        # Skip assistant messages with tool_calls but no content (intermediate tool call requests)
+        if role == "assistant" and tool_calls and not content.strip():
+            continue
+
+        # If it's an assistant message with tools, we DON'T skip it.
         # Otherwise, check skip conditions:
         if not has_tools:
             # Drop if it's truly empty assistant message
@@ -129,7 +133,32 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         if thinking:
             msg_dict["thinking"] = thinking
         if tool_calls:
-            msg_dict["tool_calls"] = tool_calls
+            # Normalize tool_calls structure for frontend
+            normalized = []
+            for tc in tool_calls:
+                if isinstance(tc, dict):
+                    if "function" in tc:
+                        normalized.append(
+                            {
+                                "name": tc["function"].get("name", "unknown"),
+                                "arguments": tc["function"].get("arguments", {}),
+                            }
+                        )
+                    else:
+                        normalized.append(
+                            {
+                                "name": tc.get("name", "unknown"),
+                                "arguments": tc.get("arguments", {}),
+                            }
+                        )
+                else:
+                    normalized.append(
+                        {
+                            "name": getattr(tc, "name", "unknown"),
+                            "arguments": getattr(tc, "arguments", {}),
+                        }
+                    )
+            msg_dict["tool_calls"] = normalized
 
         filtered.append(msg_dict)
 

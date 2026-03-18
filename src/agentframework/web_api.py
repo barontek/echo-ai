@@ -541,6 +541,31 @@ async def websocket_chat(websocket: WebSocket):
             streaming_task = None
 
         timestamp = datetime.now().strftime("%H:%M")
+
+        # Extract tool call details for frontend dropdown
+        tool_calls_info = []
+        if active_agent.messages:
+            last_msg = active_agent.messages[-1]
+            tool_calls = getattr(last_msg, "tool_calls", None)
+            if tool_calls:
+                for tc in tool_calls:
+                    if isinstance(tc, dict):
+                        tool_calls_info.append(
+                            {
+                                "name": tc.get("function", {}).get("name", "unknown"),
+                                "arguments": tc.get("function", {}).get(
+                                    "arguments", {}
+                                ),
+                            }
+                        )
+                    else:
+                        tool_calls_info.append(
+                            {
+                                "name": getattr(tc, "name", "unknown"),
+                                "arguments": getattr(tc, "arguments", {}),
+                            }
+                        )
+
         message_history.append(
             {
                 "role": "assistant",
@@ -559,6 +584,7 @@ async def websocket_chat(websocket: WebSocket):
                 "thinking": thinking_content,
                 "timestamp": timestamp,
                 "has_tools": has_tools,
+                "tool_calls": tool_calls_info,
                 "session_id": active_agent.session_manager.current_session.id
                 if active_agent.session_manager
                 and active_agent.session_manager.current_session

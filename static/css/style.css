@@ -415,6 +415,65 @@ body {
     text-overflow: ellipsis;
 }
 
+/* Tools Dropdown */
+.tools-container {
+    margin-top: 0.75rem;
+    margin-bottom: 0.5rem;
+    background-color: rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+[data-theme="light"] .tools-container {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.tools-header {
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tools-header:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] .tools-header:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.tools-content {
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--border);
+}
+
+.tools-content.collapsed {
+    display: none;
+}
+
+.tools-content pre {
+    margin: 0.25rem 0;
+    font-size: 0.75rem;
+}
+
+.tool-item {
+    margin-bottom: 0.5rem;
+}
+
+.tool-item:last-child {
+    margin-bottom: 0;
+}
+
 .sources-content a:hover {
     text-decoration: underline;
 }

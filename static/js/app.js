@@ -239,7 +239,7 @@ class EchoAI {
                 break;
             case 'done':
                 this.flushPendingRender();
-                this.finishMessage(data.content, data.thinking, data.timestamp, data.has_tools);
+                this.finishMessage(data.content, data.thinking, data.timestamp, data.has_tools, data.tool_calls);
                 break;
             case 'error':
                 this.showError(data.content);
@@ -584,7 +584,7 @@ class EchoAI {
     }
 
     // 3. UPDATED: Safely handles non-streaming models and finalizations
-    finishMessage(rawContent, backendThinking, timestamp, hasTools) {
+    finishMessage(rawContent, backendThinking, timestamp, hasTools, toolCalls = []) {
         this.resetButtons();
         if (this.messages.length === 0) return;
 
@@ -625,6 +625,15 @@ class EchoAI {
             msgEl.insertBefore(sourcesContainer, msgEl.querySelector('.message-meta') || null);
         }
 
+        // Handle Tools Dropdown
+        const existingTools = msgEl.querySelector('.tools-container');
+        if (existingTools) existingTools.remove();
+
+        const toolsContainer = this.createToolsContainer(toolCalls);
+        if (toolsContainer) {
+            msgEl.insertBefore(toolsContainer, msgEl.querySelector('.message-meta') || null);
+        }
+
         // Handle Tool Badge and Timestamp
         let metaEl = msgEl.querySelector('.message-meta');
         if (!metaEl) {
@@ -633,12 +642,6 @@ class EchoAI {
             msgEl.appendChild(metaEl);
         }
 
-        if (hasTools && !metaEl.querySelector('.tool-badge')) {
-            const badge = document.createElement('span');
-            badge.className = 'tool-badge';
-            badge.textContent = '🛠️ Tool Used';
-            metaEl.insertBefore(badge, metaEl.firstChild);
-        }
         if (timestamp && !metaEl.querySelector('.message-time')) {
             const timeEl = document.createElement('span');
             timeEl.className = 'message-time';
@@ -651,6 +654,37 @@ class EchoAI {
             ? Math.round(this.streamMetrics.firstTokenMs - this.streamMetrics.startMs)
             : total;
         this.updateMetrics({ ttfb, total });
+    }
+
+    createToolsContainer(toolCalls) {
+        if (!toolCalls || toolCalls.length === 0) return null;
+
+        const container = document.createElement('div');
+        container.className = 'tools-container';
+
+        const toolNames = toolCalls.map(t => t.name).join(', ');
+        container.innerHTML = `
+            <button type="button" class="tools-header" aria-label="Toggle tools">
+                <span class="tools-icon">▶</span> 🛠️ Tools Used: ${toolNames}
+            </button>
+            <div class="tools-content collapsed">
+                ${toolCalls.map((tc, i) => `
+                    <div class="tool-item">
+                        <strong>${tc.name}</strong>
+                        <pre><code>${JSON.stringify(tc.arguments, null, 2)}</code></pre>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        container.querySelector('.tools-header').addEventListener('click', () => {
+            const content = container.querySelector('.tools-content');
+            const icon = container.querySelector('.tools-icon');
+            content.classList.toggle('collapsed');
+            icon.textContent = content.classList.contains('collapsed') ? '▶' : '▼';
+        });
+
+        return container;
     }
 
     createThinkingContainer(thinking, collapsed = false) {

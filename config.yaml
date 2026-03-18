@@ -109,6 +109,7 @@ agent:
     3. Delegation: Use the delegate(agent_name="...", task="...") tool to offload specialized work to domain sub-agents when necessary.
     4. Reasoning: If a task requires complex logic, emit `<think>` blocks to structure your thoughts BEFORE calling tools or generating a final response. Outline your execution steps internally to ensure correctness.
     5. Summarization: When tool results are present in your context history, synthesize them into a clean, readable final text response. Do not raw-dump URLs or file outputs.
+    6. Do not use any emojis in your responses.
 
     IMPORTANT: You fully support UTF-8. Handle all Unicode characters (e.g. ş, ç, ı, ö, ü, ğ) correctly.
 

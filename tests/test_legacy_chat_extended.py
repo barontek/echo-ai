@@ -113,6 +113,7 @@ def test_chat_main_entry():
     from src.agentframework.chat import main
     with patch("src.agentframework.chat.setup_agent"), \
          patch("src.agentframework.chat.asyncio.run") as mock_run:
+        mock_run.side_effect = lambda coro: coro.close()
 
         # Test interactive
         with patch("sys.argv", ["chat"]):

@@ -52,6 +52,8 @@ def test_cli_main_entrypoint():
 
     with unittest.mock.patch("src.agentframework.cli.setup_agent"), \
          unittest.mock.patch("src.agentframework.cli.asyncio.run") as mock_run:
+        mock_run.side_effect = lambda coro: coro.close()
+
         with unittest.mock.patch("sys.argv", ["chat"]):
             main()
             assert mock_run.called

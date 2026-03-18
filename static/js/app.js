@@ -10,6 +10,7 @@ class EchoAI {
         this.reconnectTimer = null;
         this.pendingContent = null;
         this.pendingThinking = null;
+        this.pendingUserMessage = null; // Buffered message for connection startup
         this.renderScheduled = false;
         this.streamMetrics = { startMs: 0, firstTokenMs: 0 };
         this.isMobileView = window.matchMedia('(max-width: 900px)');
@@ -180,6 +181,16 @@ class EchoAI {
         }
     }
 
+    reconnectWithNewSession() {
+        if (this.ws) {
+            this.ws.onclose = null;
+            this.ws.onerror = null;
+            this.ws.onmessage = null; // Destroy the old listener to prevent ghost messages
+            this.ws.close();
+        }
+        this.connectWebSocket();
+    }
+
     showConnectionBanner(message, visible) {
         const banner = document.getElementById('connection-banner');
         banner.textContent = message;
@@ -200,7 +211,11 @@ class EchoAI {
 
         switch (data.type) {
             case 'ready':
-                // Handled session_id above
+                // Send the buffered message the millisecond the backend confirms the new session
+                if (this.pendingUserMessage) {
+                    this.ws.send(JSON.stringify({ content: this.pendingUserMessage }));
+                    this.pendingUserMessage = null;
+                }
                 break;
             case 'message':
                 if (data.role !== 'user') {
@@ -315,14 +330,15 @@ class EchoAI {
     }
 
     async newChat() {
-        const response = await fetch('/api/sessions', { method: 'POST' });
-        const data = await response.json();
-        this.currentSession = data.session_id;
-        localStorage.setItem('currentSession', this.currentSession);
+        // Drop the fetch to /api/sessions entirely!
+        // Setting this to null forces the new WebSocket to create its own flawless session.
+        this.currentSession = null;
+        localStorage.removeItem('currentSession');
         this.messages = [];
         this.renderMessages();
         this.loadSessions();
         this.closeSidebarOnMobile();
+        this.reconnectWithNewSession();
     }
 
 
@@ -369,6 +385,7 @@ class EchoAI {
         this.renderMessages();
         this.loadSessions();
         this.closeSidebarOnMobile();
+        this.reconnectWithNewSession();
     }
 
     async deleteCurrentSession() {
@@ -445,6 +462,9 @@ class EchoAI {
 
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ content }));
+        } else {
+            // Store the message safely while the new socket connects
+            this.pendingUserMessage = content;
         }
     }
 

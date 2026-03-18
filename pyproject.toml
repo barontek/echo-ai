@@ -52,7 +52,3 @@ packages = ["src/agentframework"]
 markers = [
     "asyncio: mark tests as asynchronous",
 ]
-filterwarnings = [
-    "ignore::RuntimeWarning:unittest.mock",
-    "ignore:coroutine .* was never awaited:RuntimeWarning:asyncio",
-]

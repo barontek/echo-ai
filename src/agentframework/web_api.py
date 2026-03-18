@@ -325,6 +325,16 @@ async def load_session(session_id: str):
         agent.load_session(session_id)
         current_session_id = session_id
         message_history = filter_messages_for_ui(agent.messages)
+        # Debug: check filtered messages
+        for i, m in enumerate(message_history):
+            print(
+                f"DEBUG filter_output: msg {i} role={m['role']}, has_tool_calls={bool(m.get('tool_calls'))}",
+                flush=True,
+            )
+            if m.get("tool_calls"):
+                print(
+                    f"DEBUG filter_output: tool_calls = {m['tool_calls']}", flush=True
+                )
         title = None
         if agent.session_manager.current_session:
             title = agent.session_manager.current_session.title

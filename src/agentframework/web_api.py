@@ -141,6 +141,10 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         if thinking:
             msg_dict["thinking"] = thinking
         if tool_calls:
+            print(
+                f"DEBUG: Adding tool_calls to msg_dict for role={role}, tool_calls={tool_calls}",
+                flush=True,
+            )
             # Normalize tool_calls structure for frontend
             normalized = []
             for tc in tool_calls:

@@ -457,6 +457,8 @@ class EchoAI {
             body: JSON.stringify({ provider: 'ollama', model }),
         });
         document.getElementById('model-badge').textContent = `Model: ${model}`;
+        if (this.isStreaming) return;
+        this.reconnectWithNewSession();
     }
 
     sendMessage() {
@@ -771,12 +773,88 @@ class EchoAI {
 
     formatContent(content) {
         let formatted = this.escapeHtml(content);
+
+        // Process tables first (before other formatting)
+        const lines = formatted.split('\n');
+        const processed = [];
+        let inTable = false;
+        let tableRows = [];
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+                inTable = true;
+                tableRows.push(trimmed);
+            } else {
+                if (inTable && tableRows.length > 0) {
+                    processed.push(this.renderTable(tableRows));
+                    tableRows = [];
+                }
+                inTable = false;
+                processed.push(line);
+            }
+        }
+        if (inTable && tableRows.length > 0) {
+            processed.push(this.renderTable(tableRows));
+        }
+        formatted = processed.join('\n');
+
+        // Headers (must be at start of line)
+        formatted = formatted.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+        formatted = formatted.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+        formatted = formatted.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+
+        // Code blocks
         formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
         formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Bold and italic
         formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
         formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+        // Links
         formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+        // Lists (simple)
+        formatted = formatted.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+        formatted = formatted.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+        // Line breaks
+        formatted = formatted.replace(/\n/g, '<br>');
+
         return formatted;
+    }
+
+    renderTable(rows) {
+        if (rows.length < 2) return rows.join('\n');
+
+        const parseRow = (row) => row.split('|').slice(1, -1).map(cell => cell.trim());
+        const headers = parseRow(rows[0]);
+        const isHeaderRow = (row) => row.split('|').slice(1, -1).every(cell => /^[\-\s:]+$/.test(cell));
+
+        let html = '<div class="table-wrapper"><table class="md-table">';
+
+        // Header
+        html += '<thead><tr>';
+        for (const h of headers) {
+            html += `<th>${h}</th>`;
+        }
+        html += '</tr></thead>';
+
+        // Body
+        html += '<tbody>';
+        for (let i = 1; i < rows.length; i++) {
+            if (isHeaderRow(rows[i])) continue;
+            const cells = parseRow(rows[i]);
+            html += '<tr>';
+            for (const c of cells) {
+                html += `<td>${c}</td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+
+        return html;
     }
 
     escapeHtml(text) {

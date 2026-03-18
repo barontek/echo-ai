@@ -109,7 +109,16 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
 
         # Skip assistant messages with tool_calls but no content (intermediate tool call requests)
         if role == "assistant" and tool_calls and not content.strip():
+            print(
+                f"DEBUG: Skipping msg due to no content, content='{content}'",
+                flush=True,
+            )
             continue
+
+        print(
+            f"DEBUG: Processing msg role={role}, has tool_calls={bool(tool_calls)}, content_len={len(content)}",
+            flush=True,
+        )
 
         # If it's an assistant message with tools, we DON'T skip it.
         # Otherwise, check skip conditions:

@@ -516,14 +516,35 @@ async def websocket_chat(websocket: WebSocket):
                 send_queue.put_nowait(payload)
 
         has_tools = False
+        tool_calls_info = []
+
         try:
             response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
 
-            # Check for tool calls
-            if active_agent.messages:
-                last_msg = active_agent.messages[-1]
-                if getattr(last_msg, "tool_calls", None):
+            # Find messages with tool calls
+            for msg in active_agent.messages:
+                tc = getattr(msg, "tool_calls", None)
+                if tc:
                     has_tools = True
+                    for t in tc:
+                        if isinstance(t, dict):
+                            tool_calls_info.append(
+                                {
+                                    "name": t.get("function", {}).get(
+                                        "name", "unknown"
+                                    ),
+                                    "arguments": t.get("function", {}).get(
+                                        "arguments", {}
+                                    ),
+                                }
+                            )
+                        else:
+                            tool_calls_info.append(
+                                {
+                                    "name": getattr(t, "name", "unknown"),
+                                    "arguments": getattr(t, "arguments", {}),
+                                }
+                            )
 
             if not accumulated_content:
                 accumulated_content = response
@@ -532,6 +553,7 @@ async def websocket_chat(websocket: WebSocket):
             accumulated_content = "Stopped."
             thinking_content = ""
             has_tools = False
+            tool_calls_info = []
         except Exception as e:
             await websocket.send_json({"type": "error", "content": str(e)})
             return
@@ -541,30 +563,6 @@ async def websocket_chat(websocket: WebSocket):
             streaming_task = None
 
         timestamp = datetime.now().strftime("%H:%M")
-
-        # Extract tool call details for frontend dropdown
-        tool_calls_info = []
-        if active_agent.messages:
-            last_msg = active_agent.messages[-1]
-            tool_calls = getattr(last_msg, "tool_calls", None)
-            if tool_calls:
-                for tc in tool_calls:
-                    if isinstance(tc, dict):
-                        tool_calls_info.append(
-                            {
-                                "name": tc.get("function", {}).get("name", "unknown"),
-                                "arguments": tc.get("function", {}).get(
-                                    "arguments", {}
-                                ),
-                            }
-                        )
-                    else:
-                        tool_calls_info.append(
-                            {
-                                "name": getattr(tc, "name", "unknown"),
-                                "arguments": getattr(tc, "arguments", {}),
-                            }
-                        )
 
         message_history.append(
             {

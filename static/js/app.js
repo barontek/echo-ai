@@ -819,6 +819,13 @@ class EchoAI {
                 continue;
             }
 
+            // Blockquotes
+            if (trimmed.startsWith('> ')) {
+                flushList();
+                result.push(`<blockquote>${this.formatInline(trimmed.slice(2))}</blockquote>`);
+                continue;
+            }
+
             // List items
             const listMatch = trimmed.match(/^[\-\*]\s+(.+)$/);
             if (listMatch) {

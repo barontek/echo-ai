@@ -521,7 +521,17 @@ async def websocket_chat(websocket: WebSocket):
         try:
             response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
 
-            # Find messages with tool calls
+            # Debug: log messages structure
+            print(f"DEBUG: Messages count: {len(active_agent.messages)}", flush=True)
+            for i, msg in enumerate(active_agent.messages):
+                tc = getattr(msg, "tool_calls", None)
+                print(
+                    f"DEBUG: Message {i}: role={getattr(msg, 'role', 'unknown')}, has_tool_calls={bool(tc)}",
+                    flush=True,
+                )
+                if tc:
+                    for t in tc:
+                        print(f"DEBUG:   tool: {t}", flush=True)
             for msg in active_agent.messages:
                 tc = getattr(msg, "tool_calls", None)
                 if tc:

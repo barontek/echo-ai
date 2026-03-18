@@ -10,13 +10,27 @@ from uuid import uuid4
 from .providers import LLMProvider, get_provider, LLMToolCall
 from .tools import Tool, ToolResult
 from .session import SessionManager, ChangeTracker
-from .conversation import Message, apply_context_window, create_assistant_message, format_messages_for_llm, sanitize_json, summarize_old_messages
-from .tool_runtime import execute_tool_calls as runtime_execute_tool_calls, create_tool_result_notice
-from .session_runtime import undo_change, redo_change, serialize_messages, deserialize_messages
+from .conversation import (
+    Message,
+    apply_context_window,
+    create_assistant_message,
+    format_messages_for_llm,
+    sanitize_json,
+    summarize_old_messages,
+)
+from .tool_runtime import (
+    execute_tool_calls as runtime_execute_tool_calls,
+    create_tool_result_notice,
+)
+from .session_runtime import (
+    undo_change,
+    redo_change,
+    serialize_messages,
+    deserialize_messages,
+)
 from .callbacks import CallbackManager, AgentCallback
 
 logger = logging.getLogger(__name__)
-
 
 
 @dataclass
@@ -57,7 +71,12 @@ def get_tool_schemas(tools: list[Tool]) -> list[dict[str, Any]]:
 class Agent:
     """An AI agent with tool-calling capabilities."""
 
-    def __init__(self, config: AgentConfig, llm_provider: LLMProvider, session_id: str | None = None):
+    def __init__(
+        self,
+        config: AgentConfig,
+        llm_provider: LLMProvider,
+        session_id: str | None = None,
+    ):
         self.config = config
         self.llm = llm_provider
         self.messages: list[Message] = []
@@ -66,6 +85,7 @@ class Agent:
         self.session_manager = None
         self.change_tracker = ChangeTracker()
         from .memory import MemoryManager
+
         self.memory_manager: MemoryManager | None = None
         self.callback_manager = CallbackManager()
         self.sub_agents: dict[str, SubAgentConfig] = {}
@@ -170,7 +190,9 @@ class Agent:
             return None
 
         # Try to find the first user message
-        first_user_msg = next((m.content for m in self.messages if m.role == "user"), None)
+        first_user_msg = next(
+            (m.content for m in self.messages if m.role == "user"), None
+        )
         if not first_user_msg:
             return None
 
@@ -182,11 +204,17 @@ class Agent:
 
         try:
             # We use the LLM directly to get a short summary
-            title = await self.llm.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
-            )
-            return title.content.strip().strip('"').strip("'")
+            try:
+                title_response = await asyncio.wait_for(
+                    self.llm.chat(
+                        messages=[{"role": "user", "content": prompt}], temperature=0.3
+                    ),
+                    timeout=10.0,
+                )
+                return title_response.content.strip().strip('"').strip("'")
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Title generation failed or timed out: {e}")
+                return prompt[:30] + "..." if len(prompt) > 30 else prompt
         except Exception as e:
             logger.error(f"Failed to generate session title: {e}")
             return None
@@ -199,29 +227,32 @@ class Agent:
         return await self.llm.extract_structured(
             messages=messages,
             response_model=response_model,
-            temperature=self.config.temperature
+            temperature=self.config.temperature,
         )
 
     async def _run_loop(
-        self, messages: list[Message], has_thinking: bool = False
+        self, messages: list[Message], thinking_process: str | None = None
     ) -> tuple[str, list[Message]]:
         """Main agent loop - get response, execute tools, repeat. Returns (response, updated_messages)."""
         current_messages = list(messages)
         request_id = str(uuid4())
 
-        self.callback_manager.on_run_start(request_id, current_messages[-1].content if current_messages else "")
+        self.callback_manager.on_run_start(
+            request_id, current_messages[-1].content if current_messages else ""
+        )
 
         max_msgs = getattr(self.config, "max_history_messages", 20)
         if self.memory_manager:
             current_messages = await self.memory_manager.summarize_if_needed(
-                agent_messages=current_messages,
-                llm=self.llm,
-                max_messages=max_msgs
+                agent_messages=current_messages, llm=self.llm, max_messages=max_msgs
             )
             self.messages = list(current_messages)
 
         for iteration in range(self.config.max_iterations):
-            logger.debug("agent_stream_iteration_start", extra={"request_id": request_id, "iteration": iteration})
+            logger.debug(
+                "agent_stream_iteration_start",
+                extra={"request_id": request_id, "iteration": iteration},
+            )
             llm_messages = await self._prepare_messages(current_messages)
 
             self.callback_manager.on_llm_start(request_id, llm_messages)
@@ -233,15 +264,20 @@ class Agent:
             self.callback_manager.on_llm_end(request_id, response)
 
             if not response.tool_calls:
-                logger.debug("agent_iteration_final", extra={"request_id": request_id, "iteration": iteration})
+                logger.debug(
+                    "agent_iteration_final",
+                    extra={"request_id": request_id, "iteration": iteration},
+                )
                 final_content = response.content or ""
                 self.callback_manager.on_run_end(request_id, final_content)
-                assistant_msg = create_assistant_message(final_content, has_thinking)
+                assistant_msg = create_assistant_message(
+                    final_content, response.thinking or thinking_process
+                )
                 current_messages.append(assistant_msg)
                 return final_content, current_messages
 
-            if iteration == 0 and response.content:
-                has_thinking = True
+            if iteration == 0 and response.thinking:
+                thinking_process = response.thinking
 
             # Record assistant's tool-calling message in history
             tool_call_dicts = [
@@ -250,7 +286,9 @@ class Agent:
                     "type": "function",
                     "function": {
                         "name": tc.name,
-                        "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments,
+                        "arguments": json.dumps(tc.arguments)
+                        if isinstance(tc.arguments, dict)
+                        else tc.arguments,
                     },
                 }
                 for tc in response.tool_calls
@@ -263,13 +301,14 @@ class Agent:
             current_messages.append(assistant_msg)
             if self.session_manager:
                 self.session_manager.add_message(
-                    "assistant",
-                    assistant_msg.content,
-                    tool_calls=tool_call_dicts
+                    "assistant", assistant_msg.content, tool_calls=tool_call_dicts
                 )
 
             tool_messages, updated_messages = await self._execute_tool_calls(
-                response.tool_calls, current_messages, request_id=request_id, iteration=iteration
+                response.tool_calls,
+                current_messages,
+                request_id=request_id,
+                iteration=iteration,
             )
             current_messages = updated_messages
 
@@ -281,7 +320,7 @@ class Agent:
                         msg.content,
                         tool_call_id=msg.tool_call_id,
                         tool_name=msg.tool_name,
-                        tool_arguments=msg.tool_arguments
+                        tool_arguments=msg.tool_arguments,
                     )
                 # Save session to ensure everything is on disk
                 self.save_session()
@@ -297,25 +336,28 @@ class Agent:
         self,
         messages: list[Message],
         on_chunk: Callable[[str], None] | None = None,
-        has_thinking: bool = False,
+        thinking_process: str | None = None,
     ) -> tuple[str, list[Message]]:
         """Main agent loop with streaming output. Returns (response, updated_messages)."""
         current_messages = list(messages)
         request_id = str(uuid4())
 
-        self.callback_manager.on_run_start(request_id, current_messages[-1].content if current_messages else "")
+        self.callback_manager.on_run_start(
+            request_id, current_messages[-1].content if current_messages else ""
+        )
 
         max_msgs = getattr(self.config, "max_history_messages", 20)
         if self.memory_manager:
             current_messages = await self.memory_manager.summarize_if_needed(
-                agent_messages=current_messages,
-                llm=self.llm,
-                max_messages=max_msgs
+                agent_messages=current_messages, llm=self.llm, max_messages=max_msgs
             )
             self.messages = list(current_messages)
 
         for iteration in range(self.config.max_iterations):
-            logger.debug("agent_iteration_start", extra={"request_id": request_id, "iteration": iteration})
+            logger.debug(
+                "agent_iteration_start",
+                extra={"request_id": request_id, "iteration": iteration},
+            )
             llm_messages = await self._prepare_messages(current_messages)
 
             self.callback_manager.on_llm_start(request_id, llm_messages)
@@ -335,15 +377,20 @@ class Agent:
             self.callback_manager.on_llm_end(request_id, response)
 
             if not response.tool_calls:
-                logger.debug("agent_iteration_final", extra={"request_id": request_id, "iteration": iteration})
+                logger.debug(
+                    "agent_iteration_final",
+                    extra={"request_id": request_id, "iteration": iteration},
+                )
                 final_content = response.content or ""
                 self.callback_manager.on_run_end(request_id, final_content)
-                assistant_msg = create_assistant_message(final_content, has_thinking)
+                assistant_msg = create_assistant_message(
+                    final_content, response.thinking or thinking_process
+                )
                 current_messages.append(assistant_msg)
                 return final_content, current_messages
 
-            if iteration == 0 and response.content:
-                has_thinking = True
+            if iteration == 0 and response.thinking:
+                thinking_process = response.thinking
 
             # Record assistant's tool-calling message in history
             tool_call_dicts = [
@@ -352,7 +399,9 @@ class Agent:
                     "type": "function",
                     "function": {
                         "name": tc.name,
-                        "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments,
+                        "arguments": json.dumps(tc.arguments)
+                        if isinstance(tc.arguments, dict)
+                        else tc.arguments,
                     },
                 }
                 for tc in response.tool_calls
@@ -365,13 +414,14 @@ class Agent:
             current_messages.append(assistant_msg)
             if self.session_manager:
                 self.session_manager.add_message(
-                    "assistant",
-                    assistant_msg.content,
-                    tool_calls=tool_call_dicts
+                    "assistant", assistant_msg.content, tool_calls=tool_call_dicts
                 )
 
             tool_messages, updated_messages = await self._execute_tool_calls(
-                response.tool_calls, current_messages, request_id=request_id, iteration=iteration
+                response.tool_calls,
+                current_messages,
+                request_id=request_id,
+                iteration=iteration,
             )
             current_messages = updated_messages
 
@@ -383,7 +433,7 @@ class Agent:
                         msg.content,
                         tool_call_id=msg.tool_call_id,
                         tool_name=msg.tool_name,
-                        tool_arguments=msg.tool_arguments
+                        tool_arguments=msg.tool_arguments,
                     )
                 # Save session to ensure everything is on disk
                 self.save_session()
@@ -394,7 +444,6 @@ class Agent:
             err_msg,
             current_messages,
         )
-
 
     async def _execute_tool_calls(
         self,
@@ -458,7 +507,7 @@ class Agent:
             self.tool_map,
             parallel=False,
             change_tracker=self.change_tracker,
-            callback_manager=self.callback_manager
+            callback_manager=self.callback_manager,
         )
         msg = msgs[0]
         if msg.content.startswith("FAILED"):
@@ -482,7 +531,15 @@ class Agent:
             self.config.max_context_chars,
             summarize_fn=lambda msgs: summarize_old_messages(msgs, self.llm),
         )
-        logger.debug("context_window", extra={"context_before": before_count, "context_after": len(filtered_messages), "max_messages": self.config.max_context_messages, "max_chars": self.config.max_context_chars})
+        logger.debug(
+            "context_window",
+            extra={
+                "context_before": before_count,
+                "context_after": len(filtered_messages),
+                "max_messages": self.config.max_context_messages,
+                "max_chars": self.config.max_context_chars,
+            },
+        )
 
         return format_messages_for_llm(
             filtered_messages,
@@ -516,8 +573,7 @@ class Agent:
         system_msg = (
             "[Persistent Memory]\n"
             "The following facts were previously saved about the user. "
-            "Use them to personalize your responses:\n\n"
-            + memories_str
+            "Use them to personalize your responses:\n\n" + memories_str
         )
         self.messages.insert(0, Message(role="system", content=system_msg))
 
@@ -532,9 +588,11 @@ class Agent:
 
         self._ensure_session(session_id)
         if not self.session_manager.current_session:
-             return "Failed to create session."
+            return "Failed to create session."
 
-        self.session_manager.current_session.messages = serialize_messages(self.messages)
+        self.session_manager.current_session.messages = serialize_messages(
+            self.messages
+        )
         self.session_manager.save_session()
         return f"Session saved: {self.session_manager.current_session.id}"
 
@@ -556,7 +614,9 @@ class Agent:
             return []
         return [s.id for s in self.session_manager.list_sessions()]
 
-    def _ensure_session(self, session_id: str | None = None, title: str | None = None) -> None:
+    def _ensure_session(
+        self, session_id: str | None = None, title: str | None = None
+    ) -> None:
         """Ensure a session is created if it doesn't exist."""
         if self.session_manager and not self.session_manager.current_session:
             self.session_manager.create_session(session_id, title=title)
@@ -576,6 +636,7 @@ class Agent:
                 close_method = getattr(self.llm, "close", None)
                 if close_method:
                     import inspect
+
                     if inspect.iscoroutinefunction(close_method):
                         try:
                             # Try to run in current loop or create task
@@ -595,6 +656,7 @@ class Agent:
         try:
             from opentelemetry import trace
             from opentelemetry.sdk.trace import TracerProvider
+
             provider = trace.get_tracer_provider()
             if isinstance(provider, TracerProvider):
                 provider.shutdown()
@@ -602,7 +664,9 @@ class Agent:
             logger.debug(f"OpenTelemetry shutdown failed: {e}")
 
 
-def create_agent(config: AgentConfig, api_key: str | None = None, session_id: str | None = None) -> Agent:
+def create_agent(
+    config: AgentConfig, api_key: str | None = None, session_id: str | None = None
+) -> Agent:
     """Create an agent with the given configuration."""
     provider = get_provider(
         config.provider,

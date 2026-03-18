@@ -10,6 +10,7 @@ class LLMResponse:
     """Response from an LLM."""
 
     content: str
+    thinking: str | None = None
     tool_calls: list["LLMToolCall"] = field(default_factory=list)
 
 
@@ -64,7 +65,7 @@ def get_provider(
 ) -> LLMProvider:
     """Get an LLM provider by name."""
     import os
-    
+
     if name == "anthropic":
         if not (api_key or os.getenv("ANTHROPIC_API_KEY")):
             raise ValueError("ANTHROPIC_API_KEY is required for provider='anthropic'. Set it or use provider='ollama'.")

@@ -45,10 +45,10 @@ def estimate_tokens(text: str) -> int:
         return len(text) // 4
 
 
-def create_assistant_message(content: str, has_thinking: bool = False) -> Message:
-    """Create an assistant message, wrapping content with thinking markers if needed."""
-    if has_thinking and content:
-        content = f"__THINKING__\nThinking...\n__THINKING_END__\n\n{content}"
+def create_assistant_message(content: str, thinking: str | None = None) -> Message:
+    """Create an assistant message, wrapping content with thinking markers if provided."""
+    if thinking:
+        content = f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
     return Message(role="assistant", content=content)
 
 

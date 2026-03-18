@@ -20,6 +20,7 @@ client = TestClient(app)
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_agent():
     agent = MagicMock()
@@ -34,11 +35,13 @@ def mock_agent():
 # Agent bootstrapping (_create_runtime_agent)
 # ---------------------------------------------------------------------------
 
+
 class TestAgentBootstrap:
     def test_create_runtime_agent_uses_configured_tools(self, monkeypatch):
         captured = {}
         monkeypatch.setattr(
-            web_api, "load_config",
+            web_api,
+            "load_config",
             lambda: {
                 "model": {"temperature": 0.6, "base_url": "http://localhost:9999"},
                 "agent": {
@@ -60,7 +63,9 @@ class TestAgentBootstrap:
             return SimpleNamespace(config=agent_config)
 
         monkeypatch.setattr(web_api, "create_agent", fake_create_agent)
-        result = web_api._create_runtime_agent("ollama", "qwen3:4b-instruct", api_key="k")
+        result = web_api._create_runtime_agent(
+            "ollama", "qwen3:4b-instruct", api_key="k"
+        )
 
         assert result.config.tools == fake_tools
         assert result.config.temperature == 0.6
@@ -69,32 +74,46 @@ class TestAgentBootstrap:
         assert result.config.session_enabled is False
         assert result.config.session_dir == ".sessions-test"
         assert "Custom prompt" in result.config.system_prompt
-        assert "Workspace (file operations confined to): /tmp/workspace" in result.config.system_prompt
+        assert (
+            "Workspace (file operations confined to): /tmp/workspace"
+            in result.config.system_prompt
+        )
         assert captured["api_key"] == "k"
 
     def test_create_runtime_agent_sets_default_system_prompt(self, monkeypatch):
         monkeypatch.setattr(web_api, "load_config", lambda: {})
-        monkeypatch.setattr(web_api, "get_safety_config", lambda cfg: SimpleNamespace(workspace="."))
+        monkeypatch.setattr(
+            web_api, "get_safety_config", lambda cfg: SimpleNamespace(workspace=".")
+        )
         monkeypatch.setattr(web_api, "get_tools", lambda cfg, safety: [])
         monkeypatch.setattr(
-            web_api, "create_agent",
-            lambda agent_config, api_key=None, session_id=None: SimpleNamespace(config=agent_config),
+            web_api,
+            "create_agent",
+            lambda agent_config, api_key=None, session_id=None: SimpleNamespace(
+                config=agent_config
+            ),
         )
         result = web_api._create_runtime_agent("ollama", "qwen3:4b-instruct")
         assert result.config.tools == []
-        assert "You are an AI assistant with access to various tools." in result.config.system_prompt
+        assert (
+            "You are an AI assistant with access to various tools."
+            in result.config.system_prompt
+        )
 
 
 # ---------------------------------------------------------------------------
 # Models & Config
 # ---------------------------------------------------------------------------
 
+
 class TestModelsAndConfig:
     def test_list_models_success(self, monkeypatch):
         async def mock_get(*args, **kwargs):
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {"models": [{"name": "model1"}, {"name": "model2"}]}
+            mock_response.json.return_value = {
+                "models": [{"name": "model1"}, {"name": "model2"}]
+            }
             return mock_response
 
         monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
@@ -113,7 +132,11 @@ class TestModelsAndConfig:
 
     def test_update_config(self, monkeypatch):
         mock_agent_instance = MagicMock()
-        monkeypatch.setattr(web_api, "_create_runtime_agent", lambda *args, **kwargs: mock_agent_instance)
+        monkeypatch.setattr(
+            web_api,
+            "_create_runtime_agent",
+            lambda *args, **kwargs: mock_agent_instance,
+        )
         payload = {"provider": "openai", "model": "gpt-4", "api_key": "test-key"}
         response = client.post("/api/config", json=payload)
         assert response.status_code == 200
@@ -124,6 +147,7 @@ class TestModelsAndConfig:
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
+
 
 class TestSessions:
     def test_list_sessions_available(self, mock_agent):
@@ -155,8 +179,12 @@ class TestSessions:
 
     def test_list_sessions_lazy_init(self, monkeypatch, mock_agent):
         web_api.agent = None
-        monkeypatch.setattr(web_api, "_create_runtime_agent", lambda *args, **kwargs: mock_agent)
-        mock_agent.session_manager.list_sessions.return_value = [MagicMock(id="lazy-session")]
+        monkeypatch.setattr(
+            web_api, "_create_runtime_agent", lambda *args, **kwargs: mock_agent
+        )
+        mock_agent.session_manager.list_sessions.return_value = [
+            MagicMock(id="lazy-session")
+        ]
 
         response = client.get("/api/sessions")
         assert response.status_code == 200
@@ -173,9 +201,13 @@ class TestSessions:
 
     def test_load_session_response_structure(self, mock_agent):
         web_api.agent = mock_agent
-        mock_agent.messages = [{"role": "user", "content": "hi", "metadata": {"timestamp": "12:00"}}]
+        mock_agent.messages = [
+            {"role": "user", "content": "hi", "metadata": {"timestamp": "12:00"}}
+        ]
         mock_agent.load_session.return_value = "Session loaded: test-session"
-        mock_agent.session_manager.current_session = MagicMock(id="test-session", title="My Chat")
+        mock_agent.session_manager.current_session = MagicMock(
+            id="test-session", title="My Chat"
+        )
 
         response = client.get("/api/sessions/test-session")
         assert response.status_code == 200
@@ -187,9 +219,13 @@ class TestSessions:
 
     def test_load_session_no_title(self, mock_agent):
         web_api.agent = mock_agent
-        mock_agent.messages = [{"role": "user", "content": "hi", "metadata": {"timestamp": "12:00"}}]
+        mock_agent.messages = [
+            {"role": "user", "content": "hi", "metadata": {"timestamp": "12:00"}}
+        ]
         mock_agent.load_session.return_value = "Session loaded: test-session"
-        mock_agent.session_manager.current_session = MagicMock(id="test-session", title=None)
+        mock_agent.session_manager.current_session = MagicMock(
+            id="test-session", title=None
+        )
 
         response = client.get("/api/sessions/test-session")
         assert response.status_code == 200
@@ -211,12 +247,18 @@ class TestSessions:
         web_api.agent = None
         response = client.get("/api/sessions/any-session")
         assert response.status_code == 200
-        assert response.json() == {"session_id": "any-session", "messages": [], "title": None}
+        assert response.json() == {
+            "session_id": "any-session",
+            "messages": [],
+            "title": None,
+        }
 
     def test_delete_session(self, monkeypatch, mock_agent):
         web_api.agent = mock_agent
         mock_db = MagicMock()
-        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = mock_db
+        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
+            mock_db
+        )
         response = client.delete("/api/sessions/session-to-delete")
         assert response.status_code == 200
         assert mock_db.query.called
@@ -224,7 +266,9 @@ class TestSessions:
     def test_rename_session_success(self, mock_agent):
         web_api.agent = mock_agent
         mock_db = MagicMock()
-        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = mock_db
+        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
+            mock_db
+        )
         mock_agent.session_manager.current_session = MagicMock(id="old", title="old")
         mock_db.query.return_value.filter.return_value.update.return_value = 1
 
@@ -239,7 +283,9 @@ class TestSessions:
     def test_rename_session_not_found(self, mock_agent):
         web_api.agent = mock_agent
         mock_db = MagicMock()
-        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = mock_db
+        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
+            mock_db
+        )
         mock_db.query.return_value.filter.return_value.update.return_value = 0
 
         payload = {"session_id": "nonexistent", "new_title": "title"}
@@ -269,6 +315,7 @@ class TestSessions:
 # Chat
 # ---------------------------------------------------------------------------
 
+
 class TestChat:
     @pytest.mark.asyncio
     async def test_chat_endpoint(self, monkeypatch, mock_agent):
@@ -283,6 +330,7 @@ class TestChat:
 # WebSocket
 # ---------------------------------------------------------------------------
 
+
 class TestWebSocket:
     def test_chat_websocket(self):
         with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
@@ -293,9 +341,11 @@ class TestWebSocket:
             mock_create.return_value = mock_agent
 
             with client.websocket_connect("/ws/chat") as websocket:
-                websocket.send_text(json.dumps({
-                    "provider": "openai", "model": "gpt-4o", "api_key": "test-key"
-                }))
+                websocket.send_text(
+                    json.dumps(
+                        {"provider": "openai", "model": "gpt-4o", "api_key": "test-key"}
+                    )
+                )
                 data = websocket.receive_json()
                 assert data["type"] == "ready"
 
@@ -326,10 +376,14 @@ class TestWebSocket:
             mock_create.return_value = mock_agent
 
             with client.websocket_connect("/ws/chat") as websocket:
-                websocket.send_text(json.dumps({"provider": "openai", "model": "gpt-4o"}))
+                websocket.send_text(
+                    json.dumps({"provider": "openai", "model": "gpt-4o"})
+                )
                 websocket.receive_json()  # ready
 
-                websocket.send_text(json.dumps({"type": "message", "content": "Think about it"}))
+                websocket.send_text(
+                    json.dumps({"type": "message", "content": "Think about it"})
+                )
                 websocket.receive_json()  # message echo
 
                 t1 = websocket.receive_json()
@@ -365,10 +419,14 @@ class TestWebSocket:
             mock_create.return_value = mock_agent
 
             with client.websocket_connect("/ws/chat") as websocket:
-                websocket.send_text(json.dumps({"provider": "openai", "model": "gpt-4"}))
+                websocket.send_text(
+                    json.dumps({"provider": "openai", "model": "gpt-4"})
+                )
                 websocket.receive_json()
 
-                websocket.send_text(json.dumps({"type": "message", "content": "Slow run"}))
+                websocket.send_text(
+                    json.dumps({"type": "message", "content": "Slow run"})
+                )
                 websocket.receive_json()
 
                 websocket.send_text(json.dumps({"type": "stop"}))
@@ -384,12 +442,19 @@ class TestWebSocket:
 # Workflows
 # ---------------------------------------------------------------------------
 
+
 class TestWorkflows:
     @pytest.mark.asyncio
     async def test_workflows_list_endpoint(self, monkeypatch):
-        monkeypatch.setattr(web_api, "list_workflows", lambda: [{"id": "w1", "title": "W1", "description": "d"}])
+        monkeypatch.setattr(
+            web_api,
+            "list_workflows",
+            lambda: [{"id": "w1", "title": "W1", "description": "d"}],
+        )
         result = await web_api.workflows_list()
-        assert result == {"workflows": [{"id": "w1", "title": "W1", "description": "d"}]}
+        assert result == {
+            "workflows": [{"id": "w1", "title": "W1", "description": "d"}]
+        }
 
     @pytest.mark.asyncio
     async def test_workflow_run_endpoint(self, monkeypatch):
@@ -401,9 +466,13 @@ class TestWorkflows:
 
         monkeypatch.setattr(web_api, "agent", "agent")
         monkeypatch.setattr(web_api, "message_history", [])
-        monkeypatch.setattr(web_api, "get_workflow", lambda _workflow_id: FakeWorkflow())
+        monkeypatch.setattr(
+            web_api, "get_workflow", lambda _workflow_id: FakeWorkflow()
+        )
 
-        payload = web_api.WorkflowRunPayload(workflow_id="research_and_summarize", topic="hello")
+        payload = web_api.WorkflowRunPayload(
+            workflow_id="research_and_summarize", topic="hello"
+        )
         result = await web_api.workflow_run(payload)
         assert result["workflow_id"] == "research_and_summarize"
         assert result["response"] == "done"
@@ -419,6 +488,7 @@ class TestWorkflows:
 # Static routes & Review endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestStaticAndReview:
     def test_static_routes(self):
         response = client.get("/")
@@ -429,13 +499,16 @@ class TestStaticAndReview:
     @patch("uvicorn.run")
     def test_web_api_run_server_logic(self, mock_run):
         from src.agentframework.web_api import run_server as rs
+
         rs(host="127.0.0.1", port=9000)
         mock_run.assert_called_once()
 
     def test_review_endpoint_with_file(self, monkeypatch):
         mock_path = MagicMock()
         mock_path.exists.return_value = True
-        mock_path.read_text.return_value = "## Section 1\nContent 1\n## Section 2\nContent 2"
+        mock_path.read_text.return_value = (
+            "## Section 1\nContent 1\n## Section 2\nContent 2"
+        )
         with patch("src.agentframework.web_api.Path", return_value=mock_path):
             response = client.get("/api/review")
             assert response.status_code == 200

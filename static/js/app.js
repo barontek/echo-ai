@@ -223,8 +223,12 @@ class EchoAI {
                 }
                 break;
             case 'thinking':
-                this.pendingThinking = data.content;
-                this.scheduleRender();
+                this.updateThinking(data.content);
+                break;
+            case 'title':
+                if (data.title) {
+                    this.updateSessionTitle(data.session_id, data.title);
+                }
                 break;
             case 'content':
                 if (!this.streamMetrics.firstTokenMs) {
@@ -417,6 +421,16 @@ class EchoAI {
         this.loadSessions();
     }
 
+    async updateSessionTitle(sessionId, newTitle) {
+        // Find the session in the sidebar and update its title
+        const sessionItems = document.querySelectorAll('.session-item');
+        sessionItems.forEach(item => {
+            if (item.title === sessionId) {
+                item.textContent = newTitle;
+            }
+        });
+    }
+
     async purgeSessions() {
         if (!window.confirm('Are you sure you want to purge ALL session history? This cannot be undone.')) {
             return;
@@ -478,6 +492,7 @@ class EchoAI {
         this.isStreaming = false;
         document.getElementById('send-btn').style.display = 'block';
         document.getElementById('stop-btn').style.display = 'none';
+        document.querySelectorAll('.message.streaming').forEach(m => m.classList.remove('streaming'));
     }
 
     addMessage(role, content, timestamp = '') {
@@ -490,11 +505,30 @@ class EchoAI {
 
     ensureBotMessage() {
         const lastMessage = this.messages[this.messages.length - 1];
-        if (lastMessage && lastMessage.role === 'user') {
+        if (!lastMessage || lastMessage.role === 'user') {
             this.addMessage('assistant', '', '');
-            const lastEl = document.querySelector('.message:last-child');
-            if (lastEl) lastEl.classList.add('streaming');
+            const msgEl = document.querySelector('.message:last-child');
+            if (msgEl) msgEl.classList.add('streaming');
         }
+        return document.querySelector('.message:last-child');
+    }
+
+    // 1. NEW HELPER: Parses thoughts dynamically on the frontend
+    extractThinkingLocally(content) {
+        let displayContent = content || '';
+        let thinking = '';
+
+        const thinkMatch = displayContent.match(/<think>([\s\S]*?)(?:<\/think>|$)/);
+        if (thinkMatch) {
+            thinking = thinkMatch[1].trim();
+            displayContent = displayContent.replace(/<think>[\s\S]*?(?:<\/think>|$)/, '').trim();
+        } else if (displayContent.includes('__THINKING__')) {
+            const parts = displayContent.split('__THINKING_END__');
+            thinking = parts[0].replace('__THINKING__', '').trim();
+            displayContent = parts.length > 1 ? parts[1].trim() : '';
+        }
+
+        return { displayContent, thinking };
     }
 
     updateThinking(thinking) {
@@ -513,72 +547,101 @@ class EchoAI {
             msgEl.insertBefore(thinkingContainer, msgEl.querySelector('.message-content'));
         }
 
-        const thinkingEl = thinkingContainer.querySelector('.thinking-content');
-        thinkingEl.textContent = thinking;
+        thinkingContainer.querySelector('.thinking-content').textContent = thinking;
         this.smartScroll();
     }
 
-    updateContent(content) {
-        if (this.messages.length === 0) return;
-        this.ensureBotMessage();
+    // 2. UPDATED: Safely handles streaming chunks with <think> tags
+    updateContent(rawContent) {
+        if (this.messages.length === 0 || !this.isStreaming) return;
+        this.ensureBotMessage(); // Always run first
 
+        const { displayContent, thinking } = this.extractThinkingLocally(rawContent);
         const lastMessage = this.messages[this.messages.length - 1];
-        lastMessage.content = content;
+
+        lastMessage.content = displayContent;
+
+        if (thinking) {
+            lastMessage.thinking = thinking;
+            const msgEl = document.querySelector('.message:last-child');
+            if (msgEl) {
+                let thinkingContainer = msgEl.querySelector('.thinking-container');
+                if (!thinkingContainer) {
+                    thinkingContainer = this.createThinkingContainer('');
+                    msgEl.insertBefore(thinkingContainer, msgEl.querySelector('.message-content'));
+                }
+                thinkingContainer.querySelector('.thinking-content').textContent = thinking;
+            }
+        }
 
         const contentEl = document.querySelector('.message:last-child .message-content');
         if (contentEl) {
-            contentEl.innerHTML = this.formatContent(content);
+            contentEl.innerHTML = this.formatContent(displayContent);
         }
         this.smartScroll();
     }
 
-    finishMessage(content, thinking, timestamp, hasTools) {
+    // 3. UPDATED: Safely handles non-streaming models and finalizations
+    finishMessage(rawContent, backendThinking, timestamp, hasTools) {
         this.resetButtons();
         if (this.messages.length === 0) return;
 
-        const lastMessage = this.messages[this.messages.length - 1];
-        lastMessage.content = content;
-        lastMessage.thinking = thinking;
-        lastMessage.timestamp = timestamp;
-        lastMessage.has_tools = hasTools;
+        // --- THE CRITICAL FIX: Stops the user message from being overwritten ---
+        this.ensureBotMessage();
 
-        const msgEl = document.querySelector('.message:last-child');
+        const { displayContent, thinking: extractedThinking } = this.extractThinkingLocally(rawContent);
+        const finalThinking = backendThinking || extractedThinking;
+
+        const lastMessage = this.messages[this.messages.length - 1];
+        lastMessage.content = displayContent;
+        lastMessage.thinking = finalThinking;
+        lastMessage.timestamp = timestamp || lastMessage.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const msgEl = this.ensureBotMessage();
         if (!msgEl) return;
+        msgEl.classList.remove('streaming');
+
+        if (finalThinking) {
+            this.updateThinking(finalThinking);
+        }
 
         msgEl.classList.remove('streaming');
-        msgEl.querySelector('.message-content').innerHTML = this.formatContent(content);
+        const contentEl = msgEl.querySelector('.message-content');
+        if (contentEl) contentEl.innerHTML = this.formatContent(displayContent);
 
-        if (thinking && !msgEl.querySelector('.thinking-container')) {
-            const thinkingContainer = this.createThinkingContainer(thinking, true);
-            msgEl.insertBefore(thinkingContainer, msgEl.querySelector('.message-meta'));
+        if (finalThinking && !msgEl.querySelector('.thinking-container')) {
+            const thinkingContainer = this.createThinkingContainer(finalThinking, true);
+            msgEl.insertBefore(thinkingContainer, msgEl.querySelector('.message-content'));
         }
 
         // Handle Sources Dropdown
         const existingSources = msgEl.querySelector('.sources-container');
         if (existingSources) existingSources.remove();
 
-        const sourcesContainer = this.createSourcesContainer(content);
+        const sourcesContainer = this.createSourcesContainer(displayContent);
         if (sourcesContainer) {
-            msgEl.insertBefore(sourcesContainer, msgEl.querySelector('.message-meta'));
+            msgEl.insertBefore(sourcesContainer, msgEl.querySelector('.message-meta') || null);
         }
 
-        // Handle Tool Badge
-        const metaEl = msgEl.querySelector('.message-meta');
-        if (metaEl) {
-            if (lastMessage.has_tools === true) {
-                if (!metaEl.querySelector('.tool-badge')) {
-                    const badge = document.createElement('span');
-                    badge.className = 'tool-badge';
-                    badge.textContent = '🛠️ Tool Used';
-                    metaEl.insertBefore(badge, metaEl.firstChild);
-                }
-            }
-            if (timestamp && !metaEl.querySelector('.message-time')) {
-                const timeEl = document.createElement('span');
-                timeEl.className = 'message-time';
-                timeEl.textContent = timestamp;
-                metaEl.appendChild(timeEl);
-            }
+        // Handle Tool Badge and Timestamp
+        let metaEl = msgEl.querySelector('.message-meta');
+        if (!metaEl) {
+            metaEl = document.createElement('div');
+            metaEl.className = 'message-meta';
+            msgEl.appendChild(metaEl);
+        }
+
+        if (hasTools && !metaEl.querySelector('.tool-badge')) {
+            const badge = document.createElement('span');
+            badge.className = 'tool-badge';
+            badge.textContent = '🛠️ Tool Used';
+            metaEl.insertBefore(badge, metaEl.firstChild);
+        }
+        if (timestamp && !metaEl.querySelector('.message-time')) {
+            const timeEl = document.createElement('span');
+            timeEl.className = 'message-time';
+            timeEl.textContent = timestamp;
+            metaEl.appendChild(timeEl);
         }
 
         const total = Math.round(performance.now() - this.streamMetrics.startMs);

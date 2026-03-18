@@ -24,6 +24,7 @@ class OllamaProvider(LLMProvider):
         api_key: str | None = None,
     ):
         import httpx
+
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -34,7 +35,9 @@ class OllamaProvider(LLMProvider):
         tool_calls = []
 
         # First try markdown code blocks
-        pattern = r"\`\`\`(?:json)?\s*\n?(\{.*?\})\n?\`\`\`"
+        # Use greedy match for the content between the first { and last } inside the code block
+        # to handle nested JSON objects (e.g. arguments with nested objects).
+        pattern = r"\`\`\`(?:json)?\s*\n?(\{.*\}).*\n?\`\`\`"
         matches = re.findall(pattern, content, re.DOTALL)
 
         # Also try to find plain JSON tool calls ({"name": "...", "arguments": ...})
@@ -110,12 +113,20 @@ class OllamaProvider(LLMProvider):
                 f"{self.base_url}/api/chat",
                 json=payload,
                 headers=headers,
+                timeout=60.0,  # Shorter timeout for non-streaming to avoid indefinite hangs
             )
             response.raise_for_status()
             data = response.json()
 
             content = data.get("message", {}).get("content", "")
             thinking = data.get("message", {}).get("thinking", "")
+
+            # FIX: Translate inline <think> tags for models that put thoughts in content
+            if "<think>" in content:
+                content = content.replace("<think>", "__THINKING__\n").replace(
+                    "</think>", "\n__THINKING_END__\n"
+                )
+
             if thinking:
                 content = f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
             tool_calls = []
@@ -141,7 +152,9 @@ class OllamaProvider(LLMProvider):
                     # If we extracted tool calls, clear the content since it was just the tool call
                     content = ""
 
-            return LLMResponse(content=content, tool_calls=tool_calls)
+            return LLMResponse(
+                content=content, thinking=thinking, tool_calls=tool_calls
+            )
 
         except httpx.HTTPStatusError as e:
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")
@@ -164,12 +177,28 @@ class OllamaProvider(LLMProvider):
         # with tool call extraction. Fall back to non-streaming for these.
         # Reasoning models like qwen3 work fine with streaming.
         model_lower = self.model.lower()
-        is_reasoning_model = "qwen3" in model_lower or "reasoning" in model_lower
+
+        # Exclude instruct variants - they don't output thinking separately
+        if "instruct" in model_lower:
+            is_reasoning_model = False
+        else:
+            reasoning_keywords = [
+                "qwen3",
+                "reasoning",
+                "deepseek",
+                "qwq",
+                "-r1",
+                "qwen3.5",
+            ]
+            is_reasoning_model = any(
+                keyword in model_lower for keyword in reasoning_keywords
+            )
 
         if not is_reasoning_model and tools:
+            # Safely fall back to non-streaming for non-reasoning models like qwen3:4b-instruct
             return await self.chat(messages, tools, temperature)
 
-        # Use streaming for reasoning models
+        # Use streaming for actual reasoning models (including qwen3.5)
         return await self._chat_streaming_impl(messages, tools, temperature, on_chunk)
 
     async def _chat_streaming_impl(
@@ -208,6 +237,7 @@ class OllamaProvider(LLMProvider):
 
                 content = ""
                 thinking = ""
+                thinking_ended = False  # FIX: Use a flag instead of clearing the string
                 tool_calls = []
                 has_seen_non_json = False  # Track if we've seen actual text content
 
@@ -228,7 +258,7 @@ class OllamaProvider(LLMProvider):
                         if not thinking:
                             if on_chunk:
                                 on_chunk("__THINKING__")
-                        thinking = msg_thinking
+                        thinking += msg_thinking  # FIX: Accumulate instead of overwrite
                         if on_chunk:
                             on_chunk(msg_thinking)
 
@@ -236,10 +266,18 @@ class OllamaProvider(LLMProvider):
                     chunk = msg.get("content", "")
                     if chunk:
                         # If we had thinking, add end marker before content
-                        if thinking:
+                        if thinking and not thinking_ended:
                             if on_chunk:
                                 on_chunk("__THINKING_END__")
-                            thinking = None  # Clear so we don't add again
+                            thinking_ended = (
+                                True  # FIX: Use flag so thinking string isn't lost
+                            )
+
+                        # FIX: Translate inline <think> tags from models like DeepSeek-R1
+                        if "<think>" in chunk:
+                            chunk = chunk.replace("<think>", "__THINKING__")
+                        if "</think>" in chunk:
+                            chunk = chunk.replace("</think>", "__THINKING_END__")
 
                         # Skip chunks that are part of markdown tool calls or tool schemas
                         # until we've seen some normal text content
@@ -268,7 +306,9 @@ class OllamaProvider(LLMProvider):
                         # If we haven't marked non-JSON yet, flush accumulated content first
                         if not has_seen_non_json:
                             if content:
-                                extracted = self._extract_tool_calls_from_content(content)
+                                extracted = self._extract_tool_calls_from_content(
+                                    content
+                                )
                                 if extracted:
                                     tool_calls.extend(extracted)
                                     content = ""
@@ -295,20 +335,13 @@ class OllamaProvider(LLMProvider):
                     if data.get("done"):
                         break
 
-            # Combine thinking with content if present
-            final_content = content
-            if thinking:
-                final_content = (
-                    f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
-                )
-
             # Also check content for markdown tool calls (qwen2.5-coder style)
-            if final_content:
-                extracted = self._extract_tool_calls_from_content(final_content)
+            if content:
+                extracted = self._extract_tool_calls_from_content(content)
                 if extracted:
                     # Check if content is ONLY a tool call (wrapped in markdown or plain)
                     # If so, treat it as tool call only, no text response
-                    content_stripped = final_content.strip()
+                    content_stripped = content.strip()
                     is_only_tool_call = (
                         content_stripped.startswith("```")
                         and content_stripped.endswith("```")
@@ -321,31 +354,33 @@ class OllamaProvider(LLMProvider):
 
                     if is_only_tool_call:
                         tool_calls = extracted
-                        final_content = ""
+                        content = ""
                     else:
                         # Keep any text before the tool call as the actual response
-                        first_tc_start = len(final_content)
+                        first_tc_start = len(content)
                         for tc in extracted:
                             tc_json = json.dumps(
                                 {"name": tc.name, "arguments": tc.arguments}
                             )
-                            pos = final_content.find(tc_json)
+                            pos = content.find(tc_json)
                             if pos >= 0 and pos < first_tc_start:
                                 first_tc_start = pos
 
-                        text_before = final_content[:first_tc_start].strip()
+                        text_before = content[:first_tc_start].strip()
                         if text_before:
                             text_before = re.sub(
                                 r"</?response>", "", text_before, flags=re.IGNORECASE
                             ).strip()
 
                         if text_before:
-                            final_content = text_before
+                            content = text_before
                         else:
                             tool_calls = extracted
-                            final_content = ""
+                            content = ""
 
-            return LLMResponse(content=final_content, tool_calls=tool_calls)
+            return LLMResponse(
+                content=content, thinking=thinking, tool_calls=tool_calls
+            )
 
         except httpx.HTTPStatusError as e:
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")
@@ -369,13 +404,12 @@ class OllamaProvider(LLMProvider):
         # Ollama exposes an OpenAI compatible API at /v1
         openai_client = AsyncOpenAI(
             base_url=f"{self.base_url}/v1",
-            api_key=self.api_key or "ollama"  # dummy API key required by client
+            api_key=self.api_key or "ollama",  # dummy API key required by client
         )
 
         # Use instructor with JSON mode for local open-source models
         instructor_client = instructor.from_openai(
-            openai_client,
-            mode=instructor.Mode.JSON
+            openai_client, mode=instructor.Mode.JSON
         )
 
         return await instructor_client.chat.completions.create(

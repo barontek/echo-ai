@@ -54,8 +54,6 @@ current_session_id: str | None = None
 message_history: list[dict[str, Any]] = []
 
 
-
-
 def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
     """Filter messages for UI rendering, removing raw tool/system noise."""
     filtered = []
@@ -65,25 +63,36 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         r"System Note: Tools executed",
         r"Tool '.*' returned:",
         r"^FAILED: .*",
-        r"\[Persistent Memory\]"
+        r"\[Persistent Memory\]",
     ]
     import re
 
     for msg in messages:
         role = getattr(msg, "role", msg.get("role") if isinstance(msg, dict) else "")
-        content = getattr(msg, "content", msg.get("content") if isinstance(msg, dict) else "") or ""
+        content = (
+            getattr(msg, "content", msg.get("content") if isinstance(msg, dict) else "")
+            or ""
+        )
 
         # Extract metadata if available
-        metadata = getattr(msg, "metadata", msg.get("metadata") if isinstance(msg, dict) else None)
-        timestamp = getattr(msg, "timestamp", msg.get("timestamp") if isinstance(msg, dict) else "")
-        thinking = getattr(msg, "thinking", msg.get("thinking") if isinstance(msg, dict) else "")
+        metadata = getattr(
+            msg, "metadata", msg.get("metadata") if isinstance(msg, dict) else None
+        )
+        timestamp = getattr(
+            msg, "timestamp", msg.get("timestamp") if isinstance(msg, dict) else ""
+        )
+        thinking = getattr(
+            msg, "thinking", msg.get("thinking") if isinstance(msg, dict) else ""
+        )
 
         if metadata and isinstance(metadata, dict):
             timestamp = timestamp or metadata.get("timestamp", "")
             thinking = thinking or metadata.get("thinking", "")
 
         # 1. Handle assistant messages with tool calls first
-        tool_calls = getattr(msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None)
+        tool_calls = getattr(
+            msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None
+        )
         has_tools = bool(tool_calls)
 
         # 2. Skip logic (system and tool messages are always skipped)
@@ -98,7 +107,9 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
                 continue
 
             # Ignore internal framework strings
-            is_internal = any(re.search(pattern, content) for pattern in internal_patterns)
+            is_internal = any(
+                re.search(pattern, content) for pattern in internal_patterns
+            )
             if is_internal:
                 continue
 
@@ -121,7 +132,6 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         filtered.append(msg_dict)
 
     return filtered
-
 
 
 def _create_runtime_agent(
@@ -203,12 +213,11 @@ async def index():
     return FileResponse("static/index.html")
 
 
-
-
 @app.get("/workflows")
 async def workflows_page():
     """Serve the dedicated workflows page."""
     return FileResponse("static/workflows.html")
+
 
 @app.get("/static/{path:path}")
 async def static_files(path: str):
@@ -268,7 +277,7 @@ async def create_session():
         agent.session_manager.create_session()
         if agent.session_manager.current_session:
             current_session_id = agent.session_manager.current_session.id
-            agent.messages = [] # Clear agent's internal message history
+            agent.messages = []  # Clear agent's internal message history
     message_history = []
     return {"session_id": current_session_id}
 
@@ -284,11 +293,7 @@ async def load_session(session_id: str):
         title = None
         if agent.session_manager.current_session:
             title = agent.session_manager.current_session.title
-        return {
-            "session_id": session_id,
-            "title": title,
-            "messages": message_history
-        }
+        return {"session_id": session_id, "title": title, "messages": message_history}
 
     return {"session_id": session_id, "messages": [], "title": None}
 
@@ -322,10 +327,17 @@ async def rename_session(payload: SessionRenamePayload):
             raise HTTPException(status_code=404, detail="Session not found")
         db.commit()
 
-    if agent.session_manager.current_session and agent.session_manager.current_session.id == payload.session_id:
+    if (
+        agent.session_manager.current_session
+        and agent.session_manager.current_session.id == payload.session_id
+    ):
         agent.session_manager.current_session.title = payload.new_title
 
-    return {"status": "ok", "session_id": payload.session_id, "title": payload.new_title}
+    return {
+        "status": "ok",
+        "session_id": payload.session_id,
+        "title": payload.new_title,
+    }
 
 
 @app.post("/api/sessions/purge")
@@ -363,10 +375,18 @@ async def workflow_run(payload: WorkflowRunPayload):
 
     timestamp = datetime.now().strftime("%H:%M")
     user_content = f"[Workflow: {payload.workflow_id}] {payload.topic}"
-    message_history.append({"role": "user", "content": user_content, "timestamp": timestamp})
-    message_history.append({"role": "assistant", "content": content, "timestamp": timestamp})
+    message_history.append(
+        {"role": "user", "content": user_content, "timestamp": timestamp}
+    )
+    message_history.append(
+        {"role": "assistant", "content": content, "timestamp": timestamp}
+    )
 
-    return {"workflow_id": payload.workflow_id, "response": content, "timestamp": timestamp}
+    return {
+        "workflow_id": payload.workflow_id,
+        "response": content,
+        "timestamp": timestamp,
+    }
 
 
 @app.post("/api/chat")
@@ -399,6 +419,21 @@ async def chat(message: ChatPayload):
     return {"response": response, "messages": message_history}
 
 
+async def _generate_title_async(active_agent: "Agent") -> None:
+    """Generate title in background without blocking."""
+    try:
+        new_title = await active_agent.generate_title()
+        if (
+            new_title
+            and active_agent.session_manager
+            and active_agent.session_manager.current_session
+        ):
+            active_agent.session_manager.current_session.title = new_title
+            active_agent.save_session()
+    except Exception as e:
+        logger.debug(f"Background title generation failed: {e}")
+
+
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     """Handle chat WebSocket connection with non-blocking stop support."""
@@ -426,9 +461,16 @@ async def websocket_chat(websocket: WebSocket):
             return
 
         timestamp = datetime.now().strftime("%H:%M")
-        message_history.append({"role": "user", "content": prompt, "timestamp": timestamp})
+        message_history.append(
+            {"role": "user", "content": prompt, "timestamp": timestamp}
+        )
         await websocket.send_json(
-            {"type": "message", "role": "user", "content": prompt, "timestamp": timestamp}
+            {
+                "type": "message",
+                "role": "user",
+                "content": prompt,
+                "timestamp": timestamp,
+            }
         )
 
         accumulated_content = ""
@@ -442,7 +484,10 @@ async def websocket_chat(websocket: WebSocket):
                     msg = await send_queue.get()
                     if msg is None:
                         break
-                    await websocket.send_json(msg)
+                    try:
+                        await websocket.send_json(msg)
+                    except (WebSocketDisconnect, RuntimeError):
+                        break
             except Exception as e:
                 logger.debug(f"WebSocket sender loop error: {e}")
 
@@ -496,30 +541,42 @@ async def websocket_chat(websocket: WebSocket):
             streaming_task = None
 
         timestamp = datetime.now().strftime("%H:%M")
-        message_history.append({
-            "role": "assistant",
-            "content": accumulated_content,
-            "timestamp": timestamp,
-            "thinking": thinking_content,
-            "has_tools": has_tools,
-        })
+        message_history.append(
+            {
+                "role": "assistant",
+                "content": accumulated_content,
+                "timestamp": timestamp,
+                "thinking": thinking_content,
+                "has_tools": has_tools,
+            }
+        )
 
-        # Trigger auto-title during conversation if it was a new session
-        if active_agent.session_manager and active_agent.session_manager.current_session and not active_agent.session_manager.current_session.title:
-             new_title = await active_agent.generate_title()
-             if new_title:
-                 active_agent.session_manager.current_session.title = new_title
-                 active_agent.save_session()
+        # Send done message first
+        await websocket.send_json(
+            {
+                "type": "done",
+                "content": accumulated_content,
+                "thinking": thinking_content,
+                "timestamp": timestamp,
+                "has_tools": has_tools,
+                "session_id": active_agent.session_manager.current_session.id
+                if active_agent.session_manager
+                and active_agent.session_manager.current_session
+                else None,
+                "title": active_agent.session_manager.current_session.title
+                if active_agent.session_manager
+                and active_agent.session_manager.current_session
+                else None,
+            }
+        )
 
-        await websocket.send_json({
-            "type": "done",
-            "content": accumulated_content,
-            "thinking": thinking_content,
-            "timestamp": timestamp,
-            "has_tools": has_tools,
-            "session_id": active_agent.session_manager.current_session.id if active_agent.session_manager and active_agent.session_manager.current_session else None,
-            "title": active_agent.session_manager.current_session.title if active_agent.session_manager and active_agent.session_manager.current_session else None
-        })
+        # Generate title in background (after sending done)
+        if (
+            active_agent.session_manager
+            and active_agent.session_manager.current_session
+            and not active_agent.session_manager.current_session.title
+        ):
+            asyncio.create_task(_generate_title_async(active_agent))
 
     try:
         # 1. Wait for config
@@ -532,17 +589,29 @@ async def websocket_chat(websocket: WebSocket):
             session_id=config.session_id,
         )
         # Trigger auto-title if needed
-        if active_agent.session_manager and active_agent.session_manager.current_session and not active_agent.session_manager.current_session.title:
+        if (
+            active_agent.session_manager
+            and active_agent.session_manager.current_session
+            and not active_agent.session_manager.current_session.title
+        ):
             new_title = await active_agent.generate_title()
             if new_title:
                 active_agent.session_manager.current_session.title = new_title
                 active_agent.save_session()
 
-        await websocket.send_json({
-            "type": "ready",
-            "session_id": active_agent.session_manager.current_session.id if active_agent.session_manager and active_agent.session_manager.current_session else None,
-            "title": active_agent.session_manager.current_session.title if active_agent.session_manager and active_agent.session_manager.current_session else None
-        })
+        await websocket.send_json(
+            {
+                "type": "ready",
+                "session_id": active_agent.session_manager.current_session.id
+                if active_agent.session_manager
+                and active_agent.session_manager.current_session
+                else None,
+                "title": active_agent.session_manager.current_session.title
+                if active_agent.session_manager
+                and active_agent.session_manager.current_session
+                else None,
+            }
+        )
 
         # 2. Continuous message loop
         while True:
@@ -565,7 +634,7 @@ async def websocket_chat(websocket: WebSocket):
 
                 if streaming_task and not streaming_task.done():
                     streaming_task.cancel()
-                    await asyncio.sleep(0.1) # Small delay to ensure cleanup
+                    await asyncio.sleep(0.1)  # Small delay to ensure cleanup
 
                 stop_requested = False
                 streaming_task = asyncio.create_task(run_agent(prompt))

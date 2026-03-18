@@ -823,7 +823,7 @@ class EchoAI {
             const listMatch = trimmed.match(/^[\-\*]\s+(.+)$/);
             if (listMatch) {
                 inList = true;
-                listItems.push(`<li>${this.escapeHtml(listMatch[1])}</li>`);
+                listItems.push(`<li>${this.formatInline(listMatch[1])}</li>`);
                 continue;
             } else if (inList) {
                 flushList();
@@ -845,6 +845,15 @@ class EchoAI {
         flushList();
 
         return result.join('<br>');
+    }
+
+    formatInline(text) {
+        let processed = text
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        return this.escapeHtml(processed);
     }
 
     escapeAndFormatLine(line) {

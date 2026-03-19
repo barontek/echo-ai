@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi.testclient import TestClient
-from src.agentframework.web_api import app, _state, AppState
+from src.agentframework.web_api import app
 import src.agentframework.web_api as web_api
 
 client = TestClient(app)

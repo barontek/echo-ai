@@ -41,9 +41,9 @@ typecheck:
 	.venv/bin/pyright src/
 
 verify:
-	PYTHONPATH=src .venv/bin/pytest tests/ -q
-	.venv/bin/ruff check src/ tests/
-	.venv/bin/pyright src/
+	PYTHONPATH=src python -m pytest tests/ -q
+	python -m ruff check src/ tests/
+	python -m pyright src/
 
 security:
 	.venv/bin/pip-audit || true

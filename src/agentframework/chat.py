@@ -15,6 +15,7 @@ from .chat_runtime import (
     fetch_titles,
     get_input,
 )
+from .constants import THINKING_END, THINKING_START
 
 console = Console(color_system="256")
 
@@ -58,18 +59,16 @@ async def chat_session(agent: Agent, session_name: str | None = None):
 
             def on_chunk(chunk: str):
                 nonlocal in_thinking
-                if "__THINKING__" in chunk:
-                    # Transition from talking to thinking - add newline
+                if THINKING_START in chunk:
                     if not in_thinking:
                         chunk = "\n" + chunk
                     in_thinking = True
-                    chunk = chunk.replace("__THINKING__", "")
+                    chunk = chunk.replace(THINKING_START, "")
                     if not chunk:
                         return
-                if "__THINKING_END__" in chunk:
-                    # Transition from thinking to talking - add newline
+                if THINKING_END in chunk:
                     in_thinking = False
-                    chunk = chunk.replace("__THINKING_END__", "\n")
+                    chunk = chunk.replace(THINKING_END, "\n")
                     if not chunk:
                         return
 

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi.testclient import TestClient
-from src.agentframework.web_api import app
+from src.agentframework.web_api import app, _state, AppState
 import src.agentframework.web_api as web_api
 
 client = TestClient(app)
@@ -19,6 +19,30 @@ client = TestClient(app)
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def ensure_state():
+    """Ensure application state is initialized for each test."""
+    state = web_api.get_state()
+    # Close any existing real agent before replacing with mock
+    if state.agent is not None and not isinstance(state.agent, MagicMock):
+        try:
+            state.agent.close()
+        except Exception:
+            pass
+    # Replace with mock
+    from src.agentframework.agent import Agent
+
+    state.agent = MagicMock(spec=Agent)
+    state.agent.session_manager = MagicMock()
+    state.agent.session_manager.SessionLocal = MagicMock()
+
+    yield
+
+    state.agent = None
+    state.current_session_id = None
+    state.message_history = []
 
 
 @pytest.fixture
@@ -141,7 +165,8 @@ class TestModelsAndConfig:
         response = client.post("/api/config", json=payload)
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
-        assert web_api.agent == mock_agent_instance
+        state = web_api.get_state()
+        assert state.agent == mock_agent_instance
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +176,8 @@ class TestModelsAndConfig:
 
 class TestSessions:
     def test_list_sessions_available(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         s1 = MagicMock(id="session1", title="Title 1", created_at=datetime.now())
         s2 = MagicMock(id="session2", title=None, created_at=datetime.now())
         mock_agent.session_manager.list_sessions.return_value = [s1, s2]
@@ -165,7 +191,8 @@ class TestSessions:
         assert data["sessions"][1]["title"] is None
 
     def test_list_sessions_response_structure(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         s1 = MagicMock(id="s1", title="Chat about Python", created_at=datetime.now())
         s2 = MagicMock(id="s2", title=None, created_at=datetime.now())
         mock_agent.session_manager.list_sessions.return_value = [s1, s2]
@@ -178,7 +205,8 @@ class TestSessions:
             assert "created_at" in session
 
     def test_list_sessions_lazy_init(self, monkeypatch, mock_agent):
-        web_api.agent = None
+        state = web_api.get_state()
+        state.agent = None
         monkeypatch.setattr(
             web_api, "_create_runtime_agent", lambda *args, **kwargs: mock_agent
         )
@@ -189,18 +217,20 @@ class TestSessions:
         response = client.get("/api/sessions")
         assert response.status_code == 200
         assert response.json()["sessions"][0]["id"] == "lazy-session"
-        assert web_api.agent == mock_agent
+        assert state.agent == mock_agent
 
     def test_create_session(self, monkeypatch, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_agent.session_manager.current_session = MagicMock(id="new-session-id")
         response = client.post("/api/sessions")
         assert response.status_code == 200
         assert response.json() == {"session_id": "new-session-id"}
-        assert web_api.current_session_id == "new-session-id"
+        assert state.current_session_id == "new-session-id"
 
     def test_load_session_response_structure(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_agent.messages = [
             {"role": "user", "content": "hi", "metadata": {"timestamp": "12:00"}}
         ]
@@ -218,7 +248,8 @@ class TestSessions:
         assert len(data["messages"]) == 1
 
     def test_load_session_no_title(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_agent.messages = [
             {"role": "user", "content": "hi", "metadata": {"timestamp": "12:00"}}
         ]
@@ -232,7 +263,8 @@ class TestSessions:
         assert response.json()["title"] is None
 
     def test_load_session_not_found(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_agent.messages = []
         mock_agent.load_session.return_value = "Session not found: nonexistent"
         mock_agent.session_manager.current_session = None
@@ -244,7 +276,8 @@ class TestSessions:
         assert data["messages"] == []
 
     def test_load_session_no_agent(self):
-        web_api.agent = None
+        state = web_api.get_state()
+        state.agent = None
         response = client.get("/api/sessions/any-session")
         assert response.status_code == 200
         assert response.json() == {
@@ -254,7 +287,8 @@ class TestSessions:
         }
 
     def test_delete_session(self, monkeypatch, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_db = MagicMock()
         mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
             mock_db
@@ -264,7 +298,8 @@ class TestSessions:
         assert mock_db.query.called
 
     def test_rename_session_success(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_db = MagicMock()
         mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
             mock_db
@@ -281,7 +316,8 @@ class TestSessions:
         assert mock_agent.session_manager.current_session.title == "new title"
 
     def test_rename_session_not_found(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_db = MagicMock()
         mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
             mock_db
@@ -293,7 +329,8 @@ class TestSessions:
         assert response.status_code == 404
 
     def test_purge_sessions(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_agent.session_manager.purge_sessions.return_value = 5
 
         response = client.post("/api/sessions/purge")
@@ -303,7 +340,8 @@ class TestSessions:
         assert data["purged_count"] == 5
 
     def test_purge_sessions_with_days(self, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_agent.session_manager.purge_sessions.return_value = 2
 
         response = client.post("/api/sessions/purge?days=7")
@@ -319,7 +357,8 @@ class TestSessions:
 class TestChat:
     @pytest.mark.asyncio
     async def test_chat_endpoint(self, monkeypatch, mock_agent):
-        web_api.agent = mock_agent
+        state = web_api.get_state()
+        state.agent = mock_agent
         mock_agent.run = AsyncMock(return_value="Response")
         response = client.post("/api/chat", json={"content": "Hello"})
         assert response.status_code == 200
@@ -434,7 +473,7 @@ class TestWebSocket:
                 while True:
                     msg = websocket.receive_json()
                     if msg["type"] == "done":
-                        assert msg["content"] == "Stopped."
+                        assert msg["content"] == "Response stopped by user."
                         break
 
 
@@ -464,8 +503,9 @@ class TestWorkflows:
                 assert state["agent"] == "agent"
                 return {"final": "done"}
 
-        monkeypatch.setattr(web_api, "agent", "agent")
-        monkeypatch.setattr(web_api, "message_history", [])
+        state = web_api.get_state()
+        state.agent = "agent"  # type: ignore[assignment] - Test mock value
+        state.message_history = []
         monkeypatch.setattr(
             web_api, "get_workflow", lambda _workflow_id: FakeWorkflow()
         )
@@ -473,15 +513,15 @@ class TestWorkflows:
         payload = web_api.WorkflowRunPayload(
             workflow_id="research_and_summarize", topic="hello"
         )
-        result = await web_api.workflow_run(payload)
+        result = await web_api.workflow_run(payload, state)
         assert result["workflow_id"] == "research_and_summarize"
         assert result["response"] == "done"
-        assert len(web_api.message_history) == 2
+        assert len(state.message_history) == 2
 
     @pytest.mark.asyncio
     async def test_workflows_page_serves_static_file(self):
         response = await web_api.workflows_page()
-        assert response.path.endswith("static/workflows.html")
+        assert str(response.path).endswith("static/workflows.html")
 
 
 # ---------------------------------------------------------------------------

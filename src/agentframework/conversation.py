@@ -10,6 +10,25 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .constants import THINKING_END, THINKING_START
+
+
+# Cache tiktoken encoder for performance (avoid recreating on every call)
+_TIKTOKEN_ENCODER: Any | None = None
+
+
+def _get_tiktoken_encoder():
+    """Get or create the cached tiktoken encoder."""
+    global _TIKTOKEN_ENCODER
+    if _TIKTOKEN_ENCODER is None:
+        try:
+            import tiktoken
+
+            _TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            return None
+    return _TIKTOKEN_ENCODER
+
 
 @dataclass
 class Message:
@@ -35,20 +54,17 @@ def sanitize_json(json_str: str) -> str:
 
 
 def estimate_tokens(text: str) -> int:
-    """Count tokens using tiktoken with cl100k_base encoding."""
-    try:
-        import tiktoken
-
-        enc = tiktoken.get_encoding("cl100k_base")
+    """Count tokens using tiktoken with cl100k_base encoding (cached)."""
+    enc = _get_tiktoken_encoder()
+    if enc is not None:
         return len(enc.encode(text))
-    except Exception:
-        return len(text) // 4
+    return len(text) // 4
 
 
 def create_assistant_message(content: str, thinking: str | None = None) -> Message:
     """Create an assistant message, wrapping content with thinking markers if provided."""
     if thinking:
-        content = f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
+        content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
     return Message(role="assistant", content=content)
 
 
@@ -129,7 +145,9 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
     for msg in reversed(messages):
         content = msg.content
         if msg.role == "tool" and len(content) > 10000:
-            content = content[:10000] + f"\n\n[Output truncated - was {len(content)} chars]"
+            content = (
+                content[:10000] + f"\n\n[Output truncated - was {len(content)} chars]"
+            )
 
         msg_tokens = estimate_tokens(content)
         if total_tokens + msg_tokens > max_tokens:
@@ -154,7 +172,10 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
                     if i > 0 and messages[i - 1].role == "user":
                         result.insert(
                             0,
-                            Message(role=messages[i - 1].role, content=messages[i - 1].content),
+                            Message(
+                                role=messages[i - 1].role,
+                                content=messages[i - 1].content,
+                            ),
                         )
                     break
 

@@ -733,6 +733,7 @@ class EchoAI {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         contentDiv.innerHTML = this.formatContent(message.content || '');
+        this.highlightCode(contentDiv);
         div.appendChild(contentDiv);
 
 
@@ -808,10 +809,20 @@ class EchoAI {
     formatContent(content) {
         if (!content) return '';
         try {
-            const html = marked.parse(content, { gfm: true });
-            return DOMPurify.sanitize(html);
+            const html = marked.parse(content, { gfm: true, breaks: true });
+            const clean = DOMPurify.sanitize(html, {
+                ADD_TAGS: ['pre', 'code'],
+                ADD_ATTR: ['class']
+            });
+            return clean;
         } catch (e) {
             return this.escapeHtml(content);
+        }
+    }
+
+    highlightCode(container) {
+        if (typeof Prism !== 'undefined' && Prism.highlightAllUnder) {
+            Prism.highlightAllUnder(container);
         }
     }
 

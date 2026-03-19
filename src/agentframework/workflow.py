@@ -98,7 +98,7 @@ class WorkflowGraph:
             yield current_node_name, state
 
             node = self.nodes[current_node_name]
-            
+
             # Wait for execution payload to return manipulated state
             try:
                 state = await node.func(state)
@@ -117,7 +117,7 @@ class WorkflowGraph:
                 break  # Implicit terminal end if no edges exist
 
             edge = edges[0]
-            
+
             if isinstance(edge, ParallelEdge):
                 # Execute targets concurrently
                 coroutines = []
@@ -126,13 +126,13 @@ class WorkflowGraph:
                     if tgt not in self.nodes:
                         raise ValueError(f"Parallel target '{tgt}' not mapped to node list")
                     coroutines.append(self.nodes[tgt].func(state.copy()))
-                
+
                 try:
                     results = await asyncio.gather(*coroutines)
                 except Interrupt:
                     yield "__INTERRUPT__", state
                     break
-                    
+
                 state = edge.reducer(list(results))
                 current_node_name = edge.next_node
             elif callable(edge.condition):
@@ -148,7 +148,7 @@ class WorkflowGraph:
         lines = ["stateDiagram-v2"]
         if self.entry_point:
             lines.append(f"    [*] --> {self.entry_point}")
-        
+
         for source, edges in self.edges.items():
             for edge in edges:
                 if isinstance(edge, ParallelEdge):
@@ -159,7 +159,7 @@ class WorkflowGraph:
                 else:
                     target = edge.condition if isinstance(edge.condition, str) else "DynamicRoute"
                     lines.append(f"    {source} --> {target}")
-                    
+
         lines.append(f"    {self.END} --> [*]")
         return "\n".join(lines)
 

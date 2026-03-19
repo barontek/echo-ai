@@ -13,11 +13,13 @@ from src.agentframework.cli import run_single, interactive_mode
 # Chat commands
 # ---------------------------------------------------------------------------
 
+
 def test_normalize_command():
     assert normalize_command("/quit") == "/exit"
     assert normalize_command("/sessions") == "/chats"
     assert normalize_command("/unknown") == "/unknown"
     assert normalize_command("/help") == "/help"
+
 
 def test_execute_exit_command():
     agent = MagicMock()
@@ -25,6 +27,7 @@ def test_execute_exit_command():
     result = execute_command("/exit", "", agent, console)
     assert result is False
     assert agent.save_session.called
+
 
 def test_execute_new_command():
     agent = MagicMock()
@@ -35,11 +38,13 @@ def test_execute_new_command():
     assert len(agent.messages) == 0
     assert console.clear.called
 
+
 def test_execute_save_command():
     agent = MagicMock()
     console = MagicMock()
     execute_command("/save", " my_chat ", agent, console)
     agent.save_session.assert_called_with("my_chat")
+
 
 def test_execute_load_command():
     agent = MagicMock()
@@ -47,11 +52,13 @@ def test_execute_load_command():
     execute_command("/load", " chat1 ", agent, console)
     agent.load_session.assert_called_with("chat1")
 
+
 def test_execute_load_command_usage():
     agent = MagicMock()
     console = MagicMock()
     execute_command("/load", "  ", agent, console)
     assert "Usage" in console.print.call_args[0][0]
+
 
 def test_execute_chats_command():
     agent = MagicMock()
@@ -62,6 +69,7 @@ def test_execute_chats_command():
     printed = [args[0][0] for args in console.print.call_args_list]
     assert any("s1" in p for p in printed)
 
+
 def test_execute_undo_redo():
     agent = MagicMock()
     console = MagicMock()
@@ -69,6 +77,7 @@ def test_execute_undo_redo():
     assert agent.undo.called
     execute_command("/redo", "", agent, console)
     assert agent.redo.called
+
 
 def test_execute_model_switch():
     agent = MagicMock()
@@ -79,17 +88,20 @@ def test_execute_model_switch():
         assert agent.config.model == "gpt-4"
         assert mock_get.called
 
+
 def test_execute_temperature_switch():
     agent = MagicMock()
     console = MagicMock()
     execute_command("/temperature", " 0.8 ", agent, console)
     assert agent.config.temperature == 0.8
 
+
 def test_execute_temperature_invalid():
     agent = MagicMock()
     console = MagicMock()
     execute_command("/temperature", " 2.5 ", agent, console)
     assert "Invalid" in console.print.call_args[0][0]
+
 
 @pytest.mark.asyncio
 async def test_run_single():
@@ -105,34 +117,44 @@ async def test_run_single():
 # Interactive mode & runtime (from test_cli_runtime_extended.py)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_interactive_mode_exit():
     agent = MagicMock()
-    with patch("src.agentframework.cli.console.input", return_value="/exit"), \
-         patch("src.agentframework.cli.console.print") as mock_print:
+    with (
+        patch("src.agentframework.cli.console.input", return_value="/exit"),
+        patch("src.agentframework.cli.console.print") as mock_print,
+    ):
         await interactive_mode(agent)
         assert agent.save_session.called
         assert any("Goodbye" in str(args) for args in mock_print.call_args_list)
+
 
 @pytest.mark.asyncio
 async def test_interactive_mode_commands():
     agent = MagicMock()
     inputs = ["/help", "", "/exit"]
-    with patch("src.agentframework.cli.console.input", side_effect=inputs), \
-         patch("src.agentframework.cli.console.print") as mock_print:
+    with (
+        patch("src.agentframework.cli.console.input", side_effect=inputs),
+        patch("src.agentframework.cli.console.print") as mock_print,
+    ):
         await interactive_mode(agent)
         assert any("Commands:" in str(args) for args in mock_print.call_args_list)
+
 
 @pytest.mark.asyncio
 async def test_interactive_mode_run_streaming():
     agent = MagicMock()
     agent.run_streaming = AsyncMock()
     inputs = ["hello", "/exit"]
-    with patch("src.agentframework.cli.console.input", side_effect=inputs), \
-         patch("src.agentframework.cli.sys.stdout.write") as mock_write:
+    with (
+        patch("src.agentframework.cli.console.input", side_effect=inputs),
+        patch("src.agentframework.cli.sys.stdout.write") as mock_write,
+    ):
         await interactive_mode(agent)
         agent.run_streaming.assert_called_once()
         assert mock_write.called
+
 
 @pytest.mark.asyncio
 async def test_interactive_mode_keyboard_interrupt():
@@ -141,14 +163,17 @@ async def test_interactive_mode_keyboard_interrupt():
         await interactive_mode(agent)
         assert agent.save_session.called
 
+
 @pytest.mark.asyncio
 async def test_run_single_thinking_markers():
+    from src.agentframework.constants import THINKING_END, THINKING_START
+
     agent = MagicMock()
 
     async def mock_run_streaming(task, on_chunk):
-        on_chunk("__THINKING__")
+        on_chunk(THINKING_START)
         on_chunk("thoughts")
-        on_chunk("__THINKING_END__")
+        on_chunk(THINKING_END)
         on_chunk("actual response")
         return "full"
 

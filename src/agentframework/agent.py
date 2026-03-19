@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 from uuid import uuid4
 
-from .providers import LLMProvider, get_provider, LLMToolCall
+from .providers import LLMProvider, get_provider, LLMToolCall, LLMResponse
 from .tools import Tool, ToolResult
 from .session import SessionManager, ChangeTracker
 from .conversation import (
@@ -230,106 +230,35 @@ class Agent:
             temperature=self.config.temperature,
         )
 
+    async def _call_llm(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]] | None,
+        on_chunk: Callable[[str], None] | None = None,
+    ) -> LLMResponse:
+        """Call the LLM, using streaming if available and on_chunk is provided."""
+        if on_chunk is not None:
+            try:
+                return await self.llm.chat_streaming(
+                    messages=messages,
+                    tools=tools,
+                    temperature=self.config.temperature,
+                    on_chunk=on_chunk,
+                )
+            except NotImplementedError:
+                pass
+        return await self.llm.chat(
+            messages=messages,
+            tools=tools,
+            temperature=self.config.temperature,
+        )
+
     async def _run_loop(
         self, messages: list[Message], thinking_process: str | None = None
     ) -> tuple[str, list[Message]]:
-        """Main agent loop - get response, execute tools, repeat. Returns (response, updated_messages)."""
-        current_messages = list(messages)
-        request_id = str(uuid4())
-
-        self.callback_manager.on_run_start(
-            request_id, current_messages[-1].content if current_messages else ""
-        )
-
-        max_msgs = getattr(self.config, "max_history_messages", 20)
-        if self.memory_manager:
-            current_messages = await self.memory_manager.summarize_if_needed(
-                agent_messages=current_messages, llm=self.llm, max_messages=max_msgs
-            )
-            self.messages = list(current_messages)
-
-        for iteration in range(self.config.max_iterations):
-            logger.debug(
-                "agent_stream_iteration_start",
-                extra={"request_id": request_id, "iteration": iteration},
-            )
-            llm_messages = await self._prepare_messages(current_messages)
-
-            self.callback_manager.on_llm_start(request_id, llm_messages)
-            response = await self.llm.chat(
-                messages=llm_messages,
-                tools=get_tool_schemas(self.config.tools),
-                temperature=self.config.temperature,
-            )
-            self.callback_manager.on_llm_end(request_id, response)
-
-            if not response.tool_calls:
-                logger.debug(
-                    "agent_iteration_final",
-                    extra={"request_id": request_id, "iteration": iteration},
-                )
-                final_content = response.content or ""
-                self.callback_manager.on_run_end(request_id, final_content)
-                assistant_msg = create_assistant_message(
-                    final_content, response.thinking or thinking_process
-                )
-                current_messages.append(assistant_msg)
-                return final_content, current_messages
-
-            if iteration == 0 and response.thinking:
-                thinking_process = response.thinking
-
-            # Record assistant's tool-calling message in history
-            tool_call_dicts = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {
-                        "name": tc.name,
-                        "arguments": json.dumps(tc.arguments)
-                        if isinstance(tc.arguments, dict)
-                        else tc.arguments,
-                    },
-                }
-                for tc in response.tool_calls
-            ]
-            assistant_msg = Message(
-                role="assistant",
-                content=response.content or "",
-                tool_calls=tool_call_dicts,
-            )
-            current_messages.append(assistant_msg)
-            if self.session_manager:
-                self.session_manager.add_message(
-                    "assistant", assistant_msg.content, tool_calls=tool_call_dicts
-                )
-
-            tool_messages, updated_messages = await self._execute_tool_calls(
-                response.tool_calls,
-                current_messages,
-                request_id=request_id,
-                iteration=iteration,
-            )
-            current_messages = updated_messages
-
-            # Persist tool execution results
-            if self.session_manager:
-                for msg in tool_messages:
-                    self.session_manager.add_message(
-                        msg.role,
-                        msg.content,
-                        tool_call_id=msg.tool_call_id,
-                        tool_name=msg.tool_name,
-                        tool_arguments=msg.tool_arguments,
-                    )
-                # Save session to ensure everything is on disk
-                self.save_session()
-
-        err_msg = "Max iterations reached. The agent could not complete the task."
-        self.callback_manager.on_run_error(request_id, Exception(err_msg))
-        return (
-            err_msg,
-            current_messages,
+        """Main agent loop - delegates to streaming implementation with no chunk callback."""
+        return await self._run_loop_streaming(
+            messages, on_chunk=None, thinking_process=thinking_process
         )
 
     async def _run_loop_streaming(
@@ -361,19 +290,11 @@ class Agent:
             llm_messages = await self._prepare_messages(current_messages)
 
             self.callback_manager.on_llm_start(request_id, llm_messages)
-            if hasattr(self.llm, "chat_streaming"):
-                response = await self.llm.chat_streaming(
-                    messages=llm_messages,
-                    tools=get_tool_schemas(self.config.tools),
-                    temperature=self.config.temperature,
-                    on_chunk=on_chunk,
-                )
-            else:
-                response = await self.llm.chat(
-                    messages=llm_messages,
-                    tools=get_tool_schemas(self.config.tools),
-                    temperature=self.config.temperature,
-                )
+            response = await self._call_llm(
+                llm_messages,
+                get_tool_schemas(self.config.tools),
+                on_chunk=on_chunk,
+            )
             self.callback_manager.on_llm_end(request_id, response)
 
             if not response.tool_calls:

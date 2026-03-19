@@ -144,10 +144,10 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> Any:
         import instructor
-        
+
         async with AsyncAnthropic(api_key=self.api_key) as client:
             instructor_client = instructor.from_anthropic(client)
-    
+
             filtered_messages = []
 
             for msg in messages:
@@ -155,7 +155,7 @@ class AnthropicProvider(LLMProvider):
                     pass
                 else:
                     filtered_messages.append(msg)
-    
+
             params = {
                 "model": self.model,
                 "max_tokens": 4096,
@@ -163,8 +163,8 @@ class AnthropicProvider(LLMProvider):
                 "temperature": temperature,
                 "response_model": response_model,
             }
-    
+
             # NOTE: Not all anthropic versions in instructor might natively accept "system" as kwargs in completions
             # Instructor documentation notes passing it within messages normally is fine.
-    
+
             return await instructor_client.chat.completions.create(**params)

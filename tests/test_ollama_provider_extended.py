@@ -3,16 +3,19 @@ import json
 from unittest.mock import MagicMock, patch, AsyncMock
 from src.agentframework.providers.ollama import OllamaProvider
 
+
 @pytest.fixture
 def provider():
     return OllamaProvider(model="test-model")
 
+
 def test_extract_tool_calls_markdown(provider):
-    content = "Here is a tool call:\n```json\n{\"name\": \"test_tool\", \"arguments\": {\"arg\": 1}}\n```"
+    content = 'Here is a tool call:\n```json\n{"name": "test_tool", "arguments": {"arg": 1}}\n```'
     calls = provider._extract_tool_calls_from_content(content)
     assert len(calls) == 1
     assert calls[0].name == "test_tool"
     assert calls[0].arguments == {"arg": 1}
+
 
 def test_extract_tool_calls_plain_json(provider):
     content = 'Some text {"name": "test_tool", "arguments": {"arg": 1}} more text'
@@ -21,10 +24,38 @@ def test_extract_tool_calls_plain_json(provider):
     assert calls[0].name == "test_tool"
     assert calls[0].arguments == {"arg": 1}
 
+
+def test_extract_tool_calls_name_followed_by_json(provider):
+    """Test extraction of tool name followed by JSON (e.g. web_search{\"query\": \"test\"})"""
+    content = 'web_search{"query": "Darıca, Kocaeli hava durumu"}'
+    calls = provider._extract_tool_calls_from_content(content)
+    assert len(calls) == 1
+    assert calls[0].name == "web_search"
+    assert calls[0].arguments == {"query": "Darıca, Kocaeli hava durumu"}
+
+
+def test_extract_tool_calls_name_followed_by_json_bash(provider):
+    """Test extraction of bash tool with command"""
+    content = 'bash{"command": "ls -la"}'
+    calls = provider._extract_tool_calls_from_content(content)
+    assert len(calls) == 1
+    assert calls[0].name == "bash"
+    assert calls[0].arguments == {"command": "ls -la"}
+
+
+def test_extract_tool_calls_no_partial_match(provider):
+    """Ensure 'search' doesn't match inside 'web_search'"""
+    content = 'web_search{"query": "test"}'
+    calls = provider._extract_tool_calls_from_content(content)
+    assert len(calls) == 1
+    assert calls[0].name == "web_search"  # Should be web_search, not search
+
+
 def test_extract_tool_calls_invalid(provider):
     content = "```json\n{invalid}\n```"
     calls = provider._extract_tool_calls_from_content(content)
     assert len(calls) == 0
+
 
 @pytest.mark.asyncio
 async def test_ollama_chat_streaming_success(provider):
@@ -39,7 +70,7 @@ async def test_ollama_chat_streaming_success(provider):
             {"message": {"thinking": "Logic step 2\n"}},
             {"message": {"content": "The result "}},
             {"message": {"content": "is 42"}},
-            {"done": True}
+            {"done": True},
         ]
         for chunk in chunks:
             yield json.dumps(chunk)
@@ -53,10 +84,13 @@ async def test_ollama_chat_streaming_success(provider):
     provider.client.stream = MagicMock(return_value=mock_cm)
 
     chunks_received = []
+
     def on_chunk(c):
         chunks_received.append(c)
 
-    response = await provider.chat_streaming([{"role": "user", "content": "hi"}], on_chunk=on_chunk)
+    response = await provider.chat_streaming(
+        [{"role": "user", "content": "hi"}], on_chunk=on_chunk
+    )
 
     assert "__THINKING__" in chunks_received
     assert "Logic step 1\n" in chunks_received
@@ -65,15 +99,21 @@ async def test_ollama_chat_streaming_success(provider):
     assert "is 42" in chunks_received
     assert response.content == "The result is 42"
 
+
 @pytest.mark.asyncio
 async def test_ollama_chat_streaming_tool_call(provider):
-    provider.model = "qwen3" # Trigger reasoning streaming path
+    provider.model = "qwen3"  # Trigger reasoning streaming path
+
     async def mock_aiter_lines():
         chunks = [
             {"message": {"content": "```json\n"}},
-            {"message": {"content": "{\"name\": \"get_weather\", \"arguments\": {\"city\": \"London\"}}\n"}},
+            {
+                "message": {
+                    "content": '{"name": "get_weather", "arguments": {"city": "London"}}\n'
+                }
+            },
             {"message": {"content": "```"}},
-            {"done": True}
+            {"done": True},
         ]
         for chunk in chunks:
             yield json.dumps(chunk)
@@ -86,7 +126,7 @@ async def test_ollama_chat_streaming_tool_call(provider):
 
     response = await provider.chat_streaming(
         [{"role": "user", "content": "weather?"}],
-        tools=[{"type": "function", "function": {"name": "get_weather"}}]
+        tools=[{"type": "function", "function": {"name": "get_weather"}}],
     )
 
     print(f"DEBUG: Response content: {repr(response.content)}")
@@ -96,6 +136,7 @@ async def test_ollama_chat_streaming_tool_call(provider):
     assert response.tool_calls[0].name == "get_weather"
     assert response.tool_calls[0].arguments == {"city": "London"}
     assert response.content == ""
+
 
 def test_ollama_list_models(provider):
     with patch("httpx.get") as mock_get:

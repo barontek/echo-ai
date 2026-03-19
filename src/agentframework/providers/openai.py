@@ -117,7 +117,7 @@ class OpenAIProvider(LLMProvider):
                 delta = chunk.choices[0].delta
                 if not delta:
                     continue
-    
+
                 if delta.content:
                     content += delta.content
                     if on_chunk:
@@ -163,7 +163,7 @@ class OpenAIProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> Any:
         import instructor
-        
+
         async with AsyncOpenAI(api_key=self.api_key) as client:
             instructor_client = instructor.from_openai(client)
             return await instructor_client.chat.completions.create(

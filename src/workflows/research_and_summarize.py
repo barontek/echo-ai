@@ -12,7 +12,7 @@ def get_workflow() -> WorkflowGraph:
     async def node_research(state: dict[str, Any]) -> dict[str, Any]:
         await asyncio.sleep(1.0)
         # Assuming the UI sets up the active agent session for queries
-        res = await run_with_agent(state, 
+        res = await run_with_agent(state,
             f"Write a comprehensive 2-sentence summary detailing: {state.get('topic', 'N/A')}"
         )
         state["research_result"] = res
@@ -26,9 +26,9 @@ def get_workflow() -> WorkflowGraph:
 
     graph.add_node("research", node_research)
     graph.add_node("format", node_format)
-    
+
     graph.set_entry_point("research")
     graph.add_edge("research", "format")
     graph.add_edge("format", graph.END)
-    
+
     return graph

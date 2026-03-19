@@ -13,15 +13,50 @@ logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
+
+class SessionEvent:
+    """An event in the session event log for audit/replay."""
+
+    def __init__(
+        self,
+        event_type: str,
+        data: dict | None = None,
+        timestamp: datetime | None = None,
+    ):
+        self.event_type = event_type
+        self.data = data or {}
+        self.timestamp = timestamp or datetime.now()
+
+    def to_dict(self) -> dict:
+        return {
+            "type": self.event_type,
+            "data": self.data,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SessionEvent":
+        return cls(
+            event_type=data["type"],
+            data=data.get("data", {}),
+            timestamp=datetime.fromisoformat(data["timestamp"])
+            if data.get("timestamp")
+            else None,
+        )
+
+
 class DBSessionModel(Base):
     """SQLAlchemy model for agent sessions."""
-    __tablename__ = 'agent_sessions'
+
+    __tablename__ = "agent_sessions"
 
     id = Column(String, primary_key=True)
     title = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     messages = Column(JSON, default=list)
     session_metadata = Column(JSON, default=dict)
+    events = Column(JSON, default=list)
+
 
 @dataclass
 class Session:
@@ -32,14 +67,18 @@ class Session:
     created_at: datetime = field(default_factory=datetime.now)
     messages: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    events: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "title": self.title,
-            "created_at": self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
+            "created_at": self.created_at.isoformat()
+            if isinstance(self.created_at, datetime)
+            else self.created_at,
             "messages": self.messages,
             "metadata": self.metadata,
+            "events": self.events,
         }
 
     @classmethod
@@ -53,6 +92,7 @@ class Session:
             created_at=created_at,
             messages=data.get("messages", []),
             metadata=data.get("metadata", {}),
+            events=data.get("events", []),
         )
 
 
@@ -66,20 +106,24 @@ class SessionManager:
         # Initialize SQLite database connection
         self.db_path = self.session_dir / "agent_sessions.db"
         self.engine = create_engine(
-            f"sqlite:///{self.db_path}",
-            connect_args={"check_same_thread": False}
+            f"sqlite:///{self.db_path}", connect_args={"check_same_thread": False}
         )
         Base.metadata.create_all(self.engine)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        self.SessionLocal = sessionmaker(
+            autocommit=False, autoflush=False, bind=self.engine
+        )
 
         # Lightweight migration: add 'title' column if it doesn't exist yet
         self._migrate_add_title_column()
+        # Lightweight migration: add 'events' column if it doesn't exist yet
+        self._migrate_add_events_column()
 
         self.current_session: Session | None = None
 
     def _migrate_add_title_column(self) -> None:
         """Add the 'title' column to agent_sessions if it's missing (pre-existing DBs)."""
         import sqlite3
+
         try:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.execute("PRAGMA table_info(agent_sessions)")
@@ -92,20 +136,56 @@ class SessionManager:
         except Exception as e:
             logger.error("Migration check for 'title' column failed: %s", e)
 
-    def create_session(self, session_id: str | None = None, title: str | None = None) -> Session:
+    def _migrate_add_events_column(self) -> None:
+        """Add the 'events' column to agent_sessions if it's missing (pre-existing DBs)."""
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.execute("PRAGMA table_info(agent_sessions)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "events" not in columns:
+                conn.execute(
+                    "ALTER TABLE agent_sessions ADD COLUMN events TEXT DEFAULT '[]'"
+                )
+                conn.commit()
+                logger.info("Migrated agent_sessions: added 'events' column.")
+            conn.close()
+        except Exception as e:
+            logger.error("Migration check for 'events' column failed: %s", e)
+
+    def log_event(self, event_type: str, data: dict | None = None) -> None:
+        """Log an event to the session's event log."""
+        if not self.current_session:
+            return
+        if self.current_session.events is None:
+            self.current_session.events = []
+        event = SessionEvent(event_type, data).to_dict()
+        self.current_session.events.append(event)
+        logger.debug(
+            "session_event_logged",
+            extra={"session_id": self.current_session.id, "event_type": event_type},
+        )
+
+    def create_session(
+        self, session_id: str | None = None, title: str | None = None
+    ) -> Session:
         """Create a new session."""
         if session_id is None:
             session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        session = Session(id=session_id, title=title)
+        session = Session(id=session_id, title=title, events=[])
         self.current_session = session
         self.save_session(session)
+        self.log_event("session_created", {"title": title})
         return session
 
     def load_session(self, session_id: str) -> Session | None:
         """Load an existing session from the DB."""
         with self.SessionLocal() as db:
-            db_session = db.query(DBSessionModel).filter(DBSessionModel.id == session_id).first()
+            db_session = (
+                db.query(DBSessionModel).filter(DBSessionModel.id == session_id).first()
+            )
             if not db_session:
                 return None
 
@@ -113,10 +193,12 @@ class SessionManager:
                 id=db_session.id,  # type: ignore
                 title=db_session.title,  # type: ignore
                 created_at=db_session.created_at,  # type: ignore
-                messages=db_session.messages,  # type: ignore
-                metadata=db_session.session_metadata  # type: ignore
+                messages=db_session.messages or [],  # type: ignore
+                metadata=db_session.session_metadata or {},  # type: ignore
+                events=db_session.events or [],  # type: ignore
             )
             self.current_session = session
+            self.log_event("session_loaded", {"messages_count": len(session.messages)})
             return session
 
     def save_session(self, session: Session | None = None) -> None:
@@ -127,38 +209,49 @@ class SessionManager:
             return
 
         with self.SessionLocal() as db:
-            db_session = db.query(DBSessionModel).filter(DBSessionModel.id == session.id).first()
+            db_session = (
+                db.query(DBSessionModel).filter(DBSessionModel.id == session.id).first()
+            )
             if not db_session:
                 db_session = DBSessionModel(
                     id=session.id,
                     title=session.title,
                     created_at=session.created_at,
                     messages=session.messages,
-                    session_metadata=session.metadata
+                    session_metadata=session.metadata,
+                    events=session.events or [],
                 )
                 db.add(db_session)
             else:
-                # SQLAlchemy JSON columns sometimes need explicit flagging if mutated in place
-                # To be safe, reassign the dict/list natively
-                db.query(DBSessionModel).filter(DBSessionModel.id == session.id).update({
-                    "title": session.title,
-                    "messages": session.messages,
-                    "session_metadata": session.metadata
-                })
+                db.query(DBSessionModel).filter(DBSessionModel.id == session.id).update(
+                    {
+                        "title": session.title,
+                        "messages": session.messages,
+                        "session_metadata": session.metadata,
+                        "events": session.events or [],
+                    }
+                )
             db.commit()
 
     def list_sessions(self) -> list[Session]:
         """List all saved sessions sorted by recency."""
         sessions = []
         with self.SessionLocal() as db:
-            for db_session in db.query(DBSessionModel).order_by(DBSessionModel.created_at.desc()).all():
-                sessions.append(Session(
-                    id=db_session.id,  # type: ignore
-                    title=db_session.title,  # type: ignore
-                    created_at=db_session.created_at,  # type: ignore
-                    messages=db_session.messages,  # type: ignore
-                    metadata=db_session.session_metadata  # type: ignore
-                ))
+            for db_session in (
+                db.query(DBSessionModel)
+                .order_by(DBSessionModel.created_at.desc())
+                .all()
+            ):
+                sessions.append(
+                    Session(
+                        id=db_session.id,  # type: ignore
+                        title=db_session.title,  # type: ignore
+                        created_at=db_session.created_at,  # type: ignore
+                        messages=db_session.messages or [],  # type: ignore
+                        metadata=db_session.session_metadata or {},  # type: ignore
+                        events=db_session.events or [],  # type: ignore
+                    )
+                )
         return sessions
 
     def add_message(self, role: str, content: str, **kwargs) -> None:
@@ -166,6 +259,9 @@ class SessionManager:
         if self.current_session:
             msg = {"role": role, "content": content, **kwargs}
             self.current_session.messages.append(msg)
+            self.log_event(
+                "message_added", {"role": role, "content_length": len(content)}
+            )
             self.save_session()
 
     def save_checkpoint(self, workflow_id: str, current_node: str, state: dict) -> None:
@@ -174,11 +270,13 @@ class SessionManager:
             if "checkpoints" not in self.current_session.metadata:
                 self.current_session.metadata["checkpoints"] = []
 
-            self.current_session.metadata["checkpoints"].append({
-                "node": current_node,
-                "state": state,
-                "timestamp": datetime.now().isoformat()
-            })
+            self.current_session.metadata["checkpoints"].append(
+                {
+                    "node": current_node,
+                    "state": state,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
             self.save_session()
 
     def get_history(self) -> list[dict[str, Any]]:
@@ -193,6 +291,7 @@ class SessionManager:
             query = db.query(DBSessionModel)
             if older_than_days is not None:
                 from datetime import timedelta
+
                 cutoff = datetime.now() - timedelta(days=older_than_days)
                 query = query.filter(DBSessionModel.created_at < cutoff)
 
@@ -202,7 +301,11 @@ class SessionManager:
 
             # If current session was deleted, reset it
             if self.current_session:
-                exists = db.query(DBSessionModel).filter(DBSessionModel.id == self.current_session.id).first()
+                exists = (
+                    db.query(DBSessionModel)
+                    .filter(DBSessionModel.id == self.current_session.id)
+                    .first()
+                )
                 if not exists:
                     self.current_session = None
 
@@ -225,15 +328,23 @@ class ChangeTracker:
         self.changes: list[dict] = []
         self.redo_stack: list[dict] = []
 
-    def record_change(self, operation: str, path: str, old_content: str | None = None, new_content: str | None = None):
+    def record_change(
+        self,
+        operation: str,
+        path: str,
+        old_content: str | None = None,
+        new_content: str | None = None,
+    ):
         """Record a file change."""
-        self.changes.append({
-            "operation": operation,
-            "path": path,
-            "old_content": old_content,
-            "new_content": new_content,
-            "timestamp": datetime.now().isoformat(),
-        })
+        self.changes.append(
+            {
+                "operation": operation,
+                "path": path,
+                "old_content": old_content,
+                "new_content": new_content,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
         self.redo_stack.clear()
 
     def undo(self) -> dict | None:

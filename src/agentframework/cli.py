@@ -8,10 +8,9 @@ from rich.console import Console
 from .agent import Agent
 from .bootstrap import setup_agent
 from .chat_commands import normalize_command
+from .constants import THINKING_END, THINKING_START
 
 console = Console(color_system="256")
-
-
 
 
 async def interactive_mode(agent: Agent):
@@ -82,14 +81,14 @@ async def interactive_mode(agent: Agent):
                 nonlocal in_thinking
 
                 # Handle thinking markers
-                if "__THINKING__" in chunk:
+                if "THINKING_START" in chunk:
                     in_thinking = True
-                    chunk = chunk.replace("__THINKING__", "")
+                    chunk = chunk.replace("THINKING_START", "")
                     if not chunk:
                         return
-                if "__THINKING_END__" in chunk:
+                if THINKING_END in chunk:
                     in_thinking = False
-                    chunk = chunk.replace("__THINKING_END__", "")
+                    chunk = chunk.replace(THINKING_END, "")
                     if not chunk:
                         return
 
@@ -122,14 +121,14 @@ async def run_single(agent: Agent, task: str):
     def on_chunk(chunk: str):
         nonlocal in_thinking
 
-        if "__THINKING__" in chunk:
+        if THINKING_START in chunk:
             in_thinking = True
-            chunk = chunk.replace("__THINKING__", "")
+            chunk = chunk.replace(THINKING_START, "")
             if not chunk:
                 return
-        if "__THINKING_END__" in chunk:
+        if THINKING_END in chunk:
             in_thinking = False
-            chunk = chunk.replace("__THINKING_END__", "")
+            chunk = chunk.replace(THINKING_END, "")
             if not chunk:
                 return
 

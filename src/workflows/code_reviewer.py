@@ -15,7 +15,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def analyze_style(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch A: Style Analysis."""
-        res = await run_with_agent(state, 
+        res = await run_with_agent(state,
             f"Analyze the following code strictly for style, formatting, and PEP8/convention compliance. Be brief.\n\n```\n{state['code_input']}\n```"
         )
         state["style_report"] = res
@@ -23,7 +23,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def analyze_bugs(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch B: Bug Analysis."""
-        res = await run_with_agent(state, 
+        res = await run_with_agent(state,
             f"Analyze the following code strictly for logical bugs, security flaws, and runtime errors. Be brief.\n\n```\n{state['code_input']}\n```"
         )
         state["bug_report"] = res
@@ -40,7 +40,7 @@ def get_workflow() -> WorkflowGraph:
         """Final output formatter."""
         style = state.get("style_report", "No style issues found.")
         bugs = state.get("bug_report", "No runtime bugs found.")
-        
+
         state["final"] = (
             "### Code Review Report\n\n"
             "**🐛 Logic & Bugs Analysis**\n"
@@ -55,18 +55,18 @@ def get_workflow() -> WorkflowGraph:
     graph.add_node("analyze_style", analyze_style)
     graph.add_node("analyze_bugs", analyze_bugs)
     graph.add_node("format_report", format_report)
-    
+
     # Define route map
     graph.set_entry_point("start")
-    
+
     # Run the two analysis branches in parallel, squash responses through reducer, next node is format_report
     graph.add_parallel_edge(
-        source="start", 
-        targets=["analyze_style", "analyze_bugs"], 
-        reducer=reducer, 
+        source="start",
+        targets=["analyze_style", "analyze_bugs"],
+        reducer=reducer,
         next_node="format_report"
     )
-    
+
     graph.add_edge("format_report", graph.END)
-    
+
     return graph

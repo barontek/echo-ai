@@ -123,3 +123,13 @@ observability:
   console_export: false
   otlp_endpoint: "http://localhost:4317"
   service_name: "echo-ai"
+
+web:
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8000"
+  cors_allow_credentials: true
+  cors_allow_methods:
+    - "*"
+  cors_allow_headers:
+    - "*"

@@ -1,6 +1,7 @@
 """Ollama provider implementation."""
 
 import json
+import logging
 import re
 from typing import Any, Callable, Optional
 
@@ -12,6 +13,58 @@ from tenacity import (
 )
 
 from . import LLMProvider, LLMResponse, LLMToolCall
+from ..constants import THINKING_END, THINKING_START
+
+logger = logging.getLogger(__name__)
+
+COMMON_TOOL_NAMES = frozenset(
+    [
+        "bash",
+        "web_search",
+        "web_fetch",
+        "read_file",
+        "write_file",
+        "grep",
+        "glob",
+        "list_dir",
+        "search",
+        "notes",
+        "memory",
+        "call",
+        "create_directory",
+        "delete_file",
+        "rename",
+        "move",
+        "copy",
+        "patch",
+        "apply",
+        "list",
+        "move_to_trash",
+        "restore",
+        "read",
+        "write",
+        "find",
+        "ls",
+        "dir",
+        "cat",
+        "head",
+        "tail",
+        "wc",
+        "sort",
+        "uniq",
+        "cut",
+        "awk",
+        "sed",
+        "git",
+        "pip",
+        "npm",
+        "make",
+        "docker",
+        "curl",
+        "wget",
+        "ssh",
+    ]
+)
 
 
 class OllamaProvider(LLMProvider):
@@ -44,6 +97,29 @@ class OllamaProvider(LLMProvider):
         if not matches:
             pattern = r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\}|null)\s*\}'
             matches = re.findall(pattern, content)
+
+        # Also try to find tool name followed by JSON arguments (e.g. "web_search{\"query\": \"test\"}")
+        # Sort by length descending to match longer names first (e.g. web_search before search)
+        if not matches:
+            for tool_name in sorted(COMMON_TOOL_NAMES, key=len, reverse=True):
+                # Match tool name followed by {JSON}
+                pattern = rf"\b({re.escape(tool_name)})\s*(\{{[^}}]+}})"
+                simple_matches = re.findall(pattern, content)
+                if simple_matches:
+                    for name, args_str in simple_matches:
+                        try:
+                            arguments = json.loads(args_str)
+                            tool_calls.append(
+                                LLMToolCall(
+                                    id=f"call_{len(tool_calls)}",
+                                    name=name,
+                                    arguments=arguments,
+                                )
+                            )
+                        except json.JSONDecodeError:
+                            continue
+                    if tool_calls:
+                        break
 
         for match in matches:
             try:
@@ -103,11 +179,14 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            with open("/tmp/ollama_debug_payload.log", "a") as f:  # nosec B108
-                f.write("\n--- CHAT REQUEST ---\n")
-                f.write(f"Messages: {json.dumps(messages, indent=2)}\n")
-                if tools:
-                    f.write(f"Tools: {[t['function']['name'] for t in tools]}\n")
+            logger.debug(
+                "ollama_chat_request",
+                extra={
+                    "model": self.model,
+                    "message_count": len(messages),
+                    "tools": [t["function"]["name"] for t in tools] if tools else [],
+                },
+            )
 
             response = await self.client.post(
                 f"{self.base_url}/api/chat",
@@ -123,12 +202,12 @@ class OllamaProvider(LLMProvider):
 
             # FIX: Translate inline <think> tags for models that put thoughts in content
             if "<think>" in content:
-                content = content.replace("<think>", "__THINKING__\n").replace(
-                    "</think>", "\n__THINKING_END__\n"
+                content = content.replace("<think>", THINKING_START + "\n").replace(
+                    "</think>", "\n" + THINKING_END
                 )
 
             if thinking:
-                content = f"__THINKING__\n{thinking}\n__THINKING_END__\n\n{content}"
+                content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
             tool_calls = []
 
             if "tool_calls" in data.get("message", {}):
@@ -224,11 +303,14 @@ class OllamaProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            with open("/tmp/ollama_debug_payload.log", "a") as f:  # nosec B108
-                f.write("\n--- STREAMING CHAT REQUEST ---\n")
-                f.write(f"Messages: {json.dumps(messages, indent=2)}\n")
-                if tools:
-                    f.write(f"Tools: {[t['function']['name'] for t in tools]}\n")
+            logger.debug(
+                "ollama_streaming_request",
+                extra={
+                    "model": self.model,
+                    "message_count": len(messages),
+                    "tools": [t["function"]["name"] for t in tools] if tools else [],
+                },
+            )
 
             async with self.client.stream(
                 "POST", f"{self.base_url}/api/chat", json=payload, headers=headers
@@ -254,30 +336,27 @@ class OllamaProvider(LLMProvider):
                     # Handle thinking (stream it with marker)
                     msg_thinking = msg.get("thinking", "")
                     if msg_thinking:
-                        # Only send start marker if we haven't started thinking yet
                         if not thinking:
                             if on_chunk:
-                                on_chunk("__THINKING__")
-                        thinking += msg_thinking  # FIX: Accumulate instead of overwrite
+                                on_chunk(THINKING_START)
+                        thinking += msg_thinking
                         if on_chunk:
                             on_chunk(msg_thinking)
 
-                    # Handle content
                     chunk = msg.get("content", "")
                     if chunk:
-                        # If we had thinking, add end marker before content
                         if thinking and not thinking_ended:
                             if on_chunk:
-                                on_chunk("__THINKING_END__")
+                                on_chunk(THINKING_END)
                             thinking_ended = (
                                 True  # FIX: Use flag so thinking string isn't lost
                             )
 
                         # FIX: Translate inline <think> tags from models like DeepSeek-R1
                         if "<think>" in chunk:
-                            chunk = chunk.replace("<think>", "__THINKING__")
+                            chunk = chunk.replace("<think>", THINKING_START)
                         if "</think>" in chunk:
-                            chunk = chunk.replace("</think>", "__THINKING_END__")
+                            chunk = chunk.replace("</think>", THINKING_END)
 
                         # Skip chunks that are part of markdown tool calls or tool schemas
                         # until we've seen some normal text content
@@ -292,6 +371,7 @@ class OllamaProvider(LLMProvider):
                             or stripped.startswith("{")
                             or stripped.startswith("}")
                             or stripped == ""
+                            or stripped in COMMON_TOOL_NAMES
                             or (
                                 len(stripped) < 20 and ":" in stripped
                             )  # Short chunks with colons are likely JSON
@@ -339,7 +419,7 @@ class OllamaProvider(LLMProvider):
             if content:
                 extracted = self._extract_tool_calls_from_content(content)
                 if extracted:
-                    # Check if content is ONLY a tool call (wrapped in markdown or plain)
+                    # Check if content is ONLY a tool call (wrapped in markdown, JSON, or plain text)
                     # If so, treat it as tool call only, no text response
                     content_stripped = content.strip()
                     is_only_tool_call = (
@@ -350,6 +430,7 @@ class OllamaProvider(LLMProvider):
                             and '"name"' in content_stripped
                             and '"arguments"' in content_stripped
                         )
+                        or content_stripped in COMMON_TOOL_NAMES
                     )
 
                     if is_only_tool_call:

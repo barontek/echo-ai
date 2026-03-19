@@ -77,7 +77,7 @@ async def test_ollama_chat_streaming():
     with patch("agentframework.providers.ollama.httpx.AsyncClient") as mock_httpx:
         mock_client = AsyncMock()
         mock_httpx.return_value = mock_client
-        
+
         class MockResponse:
             async def __aenter__(self):
                 return self
@@ -93,7 +93,7 @@ async def test_ollama_chat_streaming():
         mock_client.stream = MagicMock(return_value=MockResponse())
 
         provider = OllamaProvider(model="qwen3:4b-instruct") # Triggers streaming
-        
+
         chunks = []
         def on_chunk(c):
             chunks.append(c)

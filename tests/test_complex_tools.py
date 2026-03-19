@@ -7,6 +7,7 @@ from agentframework.tools.notes import PersonalNotesTool
 from agentframework.tools.web import WebFetchTool, WebSearchTool
 from agentframework.safety import SafetyConfig
 
+
 @pytest.fixture
 def temp_notes_dir(tmp_path):
     return tmp_path / "notes"
@@ -73,10 +74,16 @@ async def test_web_fetch_tool(mock_crawler_class, mock_httpx_get):
         def __init__(self, status_code, text=""):
             self.status_code = status_code
             self.text = text
+
         def raise_for_status(self):
             import httpx
+
             if self.status_code >= 400:
-                raise httpx.HTTPStatusError(f"HTTP error: {self.status_code}", request=None, response=self)
+                raise httpx.HTTPStatusError(
+                    f"HTTP error: {self.status_code}",
+                    request=None,  # type: ignore[arg-type]
+                    response=self,  # type: ignore[arg-type]
+                )
 
     async def mock_httpx_get_fn(url, **kwargs):
         if "error.com" in url:
@@ -84,7 +91,6 @@ async def test_web_fetch_tool(mock_crawler_class, mock_httpx_get):
         return MockHttpxResponse(200, "Fallback content")
 
     mock_httpx_get.side_effect = mock_httpx_get_fn
-
 
     mock_crawler = mock_crawler_class.return_value.__aenter__.return_value
 
@@ -96,7 +102,10 @@ async def test_web_fetch_tool(mock_crawler_class, mock_httpx_get):
 
     async def mock_arun(url, **kwargs):
         if url == "http://example.com":
-            return MockResult(success=True, markdown="# Test Page\nThis is a long enough content to pass the 50 characters threshold in the web fetch tool logic.")
+            return MockResult(
+                success=True,
+                markdown="# Test Page\nThis is a long enough content to pass the 50 characters threshold in the web fetch tool logic.",
+            )
         else:
             return MockResult(success=False, error_message="HTTP error: 404")
 
@@ -138,7 +147,10 @@ async def test_web_search_tool(mock_crawler_class):
 
     async def mock_arun(url, **kwargs):
         if url == "http://example.com/1":
-            return MockResult(success=True, markdown="This is the content for page 1 which is more than fifty characters long to satisfy the anti-bloat check.")
+            return MockResult(
+                success=True,
+                markdown="This is the content for page 1 which is more than fifty characters long to satisfy the anti-bloat check.",
+            )
         else:
             raise RuntimeError("Error")
 

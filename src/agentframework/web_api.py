@@ -1,72 +1,216 @@
 """FastAPI web backend for Echo AI."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import json
 import logging
-from datetime import datetime
+import re
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from src.agentframework.agent import Agent, AgentConfig, create_agent
 from src.agentframework.config import get_safety_config, get_tools, load_config
+from src.agentframework.constants import THINKING_END, THINKING_START
+from src.agentframework.logging_utils import set_correlation_id
 from src.agentframework.session import DBSessionModel
 from src.workflows import get_workflow, list_workflows
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled patterns for message filtering (performance optimization)
+_INTERNAL_PATTERNS = [
+    re.compile(r"System Note: Tools executed"),
+    re.compile(r"Tool '.*' returned:"),
+    re.compile(r"^FAILED: .*"),
+    re.compile(r"\[Persistent Memory\]"),
+]
+
+
+@dataclass
+class AppState:
+    """Application state with dependency injection support."""
+
+    agent: Agent | None = None
+    current_session_id: str | None = None
+    message_history: list[dict[str, Any]] = field(default_factory=list)
+
+
+# Module-level state container (initialized on startup)
+_state: AppState | None = None
+
+
+def get_state() -> AppState:
+    """Dependency to get the application state."""
+    global _state
+    if _state is None:
+        _state = AppState()
+        try:
+            _state.agent = _create_runtime_agent(
+                provider="ollama", model="qwen3:4b-instruct"
+            )
+        except Exception as e:
+            logger.debug(f"Ollama agent initialization deferred: {e}")
+    return _state
+
+
+def __getattr__(name: str) -> Any:
+    """Module-level attribute access for backward compatibility."""
+    if name == "agent":
+        return _state.agent if _state else None
+    if name == "current_session_id":
+        return _state.current_session_id if _state else None
+    if name == "message_history":
+        return _state.message_history if _state else []
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __setattr__(name: str, value: Any) -> None:
+    """Module-level attribute setting for backward compatibility."""
+    if name in ("agent", "current_session_id", "message_history"):
+        if _state is not None:
+            object.__setattr__(_state, name, value)
+    else:
+        raise AttributeError(f"cannot set attribute {name!r}")
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan event handler for the agent framework."""
-    global agent
-    if agent is None:
-        try:
-            agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
-        except Exception as e:
-            # Fallback if Ollama is not initialized yet
-            logger.debug(f"Ollama agent initialization deferred: {e}")
+    """Lifespan context manager for startup/shutdown."""
+    global _state
+    _state = AppState()
+    try:
+        _state.agent = _create_runtime_agent(
+            provider="ollama", model="qwen3:4b-instruct"
+        )
+    except Exception as e:
+        logger.debug(f"Ollama agent initialization deferred: {e}")
     yield
-    if agent:
-        agent.close()
+    if _state and _state.agent:
+        _state.agent.close()
+    _state = None
 
 
+# Create FastAPI app with lifespan
 app = FastAPI(title="Echo AI API", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-# Global state
-agent: Agent | None = None
-current_session_id: str | None = None
-message_history: list[dict[str, Any]] = []
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """Add correlation ID to each request for structured logging."""
+    # Check for existing correlation ID in headers
+    cid = request.headers.get("X-Correlation-ID")
+    if not cid:
+        cid = str(uuid.uuid4())[:8]
+    set_correlation_id(cid)
+
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = cid
+    return response
+
+
+# Rate limiting configuration
+_rate_limit_storage: dict[str, list[datetime]] = defaultdict(list)
+_RATE_LIMIT_REQUESTS = 60  # requests per window
+_RATE_LIMIT_WINDOW = 60  # seconds
+
+
+def _check_rate_limit(client_ip: str) -> tuple[bool, int]:
+    """Check if client IP is within rate limits. Returns (allowed, remaining)."""
+    now = datetime.now()
+    cutoff = now - timedelta(seconds=_RATE_LIMIT_WINDOW)
+
+    # Clean old entries
+    _rate_limit_storage[client_ip] = [
+        ts for ts in _rate_limit_storage[client_ip] if ts > cutoff
+    ]
+
+    current_count = len(_rate_limit_storage[client_ip])
+    if current_count >= _RATE_LIMIT_REQUESTS:
+        return False, 0
+
+    _rate_limit_storage[client_ip].append(now)
+    return True, _RATE_LIMIT_REQUESTS - current_count - 1
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply rate limiting based on client IP."""
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Skip rate limiting for health checks
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    allowed, remaining = _check_rate_limit(client_ip)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "Rate limit exceeded",
+                "detail": f"Too many requests. Please wait {_RATE_LIMIT_WINDOW} seconds.",
+            },
+            headers={"Retry-After": str(_RATE_LIMIT_WINDOW)},
+        )
+
+    response = await call_next(request)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    response.headers["X-RateLimit-Limit"] = str(_RATE_LIMIT_REQUESTS)
+    return response
+
+
+def _get_cors_config() -> dict:
+    """Get CORS configuration from config.yaml."""
+    config = load_config()
+    web_config = config.get("web", {})
+    cors_config = web_config.get("cors", {})
+    return {
+        "origins": cors_config.get(
+            "origins", ["http://localhost:3000", "http://localhost:8000"]
+        ),
+        "credentials": cors_config.get("allow_credentials", True),
+        "methods": cors_config.get("allow_methods", ["*"]),
+        "headers": cors_config.get("allow_headers", ["*"]),
+    }
+
+
+def _configure_cors():
+    """Configure CORS middleware from config."""
+    config = _get_cors_config()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config["origins"],
+        allow_credentials=config["credentials"],
+        allow_methods=config["methods"],
+        allow_headers=config["headers"],
+    )
+
+
+_configure_cors()
 
 
 def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
     """Filter messages for UI rendering, removing raw tool/system noise."""
     filtered = []
-    pending_tool_calls = None  # Track tool_calls from skipped intermediate messages
-
-    # Internal framework strings to ignore
-    internal_patterns = [
-        r"System Note: Tools executed",
-        r"Tool '.*' returned:",
-        r"^FAILED: .*",
-        r"\[Persistent Memory\]",
-    ]
-    import re
 
     for msg in messages:
         role = getattr(msg, "role", msg.get("role") if isinstance(msg, dict) else "")
@@ -96,43 +240,29 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
         )
         has_tools = bool(tool_calls)
 
-        # Skip system and tool messages (but track tool calls for next assistant)
+        # Skip system and tool messages
         if role == "tool":
             continue
         if role == "system":
             continue
 
-        # Skip assistant messages with tool_calls but no content (intermediate tool call requests)
-        # Remember the tool_calls for the next assistant message
-        if role == "assistant" and tool_calls and not content.strip():
-            pending_tool_calls = tool_calls
-            continue
-
-        # Apply pending tool_calls to this assistant message if any
-        if role == "assistant" and pending_tool_calls:
-            tool_calls = pending_tool_calls
-            has_tools = True
-            pending_tool_calls = None
-
-        # If it's an assistant message with tools, we DON'T skip it.
+        # Assistant messages with tool_calls should always be included
         # Otherwise, check skip conditions:
         if not has_tools:
             # Drop if it's truly empty assistant message
             if role == "assistant" and not content.strip():
                 continue
 
-            # Ignore internal framework strings
-            is_internal = any(
-                re.search(pattern, content) for pattern in internal_patterns
-            )
+            # Ignore internal framework strings (using pre-compiled patterns)
+            is_internal = any(pattern.search(content) for pattern in _INTERNAL_PATTERNS)
             if is_internal:
                 continue
 
         # 3. Extract thinking content if present (stored with markers)
         display_content = content
-        if not thinking and "__THINKING__" in content and "__THINKING_END__" in content:
-            parts = content.split("__THINKING_END__", 1)
-            thinking = parts[0].replace("__THINKING__", "").strip()
+        if not thinking and THINKING_START in content and THINKING_END in content:
+            parts = content.split(THINKING_END, 1)
+            thinking = parts[0].replace(THINKING_START, "").strip()
             display_content = parts[1].strip()
 
         msg_dict = {
@@ -255,6 +385,23 @@ async def index():
     return FileResponse("static/index.html")
 
 
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """Health check endpoint for container orchestration and load balancers.
+
+    Returns 200 OK if the service is running.
+    Use this endpoint for:
+    - Kubernetes liveness/readiness probes
+    - Load balancer health checks
+    - Monitoring systems
+    """
+    return {
+        "status": "healthy",
+        "service": "echo-ai",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
 @app.get("/workflows")
 async def workflows_page():
     """Serve the dedicated workflows page."""
@@ -267,9 +414,17 @@ async def static_files(path: str):
     return FileResponse(f"static/{path}")
 
 
-@app.get("/api/models")
+@app.get("/api/models", tags=["Models"])
 async def list_models():
-    """List available Ollama models."""
+    """List available Ollama models.
+
+    Queries the Ollama server at localhost:11434 for available models.
+
+    Returns:
+        {"models": ["llama2", "qwen3:4b-instruct", ...]}
+
+    Note: Requires Ollama server to be running.
+    """
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get("http://localhost:11434/api/tags", timeout=5.0)
@@ -281,99 +436,188 @@ async def list_models():
     return {"models": ["qwen3:4b-instruct", "llama3.2:latest", "phi3.5:latest"]}
 
 
-@app.post("/api/config")
-async def update_config(config: ConfigPayload):
-    """Update agent configuration."""
-    global agent
-    agent = _create_runtime_agent(config.provider, config.model, api_key=config.api_key)
+@app.post("/api/config", tags=["Configuration"])
+async def update_config(
+    config: ConfigPayload,
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Update the agent configuration.
+
+    Changes the LLM provider and model. Creates a new agent instance
+    with the specified configuration.
+
+    Body:
+        - provider: "ollama" or "openai"
+        - model: Model name (e.g., "qwen3:4b-instruct", "gpt-4")
+        - api_key: API key for OpenAI (optional)
+
+    Returns:
+        {"status": "ok", "config": {...}}
+    """
+    state.agent = _create_runtime_agent(
+        config.provider, config.model, api_key=config.api_key
+    )
     return {
         "status": "ok",
         "config": {"provider": config.provider, "model": config.model},
     }
 
 
-@app.get("/api/sessions")
-async def list_sessions():
-    """List all sessions."""
-    global agent
-    if agent is None:
+@app.get("/api/sessions", tags=["Sessions"])
+async def list_sessions(
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """List all chat sessions.
+
+    Returns sessions sorted by creation date (newest first).
+    Each session includes:
+    - id: Session identifier
+    - title: Auto-generated or user-defined title
+    - created_at: Timestamp
+
+    Returns:
+        {"sessions": [{"id": "...", "title": "...", "created_at": "..."}, ...]}
+    """
+    if state.agent is None:
         try:
-            agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
+            state.agent = _create_runtime_agent(
+                provider="ollama", model="qwen3:4b-instruct"
+            )
         except Exception as e:
             logger.debug(f"Deferred agent creation failed: {e}")
 
-    if agent and agent.session_manager:
+    if state.agent and state.agent.session_manager:
         sessions = [
             {"id": s.id, "title": s.title, "created_at": s.created_at.isoformat()}
-            for s in agent.session_manager.list_sessions()
+            for s in state.agent.session_manager.list_sessions()
         ]
         return {"sessions": sessions}
     return {"sessions": []}
 
 
-@app.post("/api/sessions")
-async def create_session():
-    """Create a new session."""
-    global current_session_id, message_history
-    if agent and agent.session_manager:
-        agent.session_manager.create_session()
-        if agent.session_manager.current_session:
-            current_session_id = agent.session_manager.current_session.id
-            agent.messages = []  # Clear agent's internal message history
-    message_history = []
-    return {"session_id": current_session_id}
+@app.post("/api/sessions", tags=["Sessions"])
+async def create_session(
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Create a new chat session.
+
+    Initializes a fresh session for a new conversation.
+    The session ID is generated from the current timestamp (YYYYMMDD_HHMMSS).
+
+    Returns:
+        {"session_id": "20260319_143052", "title": null}
+    """
+    if state.agent and state.agent.session_manager:
+        state.agent.session_manager.create_session()
+        if state.agent.session_manager.current_session:
+            state.current_session_id = state.agent.session_manager.current_session.id
+            state.agent.messages = []
+    state.message_history = []
+    return {"session_id": state.current_session_id}
 
 
-@app.get("/api/sessions/{session_id}")
-async def load_session(session_id: str):
-    """Load a session."""
-    global current_session_id, message_history
-    if agent and agent.session_manager:
-        agent.load_session(session_id)
-        current_session_id = session_id
-        message_history = filter_messages_for_ui(agent.messages)
+@app.get("/api/sessions/{session_id}", tags=["Sessions"])
+async def load_session(
+    session_id: str,
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Load a specific session with its message history.
+
+    Args:
+        session_id: The session identifier
+
+    Returns:
+        {
+            "session_id": "20260319_143052",
+            "title": "Weather in Istanbul",
+            "messages": [
+                {"role": "user", "content": "...", "timestamp": "14:30"},
+                {"role": "assistant", "content": "...", "tool_calls": [...], "timestamp": "14:31"}
+            ]
+        }
+
+    Note:
+        Messages are filtered for UI rendering (tool messages removed, thinking extracted)
+    """
+    if state.agent and state.agent.session_manager:
+        state.agent.load_session(session_id)
+        state.current_session_id = session_id
+        state.message_history = filter_messages_for_ui(state.agent.messages)
         title = None
-        if agent.session_manager.current_session:
-            title = agent.session_manager.current_session.title
-        return {"session_id": session_id, "title": title, "messages": message_history}
+        if state.agent.session_manager.current_session:
+            title = state.agent.session_manager.current_session.title
+        return {
+            "session_id": session_id,
+            "title": title,
+            "messages": state.message_history,
+        }
 
     return {"session_id": session_id, "messages": [], "title": None}
 
 
-@app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str):
-    """Delete a session."""
-    if not (agent and agent.session_manager):
+@app.delete("/api/sessions/{session_id}", tags=["Sessions"])
+async def delete_session(
+    session_id: str,
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Delete a chat session.
+
+    Permanently removes the session and all its messages from the database.
+
+    Args:
+        session_id: The session identifier to delete
+
+    Returns:
+        {"status": "ok"}
+    """
+    if not (state.agent and state.agent.session_manager):
         return {"status": "ok"}
 
-    with agent.session_manager.SessionLocal() as db:
+    with state.agent.session_manager.SessionLocal() as db:
         db.query(DBSessionModel).filter(DBSessionModel.id == session_id).delete()
         db.commit()
 
     return {"status": "ok"}
 
 
-@app.post("/api/sessions/rename")
-async def rename_session(payload: SessionRenamePayload):
-    """Rename a session by changing its title."""
-    if not (agent and agent.session_manager):
-        raise HTTPException(status_code=400, detail="Session manager unavailable")
+@app.post("/api/sessions/rename", tags=["Sessions"])
+async def rename_session(
+    payload: SessionRenamePayload,
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Rename a session by changing its title.
 
-    with agent.session_manager.SessionLocal() as db:
+    Body:
+        - session_id: The session to rename
+        - new_title: The new title for the session
+
+    Returns:
+        {"status": "ok", "session_id": "...", "title": "..."}
+    """
+    if not (state.agent and state.agent.session_manager):
+        raise HTTPException(
+            status_code=503,
+            detail="Session service is unavailable. Please try again later.",
+        )
+
+    with state.agent.session_manager.SessionLocal() as db:
         updated = (
             db.query(DBSessionModel)
             .filter(DBSessionModel.id == payload.session_id)
             .update({"title": payload.new_title})
         )
         if updated == 0:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Session with ID '{payload.session_id}' was not found.",
+            )
         db.commit()
 
     if (
-        agent.session_manager.current_session
-        and agent.session_manager.current_session.id == payload.session_id
+        state.agent.session_manager.current_session
+        and state.agent.session_manager.current_session.id == payload.session_id
     ):
-        agent.session_manager.current_session.title = payload.new_title
+        state.agent.session_manager.current_session.title = payload.new_title
 
     return {
         "status": "ok",
@@ -383,12 +627,18 @@ async def rename_session(payload: SessionRenamePayload):
 
 
 @app.post("/api/sessions/purge")
-async def purge_sessions(days: int | None = None):
+async def purge_sessions(
+    state: Annotated[AppState, Depends(get_state)],
+    days: int | None = None,
+):
     """Purge old or all sessions."""
-    if not (agent and agent.session_manager):
-        raise HTTPException(status_code=400, detail="Session manager unavailable")
+    if not (state.agent and state.agent.session_manager):
+        raise HTTPException(
+            status_code=503,
+            detail="Session service is unavailable. Please try again later.",
+        )
 
-    count = agent.session_manager.purge_sessions(older_than_days=days)
+    count = state.agent.session_manager.purge_sessions(older_than_days=days)
     return {"status": "ok", "purged_count": count}
 
 
@@ -399,28 +649,35 @@ async def workflows_list():
 
 
 @app.post("/api/workflows/run")
-async def workflow_run(payload: WorkflowRunPayload):
+async def workflow_run(
+    payload: WorkflowRunPayload,
+    state: Annotated[AppState, Depends(get_state)],
+):
     """Run a selected workflow and return its final output."""
-    global agent, message_history
-
-    if agent is None:
-        agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
+    if state.agent is None:
+        state.agent = _create_runtime_agent(
+            provider="ollama", model="qwen3:4b-instruct"
+        )
 
     try:
         workflow = get_workflow(payload.workflow_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except KeyError:
+        available = list_workflows()
+        raise HTTPException(
+            status_code=404,
+            detail=f"Workflow '{payload.workflow_id}' not found. Available: {available}",
+        )
 
-    initial_state = {"topic": payload.topic, "agent": agent}
+    initial_state = {"topic": payload.topic, "agent": state.agent}
     final_state = await workflow.compile_and_run(initial_state)
     content = final_state.get("final") or final_state.get("result") or str(final_state)
 
     timestamp = datetime.now().strftime("%H:%M")
     user_content = f"[Workflow: {payload.workflow_id}] {payload.topic}"
-    message_history.append(
+    state.message_history.append(
         {"role": "user", "content": user_content, "timestamp": timestamp}
     )
-    message_history.append(
+    state.message_history.append(
         {"role": "assistant", "content": content, "timestamp": timestamp}
     )
 
@@ -431,16 +688,42 @@ async def workflow_run(payload: WorkflowRunPayload):
     }
 
 
-@app.post("/api/chat")
-async def chat(message: ChatPayload):
-    """Non-streaming chat endpoint."""
-    global agent, message_history
+@app.post("/api/chat", tags=["Chat"])
+async def chat(
+    message: ChatPayload,
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Non-streaming chat endpoint.
 
-    if agent is None:
-        agent = _create_runtime_agent(provider="ollama", model="qwen3:4b-instruct")
+    Sends a message and waits for the complete response.
+    Use for simple integrations or testing.
+
+    For real-time streaming, use the WebSocket endpoint `/ws/chat`.
+
+    Body:
+        - content: The user's message
+        - session_id: Optional session ID to continue a conversation
+
+    Returns:
+        {
+            "response": "The assistant's response...",
+            "messages": [...]
+        }
+
+    Example:
+        ```bash
+        curl -X POST http://localhost:8000/api/chat \\
+          -H "Content-Type: application/json" \\
+          -d '{"content": "Hello!"}'
+        ```
+    """
+    if state.agent is None:
+        state.agent = _create_runtime_agent(
+            provider="ollama", model="qwen3:4b-instruct"
+        )
 
     prompt = message.content
-    message_history.append(
+    state.message_history.append(
         {
             "role": "user",
             "content": prompt,
@@ -448,9 +731,9 @@ async def chat(message: ChatPayload):
         }
     )
 
-    response = await agent.run(prompt)
+    response = await state.agent.run(prompt)
 
-    message_history.append(
+    state.message_history.append(
         {
             "role": "assistant",
             "content": response,
@@ -458,7 +741,7 @@ async def chat(message: ChatPayload):
         }
     )
 
-    return {"response": response, "messages": message_history}
+    return {"response": response, "messages": state.message_history}
 
 
 async def _generate_title_async(active_agent: "Agent") -> None:
@@ -478,8 +761,61 @@ async def _generate_title_async(active_agent: "Agent") -> None:
 
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
-    """Handle chat WebSocket connection with non-blocking stop support."""
+    """WebSocket chat endpoint for real-time streaming.
+
+    Connect to: `ws://localhost:8000/ws/chat`
+
+    ## Sending Messages
+
+    Send JSON messages to the server:
+
+    ```json
+    {"type": "message", "content": "Hello!"}
+    ```
+
+    Optional: include session_id to continue a conversation.
+    ```json
+    {"type": "message", "content": "Hello!", "session_id": "20260319_143052"}
+    ```
+
+    To stop generation mid-stream:
+    ```json
+    {"type": "stop"}
+    ```
+
+    ## Receiving Messages
+
+    Server sends JSON events:
+
+    ```json
+    {"type": "content", "content": "Hello"}  // Streaming content
+    {"type": "thinking", "content": "Let me think..."}  // Model thinking
+    {"type": "done", "content": "...", "tool_calls": [...]}  // Complete response
+    {"type": "error", "content": "Error message"}  // Error occurred
+    ```
+
+    ## JavaScript Example
+
+    ```javascript
+    const ws = new WebSocket('ws://localhost:8000/ws/chat');
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'content') {
+            console.log('Received:', data.content);
+        }
+    };
+    ws.send(JSON.stringify({type: 'message', content: 'Hi!'}));
+    ```
+    """
     await websocket.accept()
+
+    # Get state from app state (accessed via module-level _state for WebSocket)
+    state = _state
+    if state is None:
+        await websocket.send_json(
+            {"type": "error", "content": "Server not initialized"}
+        )
+        return
 
     active_agent: Agent | None = None
     streaming_task: asyncio.Task | None = None
@@ -503,7 +839,7 @@ async def websocket_chat(websocket: WebSocket):
             return
 
         timestamp = datetime.now().strftime("%H:%M")
-        message_history.append(
+        state.message_history.append(
             {"role": "user", "content": prompt, "timestamp": timestamp}
         )
         await websocket.send_json(
@@ -540,11 +876,11 @@ async def websocket_chat(websocket: WebSocket):
             if stop_requested:
                 raise asyncio.CancelledError()
 
-            if "__THINKING__" in chunk:
-                chunk = chunk.replace("__THINKING__", "")
+            if THINKING_START in chunk:
+                chunk = chunk.replace(THINKING_START, "")
                 in_thinking = True
-            if "__THINKING_END__" in chunk:
-                chunk = chunk.replace("__THINKING_END__", "")
+            if THINKING_END in chunk:
+                chunk = chunk.replace(THINKING_END, "")
                 in_thinking = False
 
             if in_thinking:
@@ -590,12 +926,18 @@ async def websocket_chat(websocket: WebSocket):
                 accumulated_content = response
 
         except asyncio.CancelledError:
-            accumulated_content = "Stopped."
+            accumulated_content = "Response stopped by user."
             thinking_content = ""
             has_tools = False
             tool_calls_info = []
         except Exception as e:
-            await websocket.send_json({"type": "error", "content": str(e)})
+            logger.error(f"WebSocket chat error: {e}", exc_info=True)
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "content": "An error occurred while processing your request. Please try again.",
+                }
+            )
             return
         finally:
             await send_queue.put(None)
@@ -604,7 +946,7 @@ async def websocket_chat(websocket: WebSocket):
 
         timestamp = datetime.now().strftime("%H:%M")
 
-        message_history.append(
+        state.message_history.append(
             {
                 "role": "assistant",
                 "content": accumulated_content,
@@ -706,8 +1048,14 @@ async def websocket_chat(websocket: WebSocket):
     except (WebSocketDisconnect, json.JSONDecodeError, ValueError):
         pass
     except Exception as e:
+        logger.error(f"WebSocket connection error: {e}", exc_info=True)
         with contextlib.suppress(Exception):
-            await websocket.send_json({"type": "error", "content": str(e)})
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "content": "WebSocket connection error. Please refresh and try again.",
+                }
+            )
     finally:
         if streaming_task and not streaming_task.done():
             streaming_task.cancel()

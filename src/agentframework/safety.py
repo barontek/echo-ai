@@ -136,7 +136,7 @@ class SecurityValidator:
     def check_command_safety(self, command: str) -> tuple[bool, str]:
         """Check if command is safe to execute natively, parsing shell control logic via shlex."""
         cmd_lower = command.lower().strip()
-        
+
         # We always check raw command strings against Regex dangerous patterns immediately
         # (Since some operators like `:(){` or basic `sudo rm -rf` might span tokens weirdly).
         for pattern, reason in self._dangerous_patterns:
@@ -150,16 +150,16 @@ class SecurityValidator:
             # We must break the string across bash boundary chaining loops to inspect them individually
             # Because `shlex` doesn't natively treat `;` or `&&` as command splitters dynamically unless explicitly instructed.
             sub_commands = re.split(r'(?:;|&&|\|\||\|)', cmd_lower)
-            
+
             for sub_cmd in sub_commands:
                 sub_cmd = sub_cmd.strip()
                 if not sub_cmd:
                     continue
-                    
+
                 parts = shlex.split(sub_cmd)
                 if not parts:
                     continue
-                
+
                 # Check for explicit bash variable assignments directly (e.g. "X=/; rm -rf $X")
                 # Shlex handles "X=/" as a single token but assigning it dynamically hides logic.
                 # If a part contains typical assignment operators out of band, flag immediately
@@ -170,10 +170,10 @@ class SecurityValidator:
                 for p in parts:
                     if "=" not in p or p.startswith("-"): # Quick heuristic to skip env vars preceding a command (e.g. `DEBUG=1 npm start`)
                         executable_parts.append(p)
-                        
+
                 if not executable_parts:
                     continue # It was purely an assignment
-                    
+
                 base_cmd = executable_parts[0]
 
                 # Check blocked commands - compile regex patterns natively
@@ -206,7 +206,7 @@ class SecurityValidator:
                         subcmd = executable_parts[1]
                         if subcmd not in allowed_args and '*' not in allowed_args:
                             return False, f"Subcommand '{subcmd}' not allowed for {base_cmd}"
-                            
+
         except ValueError as e:
             return False, f"Malformed command string: {e}"
 

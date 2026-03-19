@@ -15,7 +15,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def draft_intro(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch: Introduction."""
-        res = await run_with_agent(state, 
+        res = await run_with_agent(state,
             f"Write a catchy 3-sentence introduction for a newsletter about {state['subject']}."
         )
         state["intro"] = res
@@ -23,7 +23,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def draft_body(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch: Main Body."""
-        res = await run_with_agent(state, 
+        res = await run_with_agent(state,
             f"Write two informative paragraphs detailing recent trends and news concerning {state['subject']}."
         )
         state["body"] = res
@@ -31,7 +31,7 @@ def get_workflow() -> WorkflowGraph:
 
     async def draft_conclusion(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch: Conclusion."""
-        res = await run_with_agent(state, 
+        res = await run_with_agent(state,
             f"Write a 2-sentence concluding thought wrapping up a newsletter on {state['subject']}."
         )
         state["conclusion"] = res
@@ -63,17 +63,17 @@ def get_workflow() -> WorkflowGraph:
     graph.add_node("draft_body", draft_body)
     graph.add_node("draft_conclusion", draft_conclusion)
     graph.add_node("format_newsletter", format_newsletter)
-    
+
     # Define route map
     graph.set_entry_point("start")
-    
+
     graph.add_parallel_edge(
-        source="start", 
-        targets=["draft_intro", "draft_body", "draft_conclusion"], 
-        reducer=reducer, 
+        source="start",
+        targets=["draft_intro", "draft_body", "draft_conclusion"],
+        reducer=reducer,
         next_node="format_newsletter"
     )
-    
+
     graph.add_edge("format_newsletter", graph.END)
-    
+
     return graph

@@ -117,7 +117,7 @@ async def test_workflow_parallel_edge():
     graph.add_node("start", start)
     graph.add_node("branch_a", branch_a)
     graph.add_node("branch_b", branch_b)
-    
+
     graph.set_entry_point("start")
     graph.add_parallel_edge("start", ["branch_a", "branch_b"], reducer, graph.END)
 
@@ -143,7 +143,7 @@ async def test_workflow_interrupt_and_resume():
 
     graph.add_node("step_one", step_one)
     graph.add_node("step_interrupt", step_interrupt)
-    
+
     graph.set_entry_point("step_one")
     graph.add_edge("step_one", "step_interrupt")
     graph.add_edge("step_interrupt", graph.END)
@@ -156,10 +156,10 @@ async def test_workflow_interrupt_and_resume():
 
     assert yielded == ["step_one", "step_interrupt", "__INTERRUPT__"]
     assert final_state["val"] == 1
-    
+
     # User approves
     final_state["approved"] = True
-    
+
     # Resume
     resume_yielded = []
     resume_state = {}
@@ -179,7 +179,7 @@ async def test_workflow_nested_subgraph():
     async def child_start(state: State) -> State:
         state["child_touched"] = True
         return state
-        
+
     child.add_node("child_start", child_start)
     child.set_entry_point("child_start")
     child.add_edge("child_start", child.END)

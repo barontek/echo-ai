@@ -157,13 +157,13 @@ class WriteFileTool(FileSystemTool):
 
         try:
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             old_content = None
             if full_path.exists():
                 old_content = full_path.read_text()
-                
+
             full_path.write_text(content)
-            
+
             metadata = {
                 "change": {
                     "action": "write",

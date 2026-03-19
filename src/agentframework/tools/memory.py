@@ -77,6 +77,13 @@ class MemoryTool(Tool):
             )
         """)
 
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at DESC)"
+        )
+
         # Create FTS5 virtual table
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(

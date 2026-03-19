@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Usage: 
+# Usage:
 #   ./run.sh           - Run web UI
 #   ./run.sh api       - Run API only
 #   ./run.sh chat      - Run CLI chat

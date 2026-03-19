@@ -117,6 +117,8 @@ class SessionManager:
         self._migrate_add_title_column()
         # Lightweight migration: add 'events' column if it doesn't exist yet
         self._migrate_add_events_column()
+        # Add indexes for faster queries
+        self._migrate_add_indexes()
 
         self.current_session: Session | None = None
 
@@ -153,6 +155,22 @@ class SessionManager:
             conn.close()
         except Exception as e:
             logger.error("Migration check for 'events' column failed: %s", e)
+
+    def _migrate_add_indexes(self) -> None:
+        """Add indexes for faster queries."""
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_sessions_created_at "
+                "ON agent_sessions(created_at DESC)"
+            )
+            conn.commit()
+            logger.info("Migrated agent_sessions: added indexes.")
+            conn.close()
+        except Exception as e:
+            logger.error("Migration check for indexes failed: %s", e)
 
     def log_event(self, event_type: str, data: dict | None = None) -> None:
         """Log an event to the session's event log."""

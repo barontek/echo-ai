@@ -128,3 +128,11 @@ class TestRateLimitMiddleware:
             # Manually trigger rate limit
             allowed, remaining = _check_rate_limit("forced.limit.ip")
             assert allowed is False
+
+    def test_localhost_bypasses_rate_limit(self, client):
+        """Localhost requests should bypass rate limiting."""
+        # TestClient uses 127.0.0.1 by default
+        # Make more than 60 requests - should all succeed
+        for _ in range(100):
+            response = client.get("/health")
+            assert response.status_code == 200

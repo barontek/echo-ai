@@ -161,6 +161,10 @@ async def rate_limit_middleware(request: Request, call_next):
     if request.url.path == "/health":
         return await call_next(request)
 
+    # Skip rate limiting for local requests
+    if client_ip in ("127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"):
+        return await call_next(request)
+
     allowed, remaining = _check_rate_limit(client_ip)
     if not allowed:
         return JSONResponse(

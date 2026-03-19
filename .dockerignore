@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+.env
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+
+# Documentation
+docs/
+README*.md
+
+# Sessions (mounted at runtime)
+.agent_sessions
+sessions/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+
+# CI/CD
+.github/
+
+# Misc
+*.log
+*.db
+rename_ai.py
+test_stream.py
+run.sh

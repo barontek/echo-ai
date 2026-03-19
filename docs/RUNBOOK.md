@@ -28,12 +28,31 @@ echo-ai
 # Build image
 docker build -t echo-ai .
 
-# Run container
+# Run container with resource limits
 docker run -p 8000:8000 \
-  -v $(pwd)/.agent_sessions:/app/.agent_sessions \
+  --memory=512m \
+  --cpus=1.0 \
+  -v $(pwd)/sessions:/app/.agent_sessions \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
   echo-ai
 ```
+
+### Docker Compose (Recommended)
+
+```bash
+# Start with docker-compose (includes resource limits)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+Resource limits:
+- CPU: 1 core max
+- Memory: 512MB max
 
 ### Systemd Service
 

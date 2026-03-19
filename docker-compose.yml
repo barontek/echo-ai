@@ -1,28 +1,18 @@
-version: '3.8'
-
 services:
-  api:
+  echo-ai:
     build: .
-    command: python scripts/run_api.py --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     volumes:
-      - .agent_sessions:/app/.agent_sessions
-      - .chroma_db:/app/.chroma_db
+      - ./sessions:/app/.agent_sessions
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-
-  web:
-    build: .
-    command: streamlit run scripts/run_web.py --server.address 0.0.0.0 --server.port 8501
-    ports:
-      - "8501:8501"
-    depends_on:
-      - api
-    volumes:
-      - .agent_sessions:/app/.agent_sessions
-      - .chroma_db:/app/.chroma_db
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    restart: unless-stopped

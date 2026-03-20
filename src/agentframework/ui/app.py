@@ -126,16 +126,21 @@ def delete_session(session_id: str):
 
 
 @app.ws("/ws/chat")
-async def chat_ws(message: str, model: str, send):
+async def chat_ws(message: str, send):
     """Handle incoming form submissions via WebSocket and stream the response."""
     import websockets
+    from urllib.parse import parse_qs
 
-    if not message.strip():
+    parsed = parse_qs(message)
+    msg_content = parsed.get("message", [""])[0]
+    model = parsed.get("model", ["qwen3:4b-instruct"])[0]
+
+    if not msg_content.strip():
         return
 
     temp_id = "streaming-msg"
 
-    user_bubble = message_bubble(role="user", content=message)
+    user_bubble = message_bubble(role="user", content=msg_content)
     await send(Div(user_bubble, id="chat-container", hx_swap_oob="beforeend"))
 
     loading_msg = Div(
@@ -151,7 +156,7 @@ async def chat_ws(message: str, model: str, send):
     try:
         async with websockets.connect(ws_url) as ws:
             await ws.send(
-                json.dumps({"type": "message", "content": message, "model": model})
+                json.dumps({"type": "message", "content": msg_content, "model": model})
             )
             accumulated = ""
 

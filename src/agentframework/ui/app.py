@@ -50,6 +50,19 @@ def get():
     return main_page(models, sessions, [], models[0] if models else "")
 
 
+@rt("/sessions/new")
+def new_session():
+    """Create a new session. Must be defined before /sessions/{session_id}."""
+    api_base = "http://127.0.0.1:8000/api"
+
+    data = post_api(api_base, "/sessions")
+    session_id = data.get("session_id")
+
+    if session_id:
+        return session_item({"id": session_id, "title": "New Chat"})
+    return P("Failed to create session", style="color: red;")
+
+
 @rt("/sessions/{session_id}")
 def get_session(session_id: str):
     """Load a session and return its messages."""
@@ -69,19 +82,6 @@ def get_session(session_id: str):
         )
 
     return chat_container(messages)
-
-
-@rt("/sessions/new")
-def new_session():
-    """Create a new session."""
-    api_base = "http://127.0.0.1:8000/api"
-
-    data = post_api(api_base, "/sessions")
-    session_id = data.get("session_id")
-
-    if session_id:
-        return session_item({"id": session_id, "title": "New Chat"})
-    return P("Failed to create session", style="color: red;")
 
 
 @rt("/models")

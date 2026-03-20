@@ -5,6 +5,7 @@ Phase 2: Core components with API integration.
 
 from fasthtml.common import *  # noqa: F403, F405, E501
 import httpx
+import json
 
 from .components import (
     main_page,
@@ -12,8 +13,9 @@ from .components import (
     session_item,
     message_bubble,
 )
+from .markdown import format_message_content
 
-app, rt = fast_app(debug=True)
+app, rt = fast_app(debug=True, exts=["ws"])
 
 
 def get_api(url: str, path: str = "") -> dict:
@@ -123,10 +125,26 @@ def delete_session(session_id: str):
     return P(f"Deleted: {session_id}", style="color: green;")
 
 
-async def stream_chat(message: str, model: str = "qwen3:4b-instruct"):
-    """Stream chat response from FastAPI WebSocket."""
-    import json
+@app.ws("/ws/chat")
+async def chat_ws(message: str, model: str, send):
+    """Handle incoming form submissions via WebSocket and stream the response."""
     import websockets
+
+    if not message.strip():
+        return
+
+    temp_id = "streaming-msg"
+
+    user_bubble = message_bubble(role="user", content=message)
+    await send(Div(user_bubble, id="chat-container", hx_swap_oob="beforeend"))
+
+    loading_msg = Div(
+        Div("Assistant", cls="role"),
+        Div("Thinking...", id=f"{temp_id}-content", cls="content"),
+        id=temp_id,
+        cls="message assistant",
+    )
+    await send(Div(loading_msg, id="chat-container", hx_swap_oob="beforeend"))
 
     ws_url = "ws://127.0.0.1:8000/ws/chat"
 
@@ -135,47 +153,50 @@ async def stream_chat(message: str, model: str = "qwen3:4b-instruct"):
             await ws.send(
                 json.dumps({"type": "message", "content": message, "model": model})
             )
-
             accumulated = ""
-            thinking = ""
 
-            async for msg in ws:
-                data = json.loads(msg)
+            async for response in ws:
+                data = json.loads(response)
 
-                if data["type"] == "thinking":
-                    thinking += data["content"]
-                    yield f"event: message\ndata: <div class='thinking'>{thinking}</div>\n\n"
-
-                elif data["type"] == "content":
+                if data["type"] == "content":
                     accumulated += data["content"]
-                    yield f"event: message\ndata: <div class='message assistant'><div class='role'>Assistant</div><div class='content'><p>{accumulated}</p></div></div>\n\n"
+                    html_content = format_message_content(accumulated)
+                    await send(
+                        Div(
+                            html_content,
+                            id=f"{temp_id}-content",
+                            hx_swap_oob="innerHTML",
+                        )
+                    )
 
                 elif data["type"] == "done":
-                    bubble = message_bubble(
+                    final = message_bubble(
                         role="assistant",
                         content=data["content"],
                         thinking=data.get("thinking", ""),
                     )
-                    yield f"event: swap\ndata: {str(bubble)}\n\n"
+                    await send(Div(final, id=temp_id, hx_swap_oob="outerHTML"))
                     break
 
                 elif data["type"] == "error":
-                    yield f"event: error\ndata: <div class='error'>Error: {data['content']}</div>\n\n"
+                    await send(
+                        Div(
+                            f"Error: {data['content']}",
+                            id=temp_id,
+                            cls="message assistant",
+                            style="color: red;",
+                            hx_swap_oob="outerHTML",
+                        )
+                    )
                     break
 
     except Exception as e:
-        yield f"event: error\ndata: <div class='error'>Connection error: {e}</div>\n\n"
-
-
-@rt("/chat/stream")
-async def chat_stream(message: str = "", model: str = "qwen3:4b-instruct"):
-    """SSE endpoint for streaming chat responses."""
-    if not message.strip():
-        return ""
-
-    headers = {"Content-Type": "text/event-stream"}
-    return StreamingResponse(
-        stream_chat(message, model),
-        headers=dict(headers),
-        media_type="text/event-stream",
-    )
+        await send(
+            Div(
+                f"Error: {str(e)}",
+                id=temp_id,
+                cls="message assistant",
+                style="color: red;",
+                hx_swap_oob="outerHTML",
+            )
+        )

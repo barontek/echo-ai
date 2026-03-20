@@ -803,7 +803,7 @@ def chat_container(messages: list[dict]) -> Div:
 
 
 def chat_input(model: str = "qwen3:4b-instruct") -> Div:
-    """Chat input form with SSE streaming."""
+    """Chat input form using HTMX WebSockets."""
     input_field = Input(
         type="text",
         id="chat-input",
@@ -812,15 +812,11 @@ def chat_input(model: str = "qwen3:4b-instruct") -> Div:
         cls="chat-input",
         style="flex: 1; min-width: 0;",
         autofocus=True,
-        hx_post=f"/ui/chat/stream?model={model}",
-        hx_ext="sse",
-        sse_swap="swap:#chat-container",
-        hx_on__before_request="document.getElementById('send-btn').disabled=true",
-        hx_on__after_request="this.reset(); document.getElementById('send-btn').disabled=false",
     )
 
     send_btn = Button(
-        Span("Send", id="send-btn"),
+        "Send",
+        id="send-btn",
         cls="btn btn-primary",
         type="submit",
         style="flex: 0 0 auto; white-space: nowrap;",
@@ -834,6 +830,10 @@ def chat_input(model: str = "qwen3:4b-instruct") -> Div:
         hidden_model,
         cls="chat-form",
         style="display: flex; gap: 0.5rem; width: 100%;",
+        hx_ext="ws",
+        ws_connect="/ui/ws/chat",
+        ws_send=True,
+        hx_on__ws_after_send="this.reset()",
     )
 
     return Div(form, cls="chat-input-container")

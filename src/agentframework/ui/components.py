@@ -833,6 +833,8 @@ def chat_input(model: str = "qwen3:4b-instruct") -> Div:
         hx_ext="ws",
         ws_connect="/ui/ws/chat",
         ws_send=True,
+        hx_target="#chat-container",
+        hx_swap="beforeend",
         hx_on__ws_after_send="this.reset()",
     )
 

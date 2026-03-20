@@ -138,18 +138,15 @@ async def chat_ws(message: str, send):
     if not msg_content.strip():
         return
 
-    temp_id = "streaming-msg"
-
     user_bubble = message_bubble(role="user", content=msg_content)
-    await send(Div(user_bubble, id="chat-container", hx_swap_oob="beforeend"))
+    await send(user_bubble)
 
-    loading_msg = Div(
+    loading_div = Div(
         Div("Assistant", cls="role"),
-        Div("Thinking...", id=f"{temp_id}-content", cls="content"),
-        id=temp_id,
+        Div("Thinking...", cls="content streaming"),
         cls="message assistant",
     )
-    await send(Div(loading_msg, id="chat-container", hx_swap_oob="beforeend"))
+    await send(loading_div)
 
     ws_url = "ws://127.0.0.1:8080/ws/chat"
 
@@ -166,13 +163,7 @@ async def chat_ws(message: str, send):
                 if data["type"] == "content":
                     accumulated += data["content"]
                     html_content = format_message_content(accumulated)
-                    await send(
-                        Div(
-                            html_content,
-                            id=f"{temp_id}-content",
-                            hx_swap_oob="innerHTML",
-                        )
-                    )
+                    await send(Div(html_content, cls="content streaming"))
 
                 elif data["type"] == "done":
                     final = message_bubble(
@@ -180,17 +171,15 @@ async def chat_ws(message: str, send):
                         content=data["content"],
                         thinking=data.get("thinking", ""),
                     )
-                    await send(Div(final, id=temp_id, hx_swap_oob="outerHTML"))
+                    await send(final)
                     break
 
                 elif data["type"] == "error":
                     await send(
                         Div(
                             f"Error: {data['content']}",
-                            id=temp_id,
                             cls="message assistant",
                             style="color: red;",
-                            hx_swap_oob="outerHTML",
                         )
                     )
                     break
@@ -198,10 +187,8 @@ async def chat_ws(message: str, send):
     except Exception as e:
         await send(
             Div(
-                f"Error: {str(e)}",
-                id=temp_id,
+                f"Connection error: {str(e)}",
                 cls="message assistant",
                 style="color: red;",
-                hx_swap_oob="outerHTML",
             )
         )

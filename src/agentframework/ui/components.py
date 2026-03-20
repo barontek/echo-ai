@@ -446,6 +446,41 @@ select:focus-visible {
     top: 0;
 }
 
+/* Empty state and quick actions */
+.empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+.empty-state h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+.quick-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 1rem;
+}
+.quick-actions .btn {
+    font-size: 0.875rem;
+}
+
+/* Session actions grid */
+.session-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
     .app {
@@ -613,6 +648,34 @@ def session_search_input() -> Div:
     return Div(search_input, cls="session-search")
 
 
+def session_actions() -> Div:
+    """Session action buttons (rename, delete, purge)."""
+    rename_btn = Button(
+        "Rename",
+        cls="btn",
+        onclick="renameCurrentSession()",
+    )
+    delete_btn = Button(
+        "Delete",
+        cls="btn btn-danger",
+        hx_delete="/ui/sessions/delete/current",
+        hx_confirm="Delete this session?",
+    )
+    return Div(rename_btn, delete_btn, cls="session-actions")
+
+
+def purge_sessions_button() -> Button:
+    """Button to purge all session history."""
+    return Button(
+        "Purge History",
+        cls="btn btn-danger btn-small",
+        style="margin-top: 0.5rem; width: 100%;",
+        hx_delete="/ui/sessions/purge",
+        hx_confirm="Are you sure you want to purge ALL session history? This cannot be undone.",
+        hx_swap="none",
+    )
+
+
 def sidebar(models: list[str], sessions: list[dict], current_model: str = "") -> Div:
     """Full sidebar component."""
     theme_toggle = Button(
@@ -683,13 +746,43 @@ def message_bubble(role: str, content: str, thinking: str = "") -> Div:
     return Div(*parts, cls=cls)
 
 
+def quick_actions() -> Div:
+    """Quick action buttons for empty state."""
+    actions = [
+        (
+            "Search AI News",
+            "Search the web for the latest news on Artificial Intelligence",
+        ),
+        (
+            "Write Python Server",
+            "Write a python script that implements a simple FastAPI server",
+        ),
+        (
+            "Extract Data",
+            "Help me extract structured entity data from a messy block of text",
+        ),
+    ]
+    btns = []
+    for label, prompt in actions:
+        btns.append(
+            Button(
+                label,
+                cls="btn",
+                type="button",
+                onclick=f"document.getElementById('chat-input').value='{prompt}'; document.getElementById('chat-form').requestSubmit();",
+            )
+        )
+    return Div(*btns, cls="quick-actions")
+
+
 def chat_container(messages: list[dict]) -> Div:
     """Chat message container."""
     if not messages:
         return Div(
-            P("Start a conversation by typing below.", cls="empty-state"),
+            H2("How can I help you today?"),
+            quick_actions(),
+            cls="empty-state",
             id="chat-container",
-            cls="chat-container",
         )
 
     bubbles: list[Div] = []

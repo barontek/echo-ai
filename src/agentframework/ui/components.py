@@ -378,6 +378,130 @@ body {
 .session-search input::placeholder {
     color: var(--text-secondary);
 }
+
+/* Error state */
+.error-message {
+    background: var(--accent-red);
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin: 0.5rem 0;
+    font-size: 0.875rem;
+}
+.error-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--accent-red);
+}
+
+/* Transitions */
+.message {
+    animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+/* Accessibility - focus visible */
+:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
+/* Skip link for accessibility */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--accent-blue);
+    color: white;
+    padding: 8px 16px;
+    z-index: 100;
+    transition: top 0.2s;
+}
+.skip-link:focus {
+    top: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .app {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100%;
+        height: auto;
+        max-height: 40vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .sidebar-header {
+        padding: 0.75rem;
+    }
+    .sidebar-section {
+        padding: 0.75rem;
+    }
+    .session-list {
+        max-height: 15vh;
+    }
+    .main {
+        flex: 1;
+        min-height: 0;
+    }
+    .chat-header {
+        padding: 0.5rem 0.75rem;
+    }
+    .chat-container {
+        padding: 0.75rem;
+    }
+    .message {
+        max-width: 95%;
+    }
+    .chat-input-container {
+        padding: 0.75rem;
+    }
+}
+
+/* Loading indicator enhancement */
+.sending-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+.htmx-request.htmx-indicator {
+    display: inline-block;
+}
 """
 
 SCRIPT = """

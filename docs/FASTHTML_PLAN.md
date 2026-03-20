@@ -121,33 +121,33 @@ src/agentframework/
 - SSE format: `event: swap\ndata: <html content>\n\n` for HTMX swapping
 - Session delete uses `hx_delete` with `hx_swap="delete"`
 
-### Phase 4: Advanced Features ⏳ IN PROGRESS
+### Phase 4: Advanced Features ✅ COMPLETE
 **Goal:** Match all current functionality
 
-1. Markdown rendering (use `markdown` Python library, render server-side)
-2. Code highlighting (use `rich` or `pygments` for HTML output)
-3. Theme toggle (CSS variables + HTMX swap)
-4. Thinking display (extract and render server-side)
-5. Session search/filter
+1. ✅ Markdown rendering (use `markdown` Python library, render server-side)
+2. ✅ Code highlighting (use `rich` or `pygments` for HTML output)
+3. ✅ Theme toggle (CSS variables + HTMX swap)
+4. ✅ Thinking display (extract and render server-side)
+5. ✅ Session search/filter
 
 **Deliverable:** Feature parity with current UI
 
-### Phase 5: Polish
+### Phase 5: Polish ✅ COMPLETE
 **Goal:** Match UX quality
 
-1. Accessibility (ensure keyboard nav works)
-2. Mobile responsive (CSS media queries)
-3. Loading states (HTMX indicators)
-4. Error handling (user-friendly messages)
-5. Animation/transitions (CSS)
+1. ✅ Accessibility (skip links, ARIA labels, focus-visible)
+2. ✅ Mobile responsive (CSS media queries for <768px)
+3. ✅ Loading states (HTMX indicators)
+4. ✅ Error handling (error message styles)
+5. ✅ Animation/transitions (CSS fadeIn animation)
 
-### Phase 6: Migration
+### Phase 6: Migration ✅ COMPLETE
 **Goal:** Clean transition
 
-1. Make `/ui` the default route (`/`)
-2. Keep old `/static` for any remaining assets
-3. Deprecate old WebSocket endpoint
-4. Update documentation
+1. ✅ Make `/ui` the default route (`/`) - root redirects to `/ui`
+2. ✅ Keep old `/static` for any remaining assets
+3. ⚠️ Deprecate old WebSocket endpoint (kept for backward compatibility)
+4. ✅ Update documentation (this file)
 
 ---
 

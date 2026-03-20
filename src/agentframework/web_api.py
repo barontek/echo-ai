@@ -25,7 +25,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from src.agentframework.agent import Agent, AgentConfig, create_agent
@@ -120,6 +120,12 @@ try:
     app.mount("/ui", ui_app)
 except ImportError:
     logger.warning("FastHTML UI not available (python-fasthtml not installed)")
+
+
+@app.get("/", include_in_schema=False)
+async def root_redirect():
+    """Redirect root path to FastHTML UI."""
+    return RedirectResponse(url="/ui", status_code=302)
 
 
 @app.middleware("http")

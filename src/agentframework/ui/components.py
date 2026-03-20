@@ -273,7 +273,15 @@ document.body.classList.add('htmx-loaded');
 def model_select(models: list[str], current: str = "") -> Div:
     """Model selection dropdown."""
     options = [Option(m, value=m, selected=(m == current)) for m in models]
-    select = Select(*options, id="model-select", name="model")
+    select = Select(
+        *options,
+        id="model-select",
+        name="model",
+        hx_post="/ui/models",
+        hx_target="#model-select",
+        hx_swap="outerHTML",
+        hx_trigger="change",
+    )
     label = Label("Model")
     return Div(label, select, cls="sidebar-section")
 
@@ -285,9 +293,19 @@ def session_item(session: dict, active: bool = False) -> Div:
     cls = "session-item active" if active else "session-item"
     icon = Span("💬", cls="session-icon")
     title_span = Span(title, cls="title")
+    delete_btn = Button(
+        "×",
+        cls="btn-delete",
+        style="padding: 0 4px; background: none; border: none; color: #8b949e; cursor: pointer;",
+        hx_delete=f"/ui/sessions/delete/{session_id}",
+        hx_target=f"#session-{session_id}",
+        hx_swap="delete",
+        hx_confirm="Delete this session?",
+    )
     return Div(
         icon,
         title_span,
+        delete_btn,
         id=f"session-{session_id}",
         cls=cls,
         hx_get=f"/ui/sessions/{session_id}",
@@ -407,7 +425,7 @@ def chat_input(model: str = "qwen3:4b-instruct") -> Div:
         autofocus=True,
         hx_post=f"/ui/chat/stream?model={model}",
         hx_ext="sse",
-        sse_swap="message:#chat-container",
+        sse_swap="swap:#chat-container",
         hx_on__before_request="document.getElementById('send-btn').disabled=true",
         hx_on__after_request="this.reset(); document.getElementById('send-btn').disabled=false",
     )

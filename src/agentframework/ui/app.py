@@ -144,11 +144,11 @@ async def stream_chat(message: str, model: str = "qwen3:4b-instruct"):
 
                 if data["type"] == "thinking":
                     thinking += data["content"]
-                    yield f"data: {json.dumps({'type': 'thinking', 'content': data['content']})}\n\n"
+                    yield f"event: message\ndata: <div class='thinking'>{thinking}</div>\n\n"
 
                 elif data["type"] == "content":
                     accumulated += data["content"]
-                    yield f"data: {json.dumps({'type': 'content', 'content': data['content']})}\n\n"
+                    yield f"event: message\ndata: <div class='message assistant'><div class='role'>Assistant</div><div class='content'><p>{accumulated}</p></div></div>\n\n"
 
                 elif data["type"] == "done":
                     bubble = message_bubble(
@@ -156,15 +156,15 @@ async def stream_chat(message: str, model: str = "qwen3:4b-instruct"):
                         content=data["content"],
                         thinking=data.get("thinking", ""),
                     )
-                    yield f"event: done\ndata: {str(bubble)}\n\n"
+                    yield f"event: swap\ndata: {str(bubble)}\n\n"
                     break
 
                 elif data["type"] == "error":
-                    yield f"event: error\ndata: {data['content']}\n\n"
+                    yield f"event: error\ndata: <div class='error'>Error: {data['content']}</div>\n\n"
                     break
 
     except Exception as e:
-        yield f"event: error\ndata: {str(e)}\n\n"
+        yield f"event: error\ndata: <div class='error'>Connection error: {e}</div>\n\n"
 
 
 @rt("/chat/stream")

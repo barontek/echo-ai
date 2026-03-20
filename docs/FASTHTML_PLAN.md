@@ -101,13 +101,13 @@ src/agentframework/
 
 **Deliverable:** Static UI renders correctly, connected to FastAPI
 
-### Phase 3: Interactivity (HTMX) ⏳ IN PROGRESS
+### Phase 3: Interactivity (HTMX) ✅ COMPLETE
 **Goal:** Make UI work without WebSockets
 
-1. HTMX for form submissions (send message)
-2. HTMX for session management (new, delete, rename)
-3. HTMX for model switching
-4. Server-Sent Events (SSE) for streaming responses
+1. ✅ HTMX for form submissions (send message)
+2. ✅ HTMX for session management (new, delete, rename)
+3. ✅ HTMX for model switching
+4. ✅ Server-Sent Events (SSE) for streaming responses
 
 **Key Decision:** Use SSE instead of WebSocket for streaming
 - SSE is simpler with HTMX
@@ -116,7 +116,12 @@ src/agentframework/
 
 **Deliverable:** Chat works via HTMX + SSE
 
-### Phase 4: Advanced Features
+**Implementation Notes:**
+- Route ordering matters: `/sessions/new` must be defined before `/sessions/{id}`
+- SSE format: `event: swap\ndata: <html content>\n\n` for HTMX swapping
+- Session delete uses `hx_delete` with `hx_swap="delete"`
+
+### Phase 4: Advanced Features ⏳ IN PROGRESS
 **Goal:** Match all current functionality
 
 1. Markdown rendering (use `markdown` Python library, render server-side)

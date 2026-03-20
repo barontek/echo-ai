@@ -150,29 +150,25 @@ body {
     background: var(--bg-secondary);
 }
 .chat-form {
-    display: flex;
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
     gap: 0.5rem;
-    align-items: center;
     width: 100%;
 }
 .chat-input {
-    flex: 1 1 auto;
-    min-width: 0;
+    width: 100% !important;
     padding: 0.75rem 1rem;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--bg-primary);
     color: var(--text-primary);
     font-size: 1rem;
-    height: auto;
+    min-height: 44px;
+    box-sizing: border-box;
 }
 .chat-input:focus {
     outline: none;
     border-color: var(--accent-blue);
-}
-.chat-form .btn {
-    flex: 0 0 auto;
-    white-space: nowrap;
 }
 
 /* Buttons */

@@ -37,6 +37,11 @@ from src.workflows import get_workflow, list_workflows
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_WEB_PORT = 8080
+DEFAULT_PROVIDER = "ollama"
+DEFAULT_MODEL = "qwen3:4b-instruct"
+FALLBACK_MODELS = [DEFAULT_MODEL, "llama3.2:latest", "phi3.5:latest"]
+
 # Pre-compiled patterns for message filtering (performance optimization)
 _INTERNAL_PATTERNS = [
     re.compile(r"System Note: Tools executed"),
@@ -66,7 +71,7 @@ def get_state() -> AppState:
         _state = AppState()
         try:
             _state.agent = _create_runtime_agent(
-                provider="ollama", model="qwen3:4b-instruct"
+                provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
             )
         except Exception as e:
             logger.debug(f"Ollama agent initialization deferred: {e}")
@@ -100,7 +105,7 @@ async def lifespan(app: FastAPI):
     _state = AppState()
     try:
         _state.agent = _create_runtime_agent(
-            provider="ollama", model="qwen3:4b-instruct"
+            provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
         )
     except Exception as e:
         logger.debug(f"Ollama agent initialization deferred: {e}")
@@ -226,6 +231,117 @@ def _configure_cors():
 _configure_cors()
 
 
+def ensure_runtime_agent(state: AppState) -> Agent | None:
+    """Ensure application state has a usable runtime agent."""
+    if state.agent is None:
+        try:
+            state.agent = _create_runtime_agent(
+                provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
+            )
+        except Exception as e:
+            logger.debug(f"Deferred agent creation failed: {e}")
+    return state.agent
+
+
+async def get_models_data() -> dict[str, Any]:
+    """List available Ollama models for API callers."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://localhost:11434/api/tags", timeout=5.0)
+            response.raise_for_status()
+            models = response.json().get("models", [])
+            return {"models": [m["name"] for m in models]}
+    except Exception as e:
+        logger.error("Failed to fetch Ollama models: %s", e)
+        return {
+            "models": FALLBACK_MODELS,
+            "error": "Could not reach Ollama at http://localhost:11434/api/tags. Showing fallback models.",
+        }
+
+
+def get_models_sync() -> dict[str, Any]:
+    """List available Ollama models for in-process UI callers."""
+    try:
+        response = httpx.get("http://localhost:11434/api/tags", timeout=5.0)
+        response.raise_for_status()
+        models = response.json().get("models", [])
+        return {"models": [m["name"] for m in models]}
+    except Exception as e:
+        logger.error("Failed to fetch Ollama models: %s", e)
+        return {
+            "models": FALLBACK_MODELS,
+            "error": "Could not reach Ollama at http://localhost:11434/api/tags. Showing fallback models.",
+        }
+
+
+def get_sessions_data(state: AppState) -> dict[str, Any]:
+    """Return session metadata for the current runtime agent."""
+    active_agent = ensure_runtime_agent(state)
+    if active_agent and active_agent.session_manager:
+        sessions = [
+            {"id": s.id, "title": s.title, "created_at": s.created_at.isoformat()}
+            for s in active_agent.session_manager.list_sessions()
+        ]
+        return {"sessions": sessions}
+    return {"sessions": []}
+
+
+def create_session_data(state: AppState) -> dict[str, Any]:
+    """Create a fresh chat session for the shared UI/backend state."""
+    active_agent = ensure_runtime_agent(state)
+    if active_agent and active_agent.session_manager:
+        active_agent.session_manager.create_session()
+        if active_agent.session_manager.current_session:
+            state.current_session_id = active_agent.session_manager.current_session.id
+            active_agent.messages = []
+            state.message_history = []
+            return {"session_id": state.current_session_id}
+    state.message_history = []
+    return {"session_id": state.current_session_id, "error": "Session manager unavailable."}
+
+
+def load_session_data(session_id: str, state: AppState) -> dict[str, Any]:
+    """Load a session and normalize messages for the UI."""
+    active_agent = ensure_runtime_agent(state)
+    if active_agent and active_agent.session_manager:
+        active_agent.load_session(session_id)
+        state.current_session_id = session_id
+        state.message_history = filter_messages_for_ui(active_agent.messages)
+        title = None
+        if active_agent.session_manager.current_session:
+            title = active_agent.session_manager.current_session.title
+        return {
+            "session_id": session_id,
+            "title": title,
+            "messages": state.message_history,
+        }
+
+    return {
+        "session_id": session_id,
+        "messages": [],
+        "title": None,
+        "error": "Session manager unavailable.",
+    }
+
+
+def delete_session_data(session_id: str, state: AppState) -> dict[str, Any]:
+    """Delete a persisted chat session."""
+    active_agent = ensure_runtime_agent(state)
+    if not (active_agent and active_agent.session_manager):
+        return {"status": "ok"}
+
+    with active_agent.session_manager.SessionLocal() as db:
+        db.query(DBSessionModel).filter(DBSessionModel.id == session_id).delete()
+        db.commit()
+
+    if state.current_session_id == session_id:
+        state.current_session_id = None
+        state.message_history = []
+        active_agent.messages = []
+
+    return {"status": "ok"}
+
+
 def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
     """Filter messages for UI rendering, removing raw tool/system noise."""
     filtered = []
@@ -333,7 +449,7 @@ def _create_runtime_agent(
     """Create an agent for the web UI with the same tool config as CLI."""
     # Safety check for model name
     if not model or model == "Loading models..." or "models..." in model:
-        model = "qwen3:4b-instruct"
+        model = DEFAULT_MODEL
     config = load_config()
     safety_config = get_safety_config(config)
     tools = get_tools(config, safety_config)
@@ -422,24 +538,8 @@ async def health_check():
 
 @app.get("/api/models", tags=["Models"])
 async def list_models():
-    """List available Ollama models.
-
-    Queries the Ollama server at localhost:11434 for available models.
-
-    Returns:
-        {"models": ["llama2", "qwen3:4b-instruct", ...]}
-
-    Note: Requires Ollama server to be running.
-    """
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get("http://localhost:11434/api/tags", timeout=5.0)
-            if response.status_code == 200:
-                models = response.json().get("models", [])
-                return {"models": [m["name"] for m in models]}
-    except Exception as e:
-        logger.debug(f"Failed to fetch Ollama models: {e}")
-    return {"models": ["qwen3:4b-instruct", "llama3.2:latest", "phi3.5:latest"]}
+    """List available Ollama models."""
+    return await get_models_data()
 
 
 @app.post("/api/config", tags=["Configuration"])
@@ -484,21 +584,7 @@ async def list_sessions(
     Returns:
         {"sessions": [{"id": "...", "title": "...", "created_at": "..."}, ...]}
     """
-    if state.agent is None:
-        try:
-            state.agent = _create_runtime_agent(
-                provider="ollama", model="qwen3:4b-instruct"
-            )
-        except Exception as e:
-            logger.debug(f"Deferred agent creation failed: {e}")
-
-    if state.agent and state.agent.session_manager:
-        sessions = [
-            {"id": s.id, "title": s.title, "created_at": s.created_at.isoformat()}
-            for s in state.agent.session_manager.list_sessions()
-        ]
-        return {"sessions": sessions}
-    return {"sessions": []}
+    return get_sessions_data(state)
 
 
 @app.post("/api/sessions", tags=["Sessions"])
@@ -513,13 +599,7 @@ async def create_session(
     Returns:
         {"session_id": "20260319_143052", "title": null}
     """
-    if state.agent and state.agent.session_manager:
-        state.agent.session_manager.create_session()
-        if state.agent.session_manager.current_session:
-            state.current_session_id = state.agent.session_manager.current_session.id
-            state.agent.messages = []
-    state.message_history = []
-    return {"session_id": state.current_session_id}
+    return create_session_data(state)
 
 
 @app.get("/api/sessions/{session_id}", tags=["Sessions"])
@@ -545,20 +625,7 @@ async def load_session(
     Note:
         Messages are filtered for UI rendering (tool messages removed, thinking extracted)
     """
-    if state.agent and state.agent.session_manager:
-        state.agent.load_session(session_id)
-        state.current_session_id = session_id
-        state.message_history = filter_messages_for_ui(state.agent.messages)
-        title = None
-        if state.agent.session_manager.current_session:
-            title = state.agent.session_manager.current_session.title
-        return {
-            "session_id": session_id,
-            "title": title,
-            "messages": state.message_history,
-        }
-
-    return {"session_id": session_id, "messages": [], "title": None}
+    return load_session_data(session_id, state)
 
 
 @app.delete("/api/sessions/{session_id}", tags=["Sessions"])
@@ -576,14 +643,7 @@ async def delete_session(
     Returns:
         {"status": "ok"}
     """
-    if not (state.agent and state.agent.session_manager):
-        return {"status": "ok"}
-
-    with state.agent.session_manager.SessionLocal() as db:
-        db.query(DBSessionModel).filter(DBSessionModel.id == session_id).delete()
-        db.commit()
-
-    return {"status": "ok"}
+    return delete_session_data(session_id, state)
 
 
 @app.post("/api/sessions/rename", tags=["Sessions"])
@@ -662,7 +722,7 @@ async def workflow_run(
     """Run a selected workflow and return its final output."""
     if state.agent is None:
         state.agent = _create_runtime_agent(
-            provider="ollama", model="qwen3:4b-instruct"
+            provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
         )
 
     try:
@@ -725,7 +785,7 @@ async def chat(
     """
     if state.agent is None:
         state.agent = _create_runtime_agent(
-            provider="ollama", model="qwen3:4b-instruct"
+            provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
         )
 
     prompt = message.content
@@ -769,7 +829,7 @@ async def _generate_title_async(active_agent: "Agent") -> None:
 async def websocket_chat(websocket: WebSocket):
     """WebSocket chat endpoint for real-time streaming.
 
-    Connect to: `ws://localhost:8000/ws/chat`
+    Connect to: `ws://localhost:8080/ws/chat`
 
     ## Sending Messages
 
@@ -803,7 +863,7 @@ async def websocket_chat(websocket: WebSocket):
     ## JavaScript Example
 
     ```javascript
-    const ws = new WebSocket('ws://localhost:8000/ws/chat');
+    const ws = new WebSocket('ws://localhost:8080/ws/chat');
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'content') {
@@ -1085,7 +1145,7 @@ async def review_document():
     return {"sections": sections}
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8501):
+def run_server(host: str = "127.0.0.1", port: int = DEFAULT_WEB_PORT):
     """Run the FastAPI server."""
     uvicorn.run(app, host=host, port=port)
 

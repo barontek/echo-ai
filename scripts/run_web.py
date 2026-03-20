@@ -4,7 +4,7 @@
 Usage:
     python scripts/run_web.py
     # or
-    uvicorn src.agentframework.web_api:app --reload --port 8501
+    uvicorn src.agentframework.web_api:app --reload --port 8080
 """
 
 import sys
@@ -15,9 +15,9 @@ def main() -> None:
     project_root = Path(__file__).parent.parent
     sys.path.insert(0, str(project_root))
 
-    from src.agentframework.web_api import run_server
+    from src.agentframework.web_api import DEFAULT_WEB_PORT, run_server
 
-    run_server(host="0.0.0.0", port=8080)
+    run_server(host="0.0.0.0", port=DEFAULT_WEB_PORT)
 
 
 if __name__ == "__main__":

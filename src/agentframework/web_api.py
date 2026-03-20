@@ -208,7 +208,14 @@ def _get_cors_config() -> dict:
     cors_config = web_config.get("cors", {})
     return {
         "origins": cors_config.get(
-            "origins", ["http://localhost:3000", "http://localhost:8000"]
+            "origins",
+            [
+                "http://localhost:3000",
+                f"http://localhost:{DEFAULT_WEB_PORT}",
+                f"http://127.0.0.1:{DEFAULT_WEB_PORT}",
+                "http://localhost:8501",
+                "http://127.0.0.1:8501",
+            ],
         ),
         "credentials": cors_config.get("allow_credentials", True),
         "methods": cors_config.get("allow_methods", ["*"]),

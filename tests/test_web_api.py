@@ -518,23 +518,16 @@ class TestWorkflows:
         assert result["response"] == "done"
         assert len(state.message_history) == 2
 
-    @pytest.mark.asyncio
-    async def test_workflows_page_serves_static_file(self):
-        response = await web_api.workflows_page()
-        assert str(response.path).endswith("static/workflows.html")
-
 
 # ---------------------------------------------------------------------------
-# Static routes & Review endpoint
+# Review endpoint
 # ---------------------------------------------------------------------------
 
 
-class TestStaticAndReview:
+class TestReview:
     def test_static_routes(self):
         response = client.get("/")
-        assert response.status_code in [200, 404]
-        response = client.get("/workflows")
-        assert response.status_code in [200, 404]
+        assert response.status_code in [200, 302]
 
     @patch("uvicorn.run")
     def test_web_api_run_server_logic(self, mock_run):

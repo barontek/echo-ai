@@ -420,18 +420,6 @@ async def health_check():
     }
 
 
-@app.get("/workflows")
-async def workflows_page():
-    """Serve the dedicated workflows page."""
-    return FileResponse("static/workflows.html")
-
-
-@app.get("/static/{path:path}")
-async def static_files(path: str):
-    """Serve static files."""
-    return FileResponse(f"static/{path}")
-
-
 @app.get("/api/models", tags=["Models"])
 async def list_models():
     """List available Ollama models.

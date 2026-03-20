@@ -147,24 +147,32 @@ body {
 .chat-input-container {
     padding: 1rem;
     border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
 }
 .chat-form {
     display: flex;
     gap: 0.5rem;
     align-items: center;
+    width: 100%;
 }
 .chat-input {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 0.75rem 1rem;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     color: var(--text-primary);
     font-size: 1rem;
+    height: auto;
 }
 .chat-input:focus {
     outline: none;
     border-color: var(--accent-blue);
+}
+.chat-form .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 /* Buttons */

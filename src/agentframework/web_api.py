@@ -113,6 +113,14 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app with lifespan
 app = FastAPI(title="Echo AI API", lifespan=lifespan)
 
+# Mount FastHTML UI at /ui
+try:
+    from src.agentframework.ui.app import app as ui_app
+
+    app.mount("/ui", ui_app)
+except ImportError:
+    logger.warning("FastHTML UI not available (python-fasthtml not installed)")
+
 
 @app.middleware("http")
 async def correlation_id_middleware(request: Request, call_next):

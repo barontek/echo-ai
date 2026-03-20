@@ -356,6 +356,28 @@ body {
 [data-theme="light"] .codehilite .p { color: #333333; }
 [data-theme="light"] .codehilite .s { color: #ba2121; }
 [data-theme="light"] .codehilite .w { color: #bbbbbb; }
+
+/* Session search */
+.session-search {
+    padding: 0.5rem 0;
+    margin-bottom: 0.5rem;
+}
+.session-search input {
+    width: 100%;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+.session-search input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+.session-search input::placeholder {
+    color: var(--text-secondary);
+}
 """
 
 SCRIPT = """
@@ -371,6 +393,18 @@ function toggleTheme() {
     const next = current === 'dark' ? 'light' : 'dark';
     html.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
+}
+
+function filterSessions(query) {
+    const items = document.querySelectorAll('#session-list .session-item');
+    const lowerQuery = query.toLowerCase();
+    items.forEach(item => {
+        const title = item.querySelector('.title');
+        if (title) {
+            const text = title.textContent.toLowerCase();
+            item.style.display = text.includes(lowerQuery) ? '' : 'none';
+        }
+    });
 }
 """
 
@@ -442,6 +476,19 @@ def session_list(sessions: list[dict], active_id: str = "") -> Div:
     return Div(*items, id="session-list", cls="session-list")
 
 
+def session_search_input() -> Div:
+    """Session search input with client-side filtering."""
+    search_input = Input(
+        type="text",
+        id="session-search",
+        name="search",
+        placeholder="Search sessions...",
+        cls="session-search-input",
+        onkeyup="filterSessions(this.value)",
+    )
+    return Div(search_input, cls="session-search")
+
+
 def sidebar(models: list[str], sessions: list[dict], current_model: str = "") -> Div:
     """Full sidebar component."""
     theme_toggle = Button(
@@ -465,10 +512,12 @@ def sidebar(models: list[str], sessions: list[dict], current_model: str = "") ->
         hx_swap="innerHTML",
     )
     session_title = H2("Sessions", style="font-size: 0.875rem; margin-bottom: 0.5rem;")
+    search_input = session_search_input()
     sessions_section = session_list(sessions)
 
     sessions_container = Div(
         session_title,
+        search_input,
         new_btn,
         sessions_section,
         cls="sidebar-section",

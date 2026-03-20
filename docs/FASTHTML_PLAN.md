@@ -79,7 +79,7 @@ src/agentframework/
 
 ## Implementation Phases
 
-### Phase 1: Setup & Basic App
+### Phase 1: Setup & Basic App ✅ COMPLETE
 **Goal:** Get FastHTML serving a basic page
 
 1. Add `python-fasthtml` to dependencies
@@ -89,7 +89,7 @@ src/agentframework/
 
 **Deliverable:** `http://localhost:8000/ui` shows basic chat UI
 
-### Phase 2: Core Components
+### Phase 2: Core Components ✅ COMPLETE
 **Goal:** Build all UI components in FastHTML
 
 1. `Header` - logo, model badge, metrics
@@ -97,10 +97,11 @@ src/agentframework/
 3. `ChatContainer` - message display area
 4. `ChatInput` - message input form
 5. `MessageBubble` - individual messages with markdown
+6. SSE streaming via WebSocket proxy
 
-**Deliverable:** Static UI renders correctly
+**Deliverable:** Static UI renders correctly, connected to FastAPI
 
-### Phase 3: Interactivity (HTMX)
+### Phase 3: Interactivity (HTMX) ⏳ IN PROGRESS
 **Goal:** Make UI work without WebSockets
 
 1. HTMX for form submissions (send message)

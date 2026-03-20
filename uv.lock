@@ -47,6 +47,7 @@ dependencies = [
     { name = "tiktoken" },
     { name = "urllib3" },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -85,6 +86,7 @@ requires-dist = [
     { name = "tiktoken", specifier = ">=0.7.0" },
     { name = "urllib3", specifier = ">=2.6.3" },
     { name = "uvicorn", specifier = ">=0.41.0" },
+    { name = "websockets", specifier = ">=12.0" },
 ]
 
 [[package]]

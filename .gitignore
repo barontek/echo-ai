@@ -53,3 +53,6 @@ site/
 .coverage
 .test_agent_vector_db/
 tmp_sessions/
+
+# uv lock file (use Pipfile.lock for reproducibility)
+uv.lock

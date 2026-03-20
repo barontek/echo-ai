@@ -126,6 +126,7 @@ class SessionManager:
         """Add the 'title' column to agent_sessions if it's missing (pre-existing DBs)."""
         import sqlite3
 
+        conn = None
         try:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.execute("PRAGMA table_info(agent_sessions)")
@@ -134,14 +135,17 @@ class SessionManager:
                 conn.execute("ALTER TABLE agent_sessions ADD COLUMN title TEXT")
                 conn.commit()
                 logger.info("Migrated agent_sessions: added 'title' column.")
-            conn.close()
         except Exception as e:
             logger.error("Migration check for 'title' column failed: %s", e)
+        finally:
+            if conn:
+                conn.close()
 
     def _migrate_add_events_column(self) -> None:
         """Add the 'events' column to agent_sessions if it's missing (pre-existing DBs)."""
         import sqlite3
 
+        conn = None
         try:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.execute("PRAGMA table_info(agent_sessions)")
@@ -152,14 +156,17 @@ class SessionManager:
                 )
                 conn.commit()
                 logger.info("Migrated agent_sessions: added 'events' column.")
-            conn.close()
         except Exception as e:
             logger.error("Migration check for 'events' column failed: %s", e)
+        finally:
+            if conn:
+                conn.close()
 
     def _migrate_add_indexes(self) -> None:
         """Add indexes for faster queries."""
         import sqlite3
 
+        conn = None
         try:
             conn = sqlite3.connect(str(self.db_path))
             conn.execute(
@@ -168,9 +175,11 @@ class SessionManager:
             )
             conn.commit()
             logger.info("Migrated agent_sessions: added indexes.")
-            conn.close()
         except Exception as e:
             logger.error("Migration check for indexes failed: %s", e)
+        finally:
+            if conn:
+                conn.close()
 
     def log_event(self, event_type: str, data: dict | None = None) -> None:
         """Log an event to the session's event log."""

@@ -146,7 +146,7 @@ async def chat_ws(message: str, model: str, send):
     )
     await send(Div(loading_msg, id="chat-container", hx_swap_oob="beforeend"))
 
-    ws_url = "ws://127.0.0.1:8000/ws/chat"
+    ws_url = "ws://127.0.0.1:8080/ws/chat"
 
     try:
         async with websockets.connect(ws_url) as ws:

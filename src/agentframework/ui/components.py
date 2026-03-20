@@ -814,6 +814,7 @@ def chat_input(model: str = "qwen3:4b-instruct") -> Div:
         name="message",
         placeholder="Type your message... (Enter to send)",
         cls="chat-input",
+        style="flex: 1; min-width: 0;",
         autofocus=True,
         hx_post=f"/ui/chat/stream?model={model}",
         hx_ext="sse",
@@ -826,11 +827,18 @@ def chat_input(model: str = "qwen3:4b-instruct") -> Div:
         Span("Send", id="send-btn"),
         cls="btn btn-primary",
         type="submit",
+        style="flex: 0 0 auto; white-space: nowrap;",
     )
 
     hidden_model = Hidden(name="model", value=model)
 
-    form = Form(input_field, send_btn, hidden_model, cls="chat-form")
+    form = Form(
+        input_field,
+        send_btn,
+        hidden_model,
+        cls="chat-form",
+        style="display: flex; gap: 0.5rem; width: 100%;",
+    )
 
     return Div(form, cls="chat-input-container")
 

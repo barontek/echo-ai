@@ -23,7 +23,7 @@ export function formatContent(content) {
             ADD_ATTR: ['class'],
         });
         return clean;
-    } catch (e) {
+    } catch {
         return escapeHtml(content);
     }
 }
@@ -159,12 +159,10 @@ export function createToolsContainer(toolCalls) {
     });
 
     return container;
-
-    return container;
 }
 
 export function createSourcesContainer(content) {
-    const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+    const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
     const links = [];
     let match;
     while ((match = linkRegex.exec(content)) !== null) {
@@ -181,11 +179,9 @@ export function createSourcesContainer(content) {
         <button type="button" class="sources-header" aria-label="Toggle sources">
             <span class="sources-icon">▶</span> Sources (${links.length})
         </button>
-        <div class="sources-content collapsed">
-            ${links.map(link =>
-                `<a href="${link.url}" target="_blank" rel="noopener noreferrer">🔗 ${escapeHtml(link.text)}</a>`
-            ).join('')}
-        </div>
+        <div class="sources-content collapsed">${links.map(link =>
+        `<a href="${link.url}" target="_blank" rel="noopener noreferrer">🔗 ${escapeHtml(link.text)}</a>`
+    ).join('')}</div>
     `;
 
     const header = container.querySelector('.sources-header');
@@ -307,7 +303,7 @@ export function updateContentElement(container, content) {
     }
 }
 
-export function finishMessageElement(container, message, extra = {}) {
+export function finishMessageElement(container, message, _extra = {}) {
     const msgEl = container.querySelector('.message:last-child');
     if (!msgEl) return;
 

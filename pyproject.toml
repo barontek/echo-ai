@@ -59,3 +59,7 @@ markers = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/agentframework/ui/*.py" = ["F403", "F405"]
+
+[tool.pyright]
+include = ["src/agentframework"]
+exclude = ["src/agentframework/ui"]

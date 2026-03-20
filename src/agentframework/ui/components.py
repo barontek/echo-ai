@@ -1,21 +1,37 @@
 """UI components for FastHTML chat interface."""
 
-from fasthtml.common import *  # noqa: F403, F405
+from fasthtml.common import (
+    Div,
+    Span,
+    H1,
+    H2,
+    Label,
+    Select,
+    Option,
+    Button,
+    Input,
+    Form,
+    Hidden,
+    P,
+    Style,
+    Script,
+    Title,
+)  # noqa: F401, F403
 
 CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { 
+body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0e1117; 
-    color: #ececf1; 
+    background: #0e1117;
+    color: #ececf1;
     min-height: 100vh;
 }
 .app { display: flex; height: 100vh; }
 
 /* Sidebar */
-.sidebar { 
-    width: 280px; 
-    background: #161b22; 
+.sidebar {
+    width: 280px;
+    background: #161b22;
     border-right: 1px solid #30363d;
     display: flex;
     flex-direction: column;
@@ -25,9 +41,9 @@ body {
     padding: 1rem;
     border-bottom: 1px solid #30363d;
 }
-.sidebar-header h1 { 
-    font-size: 1.25rem; 
-    color: #58a6ff; 
+.sidebar-header h1 {
+    font-size: 1.25rem;
+    color: #58a6ff;
 }
 .sidebar-section {
     padding: 1rem;
@@ -61,14 +77,14 @@ body {
 }
 
 /* Main content */
-.main { 
-    flex: 1; 
-    display: flex; 
+.main {
+    flex: 1;
+    display: flex;
     flex-direction: column;
     min-width: 0;
 }
-.chat-header { 
-    padding: 0.75rem 1rem; 
+.chat-header {
+    padding: 0.75rem 1rem;
     border-bottom: 1px solid #30363d;
     display: flex;
     align-items: center;
@@ -80,23 +96,23 @@ body {
     border-radius: 4px;
     background: #21262d;
 }
-.chat-container { 
-    flex: 1; 
-    overflow-y: auto; 
+.chat-container {
+    flex: 1;
+    overflow-y: auto;
     padding: 1rem;
 }
-.chat-input-container { 
-    padding: 1rem; 
+.chat-input-container {
+    padding: 1rem;
     border-top: 1px solid #30363d;
 }
-.chat-form { 
-    display: flex; 
+.chat-form {
+    display: flex;
     gap: 0.5rem;
     align-items: center;
 }
-.chat-input { 
-    flex: 1; 
-    padding: 0.75rem 1rem; 
+.chat-input {
+    flex: 1;
+    padding: 0.75rem 1rem;
     border-radius: 8px;
     border: 1px solid #30363d;
     background: #161b22;
@@ -109,9 +125,9 @@ body {
 }
 
 /* Buttons */
-.btn { 
-    padding: 0.5rem 1rem; 
-    border-radius: 6px; 
+.btn {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
     border: 1px solid #30363d;
     cursor: pointer;
     font-size: 0.875rem;
@@ -121,8 +137,8 @@ body {
     transition: background 0.15s;
 }
 .btn:hover { background: #30363d; }
-.btn-primary { 
-    background: #238636; 
+.btn-primary {
+    background: #238636;
     color: white;
     border-color: #238636;
 }
@@ -139,18 +155,18 @@ body {
 }
 
 /* Messages */
-.message { 
-    margin-bottom: 1rem; 
-    padding: 1rem; 
+.message {
+    margin-bottom: 1rem;
+    padding: 1rem;
     border-radius: 8px;
     max-width: 80%;
 }
-.message.user { 
-    background: #238636; 
+.message.user {
+    background: #238636;
     margin-left: auto;
 }
-.message.assistant { 
-    background: #21262d; 
+.message.assistant {
+    background: #21262d;
     margin-right: auto;
 }
 .message .role {
@@ -196,14 +212,14 @@ body {
 }
 
 /* Session list */
-.session-list { 
-    flex: 1; 
+.session-list {
+    flex: 1;
     overflow-y: auto;
     margin: 0.5rem 0;
 }
-.session-item { 
-    padding: 0.5rem 0.75rem; 
-    border-radius: 4px; 
+.session-item {
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
     display: flex;
@@ -211,7 +227,7 @@ body {
     gap: 0.5rem;
 }
 .session-item:hover { background: #21262d; }
-.session-item.active { 
+.session-item.active {
     background: #30363d;
     border-left: 2px solid #58a6ff;
 }
@@ -257,18 +273,9 @@ document.body.classList.add('htmx-loaded');
 def model_select(models: list[str], current: str = "") -> Div:
     """Model selection dropdown."""
     options = [Option(m, value=m, selected=(m == current)) for m in models]
-    return Div(
-        Label("Model"),
-        Select(
-            *options,
-            id="model-select",
-            name="model",
-            hx_get="/ui/models",
-            hx_target="#model-select",
-            hx_swap="outerHTML",
-        ),
-        cls="sidebar-section",
-    )
+    select = Select(*options, id="model-select", name="model")
+    label = Label("Model")
+    return Div(label, select, cls="sidebar-section")
 
 
 def session_item(session: dict, active: bool = False) -> Div:
@@ -276,9 +283,11 @@ def session_item(session: dict, active: bool = False) -> Div:
     title = session.get("title") or "New Chat"
     session_id = session.get("id", "")
     cls = "session-item active" if active else "session-item"
+    icon = Span("💬", cls="session-icon")
+    title_span = Span(title, cls="title")
     return Div(
-        Span("💬", cls="session-icon"),
-        Span(title, cls="title"),
+        icon,
+        title_span,
         id=f"session-{session_id}",
         cls=cls,
         hx_get=f"/ui/sessions/{session_id}",
@@ -290,51 +299,62 @@ def session_item(session: dict, active: bool = False) -> Div:
 
 def session_list(sessions: list[dict], active_id: str = "") -> Div:
     """Session list with all items."""
-    items = [session_item(s, s.get("id") == active_id) for s in sessions]
+    items: list[Div] = []
+    for s in sessions:
+        items.append(session_item(s, s.get("id") == active_id))
+
     if not items:
-        items = [
-            P(
-                "No sessions yet",
-                cls="empty-state",
-                style="padding: 0.5rem; font-size: 0.875rem;",
+        items.append(
+            Div(
+                P(
+                    "No sessions yet",
+                    cls="empty-state",
+                    style="padding: 0.5rem; font-size: 0.875rem;",
+                ),
+                cls="session-list",
             )
-        ]
+        )
+        return items[0]
+
     return Div(*items, id="session-list", cls="session-list")
 
 
 def sidebar(models: list[str], sessions: list[dict], current_model: str = "") -> Div:
     """Full sidebar component."""
-    return Div(
-        Div(H1("Echo AI"), cls="sidebar-header"),
-        model_select(models, current_model),
-        Div(
-            H2("Sessions", style="font-size: 0.875rem; margin-bottom: 0.5rem;"),
-            Button(
-                "+ New",
-                cls="btn btn-primary btn-small",
-                hx_post="/ui/sessions/new",
-                hx_target="#session-list",
-                hx_swap="innerHTML",
-            ),
-            session_list(sessions),
-            cls="sidebar-section",
-            style="flex: 1; display: flex; flex-direction: column; overflow: hidden;",
-        ),
-        Div(
-            P(f"{len(sessions)} sessions", style="font-size: 0.75rem; color: #8b949e;"),
-            cls="sidebar-footer",
-        ),
-        cls="sidebar",
+    header = Div(H1("Echo AI"), cls="sidebar-header")
+    model_sel = model_select(models, current_model)
+
+    new_btn = Button(
+        "+ New",
+        cls="btn btn-primary btn-small",
+        hx_post="/ui/sessions/new",
+        hx_target="#session-list",
+        hx_swap="innerHTML",
     )
+    session_title = H2("Sessions", style="font-size: 0.875rem; margin-bottom: 0.5rem;")
+    sessions_section = session_list(sessions)
+
+    sessions_container = Div(
+        session_title,
+        new_btn,
+        sessions_section,
+        cls="sidebar-section",
+        style="flex: 1; display: flex; flex-direction: column; overflow: hidden;",
+    )
+
+    footer = Div(
+        P(f"{len(sessions)} sessions", style="font-size: 0.75rem; color: #8b949e;"),
+        cls="sidebar-footer",
+    )
+
+    return Div(header, model_sel, sessions_container, footer, cls="sidebar")
 
 
 def chat_header(model: str, message_count: int) -> Div:
     """Chat header with model badge and metrics."""
-    return Div(
-        Span(f"Model: {model}", cls="badge"),
-        Span(f"Messages: {message_count}", cls="badge"),
-        cls="chat-header",
-    )
+    badge1 = Span(f"Model: {model}", cls="badge")
+    badge2 = Span(f"Messages: {message_count}", cls="badge")
+    return Div(badge1, badge2, cls="chat-header")
 
 
 def message_bubble(role: str, content: str, thinking: str = "") -> Div:
@@ -342,15 +362,16 @@ def message_bubble(role: str, content: str, thinking: str = "") -> Div:
     cls = "message user" if role == "user" else "message assistant"
     role_label = "You" if role == "user" else "Assistant"
 
-    inner = [
-        Div(role_label, cls="role"),
-        Div(P(content), cls="content") if content else "",
-    ]
+    content_div = Div(P(content), cls="content") if content else None
+    thinking_div = Div(thinking, cls="thinking") if thinking else None
 
-    if thinking:
-        inner.append(Div(thinking, cls="thinking"))
+    parts: list = [Div(role_label, cls="role")]
+    if content_div:
+        parts.append(content_div)
+    if thinking_div:
+        parts.append(thinking_div)
 
-    return Div(*inner, cls=cls)
+    return Div(*parts, cls=cls)
 
 
 def chat_container(messages: list[dict]) -> Div:
@@ -362,7 +383,7 @@ def chat_container(messages: list[dict]) -> Div:
             cls="chat-container",
         )
 
-    bubbles = []
+    bubbles: list[Div] = []
     for msg in messages:
         bubbles.append(
             message_bubble(
@@ -377,31 +398,31 @@ def chat_container(messages: list[dict]) -> Div:
 
 def chat_input(model: str = "qwen3:4b-instruct") -> Div:
     """Chat input form with SSE streaming."""
-    return Div(
-        Form(
-            Input(
-                type="text",
-                id="chat-input",
-                name="message",
-                placeholder="Type your message... (Enter to send)",
-                cls="chat-input",
-                autofocus=True,
-                hx_post=f"/ui/chat/stream?model={model}",
-                hx_ext="sse",
-                sse_swap="message:#chat-container",
-                hx_on__before_request="document.getElementById('send-btn').disabled=true",
-                hx_on__after_request="this.reset(); document.getElementById('send-btn').disabled=false",
-            ),
-            Button(
-                Span("Send", id="send-btn"),
-                cls="btn btn-primary",
-                type="submit",
-            ),
-            HiddenInput(name="model", value=model),
-            cls="chat-form",
-        ),
-        cls="chat-input-container",
+    input_field = Input(
+        type="text",
+        id="chat-input",
+        name="message",
+        placeholder="Type your message... (Enter to send)",
+        cls="chat-input",
+        autofocus=True,
+        hx_post=f"/ui/chat/stream?model={model}",
+        hx_ext="sse",
+        sse_swap="message:#chat-container",
+        hx_on__before_request="document.getElementById('send-btn').disabled=true",
+        hx_on__after_request="this.reset(); document.getElementById('send-btn').disabled=false",
     )
+
+    send_btn = Button(
+        Span("Send", id="send-btn"),
+        cls="btn btn-primary",
+        type="submit",
+    )
+
+    hidden_model = Hidden(name="model", value=model)
+
+    form = Form(input_field, send_btn, hidden_model, cls="chat-form")
+
+    return Div(form, cls="chat-input-container")
 
 
 def main_page(

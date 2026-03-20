@@ -31,7 +31,7 @@ if st.session_state.run:
         with placeholder.container():
             render_content(text)
         time.sleep(0.1)
-    
+
     text += "__THINKING_END__\n\nAnd now the final answer."
     for i in range(10):
         text += f" Word{i}"

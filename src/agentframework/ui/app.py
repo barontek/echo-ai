@@ -3,22 +3,14 @@
 Phase 2: Core components with API integration.
 """
 
-import asyncio
-from datetime import datetime
-
 from fasthtml.common import *  # noqa: F403, F405, E501
 import httpx
 
 from .components import (
-    CSS,
-    SCRIPT,
     main_page,
     chat_container,
-    chat_input,
-    session_list,
     session_item,
     message_bubble,
-    chat_header,
 )
 
 app, rt = fast_app(debug=True)
@@ -34,11 +26,11 @@ def get_api(url: str, path: str = "") -> dict:
         return {}
 
 
-def post_api(url: str, path: str = "", json_data: dict = None) -> dict:
+def post_api(url: str, path: str = "", json_data: dict | None = None) -> dict:
     """Post data to FastAPI endpoints."""
     base = url.rstrip("/")
     try:
-        resp = httpx.post(f"{base}{path}", json=json_data or {}, timeout=10)
+        resp = httpx.post(f"{base}{path}", json=json_data, timeout=10)
         return resp.json()
     except Exception as e:
         return {"error": str(e)}
@@ -146,7 +138,6 @@ async def stream_chat(message: str, model: str = "qwen3:4b-instruct"):
 
             accumulated = ""
             thinking = ""
-            in_thinking = False
 
             async for msg in ws:
                 data = json.loads(msg)

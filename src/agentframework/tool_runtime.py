@@ -58,7 +58,9 @@ async def execute_single_tool(
     """Execute a single tool call and return the result message + duration seconds."""
     started = perf_counter()
     if callback_manager:
-        callback_manager.on_tool_start(run_id, tool_call.name, getattr(tool_call, 'arguments', {}))
+        callback_manager.on_tool_start(
+            run_id, tool_call.name, getattr(tool_call, "arguments", {})
+        )
 
     tool = tool_map.get(tool_call.name)
     if not tool:
@@ -83,9 +85,13 @@ async def execute_single_tool(
             try:
                 args = json.loads(sanitize_json(args))
             except json.JSONDecodeError:
-                err = ToolError("validation_error", f"Invalid JSON in arguments: {args}")
+                err = ToolError(
+                    "validation_error", f"Invalid JSON in arguments: {args}"
+                )
                 if callback_manager:
-                    callback_manager.on_tool_error(run_id, tool_call.name, "Invalid JSON in arguments")
+                    callback_manager.on_tool_error(
+                        run_id, tool_call.name, "Invalid JSON in arguments"
+                    )
                 return (
                     Message(
                         role="tool",
@@ -101,7 +107,9 @@ async def execute_single_tool(
         validation_error, validated_args = validate_tool_args(tool, args)
         if validation_error:
             if callback_manager:
-                callback_manager.on_tool_error(run_id, tool_call.name, str(validation_error.message))
+                callback_manager.on_tool_error(
+                    run_id, tool_call.name, str(validation_error.message)
+                )
             return (
                 Message(
                     role="tool",
@@ -114,7 +122,7 @@ async def execute_single_tool(
                 perf_counter() - started,
             )
 
-        result = await tool.execute(**validated_args)
+        result = await tool.execute(**validated_args)  # type: ignore[arg-type]
 
         if change_tracker and result.metadata and "change" in result.metadata:
             change = result.metadata["change"]
@@ -123,7 +131,7 @@ async def execute_single_tool(
                     change.get("action", "write"),
                     change.get("path"),
                     change.get("old_content"),
-                    change.get("new_content")
+                    change.get("new_content"),
                 )
             except Exception as e:
                 logger.debug("Failed to record change: %s", e)
@@ -141,7 +149,9 @@ async def execute_single_tool(
             )
         else:
             if callback_manager:
-                callback_manager.on_tool_end(run_id, tool_call.name, result.content or "")
+                callback_manager.on_tool_end(
+                    run_id, tool_call.name, result.content or ""
+                )
             msg = Message(
                 role="tool",
                 content=result.content or "",
@@ -202,7 +212,9 @@ async def execute_tool_calls(
     """Execute tool calls and return result messages and timings by tool call id."""
 
     async def execute_and_message(tc: LLMToolCall):
-        return await execute_single_tool(tc, tool_map, change_tracker, callback_manager, run_id)
+        return await execute_single_tool(
+            tc, tool_map, change_tracker, callback_manager, run_id
+        )
 
     timings: dict[str, float] = {}
     messages: list[Message] = []

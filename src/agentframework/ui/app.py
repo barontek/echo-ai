@@ -98,7 +98,16 @@ def new_session():
         sessions_html = session_list(sessions, active_id=session_id)
         new_chat = chat_container([])
         new_chat.attrs["hx_swap_oob"] = "true"
-        return HTMLResponse(repr(sessions_html) + repr(new_chat))
+        sessions_repr = repr(sessions_html)
+        oob_repr = repr(new_chat)
+        first_close = sessions_repr.find("</div>")
+        second_close = sessions_repr.find("</div>", first_close + 1)
+        if first_close != -1 and second_close != -1:
+            insert_pos = first_close + 6
+            result = sessions_repr[:insert_pos] + oob_repr + sessions_repr[insert_pos:]
+        else:
+            result = sessions_repr + oob_repr
+        return HTMLResponse(result)
 
     error = data.get("error", "Failed to create session")
     logger.error("Session creation failed in UI route: %s", error)

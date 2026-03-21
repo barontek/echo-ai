@@ -613,7 +613,12 @@ def session_item(session: dict, active: bool = False) -> Div:
         hx_get=f"/ui/sessions/{session_id}",
         hx_target="#chat-container",
         hx_swap="innerHTML",
-        hx_on__after_request="if(event.detail.successful) this.classList.add('active')",
+        hx_on__after_request="""
+            if(event.detail.successful) {
+                document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+                this.classList.add('active');
+            }
+        """,
     )
 
 

@@ -4,6 +4,7 @@ from markdown import markdown
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, guess_lexer, ClassNotFound
 from pygments.formatters import HtmlFormatter
+from fasthtml.common import Safe
 
 
 def render_code(code: str, language: str = "") -> str:
@@ -35,7 +36,7 @@ def render_markdown(text: str) -> str:
 
     html = markdown(text, extensions=["fenced_code", "tables", "nl2br"])
 
-    return html
+    return Safe(html)
 
 
 def format_message_content(content: str) -> str:

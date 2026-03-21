@@ -85,6 +85,7 @@ def new_session():
         get_sessions_data,
     )
     from src.agentframework.ui.components import chat_container
+    from fasthtml.common import Obi
 
     state = get_state()
     data = create_session_data(state)
@@ -94,8 +95,7 @@ def new_session():
         sessions = get_sessions_data(state).get("sessions", [])
         new_chat = chat_container([])
         sessions_html = session_list(sessions, active_id=session_id)
-        sessions_html["hx_swap_oob"] = "true"
-        return (sessions_html, new_chat)
+        return (Obi(sessions_html), new_chat)
 
     error = data.get("error", "Failed to create session")
     logger.error("Session creation failed in UI route: %s", error)

@@ -915,6 +915,8 @@ def chat_container(messages: list[dict]) -> Div:
         tool_name = msg.get("tool_name", "")
         tool_arguments = msg.get("tool_arguments", {})
         tool_call_id = msg.get("tool_call_id", "")
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls")
 
         if role == "tool" or tool_name or tool_call_id:
             if tool_name:
@@ -923,7 +925,10 @@ def chat_container(messages: list[dict]) -> Div:
                 )
             continue
 
-        tool_calls = msg.get("tool_calls")
+        if role == "assistant" and tool_calls and not content.strip():
+            pending_tool_calls.extend(tool_calls)
+            continue
+
         if not tool_calls and pending_tool_calls:
             tool_calls = pending_tool_calls
             pending_tool_calls = []
@@ -931,7 +936,7 @@ def chat_container(messages: list[dict]) -> Div:
         bubbles.append(
             message_bubble(
                 role=role,
-                content=msg.get("content", ""),
+                content=content,
                 thinking=msg.get("thinking", ""),
                 tool_calls=tool_calls,
             )

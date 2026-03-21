@@ -79,7 +79,7 @@ def get():
 @rt("/sessions/new")
 def new_session():
     """Create a new session using shared in-memory state."""
-    from starlette.responses import Response
+    from starlette.responses import HTMLResponse
 
     from src.agentframework.web_api import (
         create_session_data,
@@ -97,12 +97,11 @@ def new_session():
         sessions = get_sessions_data(state).get("sessions", [])
         sessions_html = session_list(sessions, active_id=session_id)
         new_chat = chat_container([])
-        sessions_html["hx_swap_oob"] = "true"
-        response = (sessions_html, new_chat)
-        return Response(
-            content=str(response),
-            headers={"HX-Redirect": f"/ui/sessions/{session_id}"},
-            media_type="text/html",
+        return HTMLResponse(
+            str(sessions_html)
+            + '<div hx-swap-oob="true" id="chat-container">'
+            + str(new_chat)
+            + "</div>"
         )
 
     error = data.get("error", "Failed to create session")

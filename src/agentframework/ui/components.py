@@ -843,13 +843,11 @@ def message_bubble(
                 cls="tool-call-header",
                 onclick="toggleToolCall(this)",
             )
-            content_part = Pre(
-                Code(args_str),
-                cls="tool-call-arguments",
+            content_wrapper = Div(
+                Pre(Code(args_str), cls="tool-call-arguments"),
+                cls="tool-call-content",
             )
-            tool_items.append(
-                Div(header, content_part, cls="tool-call-item", id=f"tc-{i}")
-            )
+            tool_items.append(Div(header, content_wrapper, cls="tool-call-item"))
 
         tool_calls_div = Div(
             Span(
@@ -912,9 +910,12 @@ def chat_container(messages: list[dict]) -> Div:
 
     bubbles: list[Div] = []
     for msg in messages:
+        role = msg.get("role", "")
+        if role == "tool":
+            continue
         bubbles.append(
             message_bubble(
-                role=msg.get("role", "assistant"),
+                role=role,
                 content=msg.get("content", ""),
                 thinking=msg.get("thinking", ""),
                 tool_calls=msg.get("tool_calls"),

@@ -9,7 +9,12 @@ from urllib.parse import parse_qs
 
 from fasthtml.common import *  # noqa: F403, F405, E501
 
-from .components import chat_container, main_page, message_bubble, session_item
+from .components import (
+    chat_container,
+    main_page,
+    message_bubble,
+    session_list,
+)
 from .markdown import format_message_content
 
 logger = logging.getLogger(__name__)
@@ -74,14 +79,19 @@ def get():
 @rt("/sessions/new")
 def new_session():
     """Create a new session using shared in-memory state."""
-    from src.agentframework.web_api import create_session_data, get_state
+    from src.agentframework.web_api import (
+        create_session_data,
+        get_state,
+        get_sessions_data,
+    )
 
     state = get_state()
     data = create_session_data(state)
     session_id = data.get("session_id")
 
     if session_id:
-        return session_item({"id": session_id, "title": "New Chat"})
+        sessions = get_sessions_data(state).get("sessions", [])
+        return session_list(sessions, active_id=session_id)
 
     error = data.get("error", "Failed to create session")
     logger.error("Session creation failed in UI route: %s", error)
@@ -222,7 +232,9 @@ async def chat_ws(message: str, send):
         if not accumulated_content:
             accumulated_content = response
 
-        await send(_streaming_message(accumulated_content, thinking=thinking_content, oob=True))
+        await send(
+            _streaming_message(accumulated_content, thinking=thinking_content, oob=True)
+        )
 
         if state.agent.session_manager and state.agent.session_manager.current_session:
             state.current_session_id = state.agent.session_manager.current_session.id

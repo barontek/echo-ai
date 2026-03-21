@@ -338,6 +338,36 @@ class SessionManager:
 
             return count
 
+    def purge_empty_sessions(self) -> int:
+        """Purge sessions that have no user messages.
+
+        Returns:
+            Number of sessions deleted.
+        """
+        count = 0
+        with self.SessionLocal() as db:
+            for db_session in db.query(DBSessionModel).all():
+                messages = db_session.messages or []
+                has_user_message = any(
+                    isinstance(m, dict) and m.get("role") == "user" for m in messages
+                )
+                if not has_user_message:
+                    db.delete(db_session)
+                    count += 1
+
+            db.commit()
+
+            if self.current_session:
+                exists = (
+                    db.query(DBSessionModel)
+                    .filter(DBSessionModel.id == self.current_session.id)
+                    .first()
+                )
+                if not exists:
+                    self.current_session = None
+
+        return count
+
     def close(self) -> None:
         """Dispose of the database engine and any connections in its pool."""
         if hasattr(self, "engine") and self.engine:

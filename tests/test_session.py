@@ -20,6 +20,7 @@ from src.agentframework.session import (
 # Session dataclass
 # ---------------------------------------------------------------------------
 
+
 class TestSession:
     """Tests for Session dataclass."""
 
@@ -87,11 +88,13 @@ class TestSession:
 # SessionManager (real DB integration tests)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def session_dir(tmp_path):
     d = tmp_path / "test_sessions"
     d.mkdir()
     return str(d)
+
 
 @pytest.fixture
 def manager(session_dir):
@@ -241,6 +244,42 @@ class TestPurge:
         assert remaining[0].id == "new_one"
 
 
+class TestPurgeEmpty:
+    def test_purge_empty_removes_sessions_without_user_messages(self, manager):
+        manager.create_session(session_id="empty1")
+        manager.create_session(session_id="empty2")
+        manager.create_session(session_id="with_user")
+        manager.add_message("user", "hello")
+
+        count = manager.purge_empty_sessions()
+        assert count == 2
+        remaining = manager.list_sessions()
+        assert len(remaining) == 1
+        assert remaining[0].id == "with_user"
+
+    def test_purge_empty_keeps_sessions_with_any_user_message(self, manager):
+        manager.create_session(session_id="user_only")
+        manager.add_message("user", "hello")
+
+        manager.create_session(session_id="mixed")
+        manager.add_message("user", "hello")
+        manager.add_message("assistant", "hi")
+
+        count = manager.purge_empty_sessions()
+        assert count == 0
+        assert len(manager.list_sessions()) == 2
+
+    def test_purge_empty_resets_current_if_deleted(self, manager):
+        manager.create_session(session_id="empty_to_delete")
+        manager.create_session(session_id="keep")
+        manager.add_message("user", "hi")
+        manager.current_session = manager.load_session("empty_to_delete")
+
+        count = manager.purge_empty_sessions()
+        assert count == 1
+        assert manager.current_session is None
+
+
 class TestMigration:
     def test_migration_adds_title_column(self, tmp_path):
         db_dir = tmp_path / "legacy_sessions"
@@ -326,6 +365,7 @@ class TestSessionEdgeCases:
 # ChangeTracker
 # ---------------------------------------------------------------------------
 
+
 class TestChangeTracker:
     """Tests for ChangeTracker class."""
 
@@ -334,7 +374,9 @@ class TestChangeTracker:
         return ChangeTracker()
 
     def test_record_change(self, tracker):
-        tracker.record_change("write", "file.txt", old_content=None, new_content="hello")
+        tracker.record_change(
+            "write", "file.txt", old_content=None, new_content="hello"
+        )
         assert len(tracker.changes) == 1
         assert tracker.changes[0]["operation"] == "write"
         assert tracker.changes[0]["path"] == "file.txt"

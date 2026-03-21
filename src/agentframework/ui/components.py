@@ -624,17 +624,15 @@ def session_list(sessions: list[dict], active_id: str = "") -> Div:
         items.append(session_item(s, s.get("id") == active_id))
 
     if not items:
-        items.append(
-            Div(
-                P(
-                    "No sessions yet",
-                    cls="empty-state",
-                    style="padding: 0.5rem; font-size: 0.875rem;",
-                ),
-                cls="session-list",
-            )
+        return Div(
+            P(
+                "No sessions yet",
+                cls="empty-state",
+                style="padding: 0.5rem; font-size: 0.875rem;",
+            ),
+            id="session-list",
+            cls="session-list",
         )
-        return items[0]
 
     return Div(*items, id="session-list", cls="session-list")
 
@@ -700,7 +698,7 @@ def sidebar(models: list[str], sessions: list[dict], current_model: str = "") ->
         cls="btn btn-primary btn-small",
         hx_post="/ui/sessions/new",
         hx_target="#session-list",
-        hx_swap="innerHTML",
+        hx_swap="outerHTML",
     )
     session_title = H2("Sessions", style="font-size: 0.875rem; margin-bottom: 0.5rem;")
     search_input = session_search_input()

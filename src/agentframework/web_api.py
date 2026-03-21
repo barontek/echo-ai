@@ -107,6 +107,10 @@ async def lifespan(app: FastAPI):
         _state.agent = _create_runtime_agent(
             provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
         )
+        if _state.agent and _state.agent.session_manager:
+            purged = _state.agent.session_manager.purge_empty_sessions()
+            if purged > 0:
+                logger.info(f"Purged {purged} empty sessions on startup")
     except Exception as e:
         logger.debug(f"Ollama agent initialization deferred: {e}")
     yield
@@ -304,7 +308,10 @@ def create_session_data(state: AppState) -> dict[str, Any]:
             state.message_history = []
             return {"session_id": state.current_session_id}
     state.message_history = []
-    return {"session_id": state.current_session_id, "error": "Session manager unavailable."}
+    return {
+        "session_id": state.current_session_id,
+        "error": "Session manager unavailable.",
+    }
 
 
 def load_session_data(session_id: str, state: AppState) -> dict[str, Any]:
@@ -543,6 +550,18 @@ async def health_check():
     }
 
 
+@app.post("/chat", include_in_schema=False)
+async def chat_ui(message: ChatPayload, state: Annotated[AppState, Depends(get_state)]):
+    """Legacy chat endpoint for UI compatibility. Redirects to /api/chat."""
+    if state.agent is None:
+        state.agent = _create_runtime_agent(
+            provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
+        )
+
+    response = await state.agent.run(message.content)
+    return {"response": response}
+
+
 @app.get("/api/models", tags=["Models"])
 async def list_models():
     """List available Ollama models."""
@@ -591,6 +610,8 @@ async def list_sessions(
     Returns:
         {"sessions": [{"id": "...", "title": "...", "created_at": "..."}, ...]}
     """
+    if state.agent and state.agent.session_manager:
+        state.agent.session_manager.purge_empty_sessions()
     return get_sessions_data(state)
 
 
@@ -712,6 +733,21 @@ async def purge_sessions(
         )
 
     count = state.agent.session_manager.purge_sessions(older_than_days=days)
+    return {"status": "ok", "purged_count": count}
+
+
+@app.post("/api/sessions/purge-empty")
+async def purge_empty_sessions(
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Purge sessions that have no user messages (empty sessions)."""
+    if not (state.agent and state.agent.session_manager):
+        raise HTTPException(
+            status_code=503,
+            detail="Session service is unavailable. Please try again later.",
+        )
+
+    count = state.agent.session_manager.purge_empty_sessions()
     return {"status": "ok", "purged_count": count}
 
 

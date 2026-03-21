@@ -13,10 +13,14 @@ from fasthtml.common import (
     Form,
     Hidden,
     P,
+    Pre,
+    Code,
     Style,
     Script,
     Title,
 )  # noqa: F401, F403
+
+import json
 
 from .markdown import format_message_content
 
@@ -266,6 +270,56 @@ body {
     border-radius: 0 6px 6px 0;
     font-size: 0.875rem;
     color: var(--text-secondary);
+}
+
+/* Tool calls */
+.tool-calls {
+    margin-top: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.tool-call-header {
+    background: var(--bg-tertiary);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-blue);
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.tool-call-header:hover {
+    background: var(--border-color);
+}
+.tool-call-content {
+    background: var(--code-bg);
+    padding: 0.75rem;
+    font-size: 0.875rem;
+    overflow-x: auto;
+}
+.tool-call-content pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.tool-call-arguments {
+    color: var(--text-secondary);
+}
+.tool-call-name {
+    color: var(--accent-blue);
+    font-family: 'Consolas', monospace;
+}
+.tool-call-item {
+    border-bottom: 1px solid var(--border-color);
+}
+.tool-call-item:last-child {
+    border-bottom: none;
+}
+.tool-call-item .tool-call-content {
+    display: block;
 }
 
 /* Session list */
@@ -579,6 +633,18 @@ function filterSessions(query) {
         }
     });
 }
+
+function toggleToolCall(header) {
+    const toolCallItem = header.closest('.tool-call-item');
+    const content = toolCallItem.querySelector('.tool-call-content');
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        header.querySelector('span:last-child').textContent = '▾';
+    } else {
+        content.style.display = 'none';
+        header.querySelector('span:last-child').textContent = '▸';
+    }
+}
 """
 
 
@@ -743,7 +809,9 @@ def chat_header(model: str, message_count: int) -> Div:
     return Div(badge1, badge2, cls="chat-header")
 
 
-def message_bubble(role: str, content: str, thinking: str = "") -> Div:
+def message_bubble(
+    role: str, content: str, thinking: str = "", tool_calls: list = None
+) -> Div:
     """A single message bubble."""
     cls = "message user" if role == "user" else "message assistant"
     role_label = "You" if role == "user" else "Assistant"
@@ -754,11 +822,51 @@ def message_bubble(role: str, content: str, thinking: str = "") -> Div:
     )
     thinking_div = Div(thinking, cls="thinking") if thinking else None
 
+    tool_calls_div = None
+    if tool_calls:
+        tool_items = []
+        for i, tc in enumerate(tool_calls):
+            name = tc.get("name", "unknown")
+            args = tc.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            args_str = (
+                json.dumps(args, indent=2) if isinstance(args, dict) else str(args)
+            )
+
+            header = Div(
+                Span(f"🔧 {name}"),
+                Span("▾", style="margin-left: auto;"),
+                cls="tool-call-header",
+                onclick="toggleToolCall(this)",
+            )
+            content_part = Pre(
+                Code(args_str),
+                cls="tool-call-arguments",
+            )
+            tool_items.append(
+                Div(header, content_part, cls="tool-call-item", id=f"tc-{i}")
+            )
+
+        tool_calls_div = Div(
+            Span(
+                "Tool Calls",
+                style="font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.25rem;",
+            ),
+            *tool_items,
+            cls="tool-calls",
+        )
+
     parts: list = [Div(role_label, cls="role")]
     if content_div:
         parts.append(content_div)
     if thinking_div:
         parts.append(thinking_div)
+    if tool_calls_div:
+        parts.append(tool_calls_div)
 
     return Div(*parts, cls=cls)
 
@@ -809,6 +917,7 @@ def chat_container(messages: list[dict]) -> Div:
                 role=msg.get("role", "assistant"),
                 content=msg.get("content", ""),
                 thinking=msg.get("thinking", ""),
+                tool_calls=msg.get("tool_calls"),
             )
         )
 

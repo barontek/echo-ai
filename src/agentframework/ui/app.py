@@ -84,6 +84,7 @@ def new_session():
         get_state,
         get_sessions_data,
     )
+    from src.agentframework.ui.components import chat_container
 
     state = get_state()
     data = create_session_data(state)
@@ -91,7 +92,10 @@ def new_session():
 
     if session_id:
         sessions = get_sessions_data(state).get("sessions", [])
-        return session_list(sessions, active_id=session_id)
+        new_chat = chat_container([])
+        sessions_html = session_list(sessions, active_id=session_id)
+        sessions_html["hx_swap_oob"] = "true"
+        return (sessions_html, new_chat)
 
     error = data.get("error", "Failed to create session")
     logger.error("Session creation failed in UI route: %s", error)

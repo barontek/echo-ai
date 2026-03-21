@@ -98,9 +98,9 @@ def new_session():
         sessions_html = session_list(sessions, active_id=session_id)
         new_chat = chat_container([])
         return HTMLResponse(
-            str(sessions_html)
+            repr(sessions_html)
             + '<div hx-swap-oob="true" id="chat-container">'
-            + str(new_chat)
+            + repr(new_chat)
             + "</div>"
         )
 

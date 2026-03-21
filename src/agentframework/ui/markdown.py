@@ -33,7 +33,7 @@ def render_markdown(text: str) -> str:
 
     text = code_block_pattern.sub(replace_code_block, text)
 
-    html = markdown(text, extensions=["fenced_code", "tables", "break_on_newline"])
+    html = markdown(text, extensions=["fenced_code", "tables"])
 
     return html
 

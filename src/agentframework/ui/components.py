@@ -227,6 +227,9 @@ body {
 .message.assistant .role { color: var(--accent-blue); }
 .message .content {
     line-height: 1.6;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
 }
 .message .content code {
     background: var(--code-bg);
@@ -245,6 +248,13 @@ body {
 .message .content pre code {
     background: none;
     padding: 0;
+}
+.message .content ul, .message .content ol {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+}
+.message .content li {
+    margin-bottom: 0.25rem;
 }
 
 /* Thinking */

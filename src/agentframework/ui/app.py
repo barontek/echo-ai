@@ -97,12 +97,8 @@ def new_session():
         sessions = get_sessions_data(state).get("sessions", [])
         sessions_html = session_list(sessions, active_id=session_id)
         new_chat = chat_container([])
-        return HTMLResponse(
-            repr(sessions_html)
-            + '<div hx-swap-oob="true" id="chat-container">'
-            + repr(new_chat)
-            + "</div>"
-        )
+        new_chat.attrs["hx_swap_oob"] = "true"
+        return HTMLResponse(repr(sessions_html) + repr(new_chat))
 
     error = data.get("error", "Failed to create session")
     logger.error("Session creation failed in UI route: %s", error)

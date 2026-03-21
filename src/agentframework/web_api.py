@@ -552,7 +552,7 @@ async def health_check():
 
 @app.post("/chat", include_in_schema=False)
 async def chat_ui(message: ChatPayload, state: Annotated[AppState, Depends(get_state)]):
-    """Legacy chat endpoint for UI compatibility. Redirects to /api/chat."""
+    """Legacy chat endpoint for UI compatibility."""
     if state.agent is None:
         state.agent = _create_runtime_agent(
             provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL

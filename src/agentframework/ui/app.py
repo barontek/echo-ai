@@ -13,7 +13,6 @@ from .components import (
     chat_container,
     main_page,
     message_bubble,
-    session_list,
 )
 from .markdown import format_message_content
 
@@ -79,23 +78,19 @@ def get():
 @rt("/sessions/new")
 def new_session():
     """Create a new session using shared in-memory state."""
+    from starlette.responses import RedirectResponse
+
     from src.agentframework.web_api import (
         create_session_data,
         get_state,
-        get_sessions_data,
     )
-    from src.agentframework.ui.components import chat_container
-    from fasthtml.common import Obi
 
     state = get_state()
     data = create_session_data(state)
     session_id = data.get("session_id")
 
     if session_id:
-        sessions = get_sessions_data(state).get("sessions", [])
-        new_chat = chat_container([])
-        sessions_html = session_list(sessions, active_id=session_id)
-        return (Obi(sessions_html), new_chat)
+        return RedirectResponse(url=f"/ui/sessions/{session_id}", status_code=303)
 
     error = data.get("error", "Failed to create session")
     logger.error("Session creation failed in UI route: %s", error)

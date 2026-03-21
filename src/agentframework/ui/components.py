@@ -319,7 +319,7 @@ body {
     border-bottom: none;
 }
 .tool-call-item .tool-call-content {
-    display: block;
+    display: none;
 }
 
 /* Session list */

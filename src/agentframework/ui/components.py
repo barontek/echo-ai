@@ -912,12 +912,15 @@ def chat_container(messages: list[dict]) -> Div:
     pending_tool_calls = []
     for msg in messages:
         role = msg.get("role", "")
+        tool_name = msg.get("tool_name", "")
+        tool_arguments = msg.get("tool_arguments", {})
+        tool_call_id = msg.get("tool_call_id", "")
 
-        if role == "tool":
-            tc_name = msg.get("tool_name", "")
-            tc_args = msg.get("tool_arguments", {})
-            if tc_name:
-                pending_tool_calls.append({"name": tc_name, "arguments": tc_args})
+        if role == "tool" or tool_name or tool_call_id:
+            if tool_name:
+                pending_tool_calls.append(
+                    {"name": tool_name, "arguments": tool_arguments}
+                )
             continue
 
         tool_calls = msg.get("tool_calls")

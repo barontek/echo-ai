@@ -349,13 +349,6 @@ body {
     white-space: nowrap;
 }
 
-/* Empty state */
-.empty-state {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-secondary);
-}
-
 /* Loading indicator */
 .loading {
     display: inline-block;

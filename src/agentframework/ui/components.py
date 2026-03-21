@@ -525,6 +525,10 @@ select:focus-visible {
     padding: 2rem;
     color: var(--text-secondary);
 }
+.empty-state.chat-container {
+    flex: 1;
+    min-height: 0;
+}
 .empty-state h2 {
     font-size: 1.5rem;
     margin-bottom: 1rem;

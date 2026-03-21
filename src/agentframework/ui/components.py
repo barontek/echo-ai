@@ -905,7 +905,7 @@ def chat_container(messages: list[dict]) -> Div:
         return Div(
             H2("How can I help you today?"),
             quick_actions(),
-            cls="empty-state",
+            cls="empty-state chat-container",
             id="chat-container",
         )
 

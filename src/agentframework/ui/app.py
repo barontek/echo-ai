@@ -13,6 +13,7 @@ from .components import (
     chat_container,
     main_page,
     message_bubble,
+    session_list,
 )
 from .markdown import format_message_content
 

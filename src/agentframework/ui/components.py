@@ -637,7 +637,8 @@ function filterSessions(query) {
 function toggleToolCall(header) {
     const toolCallItem = header.closest('.tool-call-item');
     const content = toolCallItem.querySelector('.tool-call-content');
-    if (content.style.display === 'none') {
+    const isHidden = content.style.display === 'none' || content.style.display === '';
+    if (isHidden) {
         content.style.display = 'block';
         header.querySelector('span:last-child').textContent = '▾';
     } else {

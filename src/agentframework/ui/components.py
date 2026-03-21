@@ -778,7 +778,7 @@ def sidebar(models: list[str], sessions: list[dict], current_model: str = "") ->
     new_btn = Button(
         "+ New",
         cls="btn btn-primary btn-small",
-        hx_post="/sessions/new",
+        hx_post="/ui/sessions/new",
         hx_target="#session-list",
         hx_swap="outerHTML",
     )

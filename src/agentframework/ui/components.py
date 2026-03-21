@@ -909,18 +909,31 @@ def chat_container(messages: list[dict]) -> Div:
         )
 
     bubbles: list[Div] = []
+    pending_tool_calls = []
     for msg in messages:
         role = msg.get("role", "")
+
         if role == "tool":
+            tc_name = msg.get("tool_name", "")
+            tc_args = msg.get("tool_arguments", {})
+            if tc_name:
+                pending_tool_calls.append({"name": tc_name, "arguments": tc_args})
             continue
+
+        tool_calls = msg.get("tool_calls")
+        if not tool_calls and pending_tool_calls:
+            tool_calls = pending_tool_calls
+            pending_tool_calls = []
+
         bubbles.append(
             message_bubble(
                 role=role,
                 content=msg.get("content", ""),
                 thinking=msg.get("thinking", ""),
-                tool_calls=msg.get("tool_calls"),
+                tool_calls=tool_calls,
             )
         )
+        pending_tool_calls = []
 
     return Div(*bubbles, id="chat-container", cls="chat-container")
 

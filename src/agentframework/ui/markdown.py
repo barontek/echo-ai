@@ -43,7 +43,7 @@ def format_message_content(content: str) -> str:
     if not content:
         return ""
 
-    if any(char in content for char in ["*", "`", "#", "-", ">", "["]):
+    if any(char in content for char in ["*", "`", "#", "-", ">", "[", "."]):
         return render_markdown(content)
 
     return content

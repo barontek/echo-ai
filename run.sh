@@ -2,12 +2,13 @@
 set -e
 
 # Usage:
-#   ./run.sh           - Run web UI
+#   ./run.sh           - Run NiceGUI web UI (recommended)
+#   ./run.sh web       - Run FastAPI web UI (legacy)
 #   ./run.sh api       - Run API only
 #   ./run.sh chat      - Run CLI chat
 #   ./run.sh --docker  - Run in Docker
 
-MODE="${1:-web}"
+MODE="${1:-nicegui}"
 DOCKER_MODE=0
 
 if [ "$1" == "--docker" ]; then
@@ -28,6 +29,10 @@ if [ ! -d ".venv" ]; then
 fi
 
 case $MODE in
+    nicegui)
+        echo "Starting NiceGUI Web UI on http://localhost:8080..."
+        .venv/bin/python -m src.agentframework.ui_nicegui.app
+        ;;
     web)
         echo "Starting FastAPI Web UI on http://localhost:8080..."
         .venv/bin/python scripts/run_web.py
@@ -45,7 +50,7 @@ case $MODE in
         .venv/bin/python scripts/run_tui.py
         ;;
     *)
-        echo "Usage: ./run.sh [web|api|chat|tui|--docker]"
+        echo "Usage: ./run.sh [nicegui|web|api|chat|tui|--docker]"
         exit 1
         ;;
 esac

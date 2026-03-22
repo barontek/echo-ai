@@ -84,16 +84,14 @@ async def main_page():
         with ui.column().classes("main-content"):
             chat_header(state.model, 0)
             _render_chat_area(state)
-            with (
-                ui.row()
-                .classes("chat-input-container")
-                .style("padding: 1rem; background: #238636; min-height: 60px;")
+            with ui.row().style(
+                "padding: 1rem; background: #238636; height: 80px; display: flex; gap: 0.5rem; align-items: center;"
             ):
                 ui.input(placeholder="Type a message...").props("outlined").style(
-                    "flex: 1; background: white; color: black;"
+                    "flex: 1; background: white; color: black; height: 40px;"
                 )
                 ui.button("SEND", on_click=lambda: ui.notify("Send clicked!")).style(
-                    "background: #58a6ff;"
+                    "background: #58a6ff; height: 40px;"
                 )
 
 

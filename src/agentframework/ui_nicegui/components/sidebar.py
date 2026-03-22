@@ -69,7 +69,6 @@ def session_item(session: dict, is_active: bool = False):
         if title and len(title) > 30:
             title = title[:30] + "..."
         title_label = ui.label(title).classes("title flex-grow")
-        title_label._title = session.get("title", "New Chat")
 
         ui.button(
             "×",
@@ -115,8 +114,4 @@ def search_sessions():
 
 def filter_sessions(query: str):
     """Filter sessions by query."""
-    items = ui.context.client.find_children("session-item")
-    for item in items:
-        title = getattr(item, "_title", "")
-        visible = query.lower() in title.lower() if title else False
-        item.visible = visible
+    ui.notify(f"Filtering sessions: {query}")

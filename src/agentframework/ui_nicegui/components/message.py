@@ -1,13 +1,14 @@
 """Message bubble component for NiceGUI."""
 
 import json
+from typing import Optional
 from nicegui import ui
 
 from .markdown import render_markdown
 
 
 def message_bubble(
-    role: str, content: str, thinking: str = "", tool_calls: list = None
+    role: str, content: str, thinking: str = "", tool_calls: Optional[list] = None
 ):
     """Render a chat message bubble."""
     bubble_classes = "message user" if role == "user" else "message assistant"
@@ -47,7 +48,6 @@ def tool_call_section(tool_calls: list):
                 ui.label(f"🔧 {name}").classes("font-bold text-sm")
                 ui.code(
                     json.dumps(arguments, indent=2),
-                    props="copyable",
                 ).style("font-size: 0.75rem; max-height: 200px; overflow: auto;")
 
 

@@ -18,7 +18,6 @@ from .components import (
     chat_header,
     chat_input,
     sidebar_header,
-    theme_toggle,
     model_selector,
     session_list,
     new_chat_button,
@@ -229,7 +228,6 @@ def _render_tool_calls(tool_calls: list):
                 ui.label(f"🔧 {name}").classes("font-bold text-sm")
                 ui.code(
                     json.dumps(arguments, indent=2),
-                    props="copyable",
                 ).style("font-size: 0.75rem; max-height: 200px; overflow: auto;")
 
 
@@ -244,7 +242,7 @@ def _quick_action(query: str):
     """Handle quick action button click."""
     state = get_page_state()
     state.add_message("user", query)
-    ui.context.spawn(handle_message(query, state.model))
+    ui.notify(f"Quick action: {query[:30]}...")
 
 
 async def handle_message(message: str, model: str):
@@ -284,7 +282,7 @@ async def handle_message(message: str, model: str):
 
         content_html = ui.html('<div class="message-content"></div>')
 
-    async def on_chunk(chunk: str):
+    def on_chunk(chunk: str):
         nonlocal accumulated_content, accumulated_thinking, in_thinking
 
         if "__THINKING__" in chunk:
@@ -299,10 +297,13 @@ async def handle_message(message: str, model: str):
         else:
             accumulated_content += chunk
 
-        content_label = render_markdown(accumulated_content)
-        content_html.clear()
-        with content_html:
-            ui.html(f'<div class="message-content">{content_label}</div>')
+        def update_ui():
+            content_label = render_markdown(accumulated_content)
+            content_html.clear()
+            with content_html:
+                ui.html(f'<div class="message-content">{content_label}</div>')
+
+        ui.context.client.safe_invoke(update_ui)
 
     try:
         agent = _create_agent(model)

@@ -59,7 +59,5 @@ def get_models_sync() -> dict:
 def create_runtime_agent(model: str):
     """Create a runtime agent with the given model."""
     from src.agentframework.web_api import _create_runtime_agent
-    from src.agentframework.config import AgentConfig
 
-    config = AgentConfig(model_name=model)
-    return _create_runtime_agent(config)
+    return _create_runtime_agent(provider="ollama", model=model)

@@ -18,7 +18,7 @@ class ChatState:
 
     def create_session(self):
         """Create a new session via backend."""
-        from ..backend import create_session_data, get_backend_state
+        from .backend import create_session_data, get_backend_state
 
         state = get_backend_state()
         data = create_session_data(state)
@@ -30,7 +30,7 @@ class ChatState:
 
     def load_session(self, session_id: str):
         """Load a session from backend."""
-        from ..backend import load_session_data, get_backend_state
+        from .backend import load_session_data, get_backend_state
 
         state = get_backend_state()
         data = load_session_data(session_id, state)
@@ -43,7 +43,7 @@ class ChatState:
 
     def delete_session(self, session_id: str):
         """Delete a session via backend."""
-        from ..backend import delete_session_data, get_backend_state
+        from .backend import delete_session_data, get_backend_state
 
         state = get_backend_state()
         delete_session_data(session_id, state)
@@ -65,7 +65,7 @@ class ChatState:
         """Save messages to backend."""
         if not self.current_session_id:
             return
-        from ..backend import save_messages, get_backend_state
+        from .backend import save_messages, get_backend_state
 
         state = get_backend_state()
         save_messages(self.current_session_id, self.messages, state)
@@ -86,7 +86,7 @@ def get_state(client_id: Optional[str] = None) -> ChatState:
 
 def get_all_sessions():
     """Get all sessions from backend."""
-    from ..backend import get_sessions_data, get_backend_state
+    from .backend import get_sessions_data, get_backend_state
 
     state = get_backend_state()
     data = get_sessions_data(state)
@@ -95,7 +95,7 @@ def get_all_sessions():
 
 def get_models():
     """Get available models from backend."""
-    from ..backend import get_models_sync
+    from .backend import get_models_sync
 
     data = get_models_sync()
     return data.get("models", ["qwen3:4b-instruct"])
@@ -103,6 +103,6 @@ def get_models():
 
 def create_agent(model: str):
     """Create an agent with the given model."""
-    from ..backend import create_runtime_agent
+    from .backend import create_runtime_agent
 
     return create_runtime_agent(model)

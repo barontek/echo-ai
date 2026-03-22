@@ -25,7 +25,8 @@ class ChatContainer:
 
     def _render(self):
         """Render messages in the container."""
-        self.container.clear()
+        if self.container:
+            self.container.clear()
 
         if not self.messages:
             empty_state(self)
@@ -69,7 +70,7 @@ class ChatContainer:
     def scroll_to_bottom(self):
         """Scroll to the bottom of the chat."""
         if self.container:
-            ui.context.client.javascript(
+            ui.context.client.run_javascript(
                 "setTimeout(() => {"
                 "const el = document.querySelector('.chat-container');"
                 "if (el) el.scrollTop = el.scrollHeight;"
@@ -120,12 +121,13 @@ def empty_state(self_ref):
 
 def quick_action(query: str):
     """Handle quick action button click."""
+    import asyncio
     from ..state import get_state
     from ..app import handle_message
 
     state = get_state()
     state.add_message("user", query)
-    ui.context.spawn_task(handle_message(query, state.model))
+    asyncio.create_task(handle_message(query, state.model))
 
 
 def chat_header(model: str, message_count: int):

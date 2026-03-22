@@ -54,6 +54,8 @@ class ChatInput:
 
     def _handle_submit(self):
         """Handle message submission."""
+        if not self.input_field or not self.model_select:
+            return
         message = self.input_field.value.strip()
         if not message:
             return
@@ -64,15 +66,21 @@ class ChatInput:
 
     def disable(self):
         """Disable the input during streaming."""
-        self.input_field.disable()
-        self.send_button.disable()
-        self.model_select.disable()
+        if self.input_field:
+            self.input_field.disable()
+        if self.send_button:
+            self.send_button.disable()
+        if self.model_select:
+            self.model_select.disable()
 
     def enable(self):
         """Enable the input after streaming."""
-        self.input_field.enable()
-        self.send_button.enable()
-        self.model_select.enable()
+        if self.input_field:
+            self.input_field.enable()
+        if self.send_button:
+            self.send_button.enable()
+        if self.model_select:
+            self.model_select.enable()
 
 
 def get_models():

@@ -85,7 +85,7 @@ def confirm_delete(e, session):
     state = get_state()
     state.delete_session(session["id"])
     ui.notify(f"Deleted: {session.get('title', 'session')}")
-    ui.navigate.to("/nicegui/")
+    ui.navigate.to("/")
 
 
 def new_chat_button():
@@ -101,7 +101,7 @@ def create_new_session():
     state = get_state()
     session = state.create_session()
     if session:
-        ui.navigate.to(f"/nicegui/sessions/{session['id']}")
+        ui.navigate.to(f"/sessions/{session['id']}")
 
 
 def search_sessions():

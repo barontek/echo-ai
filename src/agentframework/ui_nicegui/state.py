@@ -71,17 +71,13 @@ class ChatState:
         save_messages(self.current_session_id, self.messages, state)
 
 
-_user_states: dict[str, ChatState] = {}
+def get_state() -> ChatState:
+    """Get or create page state for current client using NiceGUI storage."""
+    from nicegui import app
 
-
-def get_state(client_id: Optional[str] = None) -> ChatState:
-    """Get or create state for a client."""
-    if client_id is None:
-        client_id = "default"
-
-    if client_id not in _user_states:
-        _user_states[client_id] = ChatState()
-    return _user_states[client_id]
+    if "page_state" not in app.storage.client:
+        app.storage.client["page_state"] = ChatState()
+    return app.storage.client["page_state"]
 
 
 def get_all_sessions():
@@ -97,8 +93,11 @@ def get_models():
     """Get available models from backend."""
     from .backend import get_models_sync
 
-    data = get_models_sync()
-    return data.get("models", ["qwen3:4b-instruct"])
+    try:
+        data = get_models_sync()
+        return data.get("models", ["qwen3:4b-instruct"])
+    except Exception:
+        return ["qwen3:4b-instruct"]
 
 
 def create_agent(model: str):

@@ -2,16 +2,13 @@
 
 from nicegui import ui
 
-from ..state import get_state
-
 
 class ChatInput:
-    """Chat input with model selector and send functionality."""
+    """Chat input with send functionality."""
 
     def __init__(self, on_submit):
         self.on_submit = on_submit
         self.input_field = None
-        self.model_select = None
         self.send_button = None
         self.container = None
 
@@ -28,21 +25,12 @@ class ChatInput:
         )
 
         with self.container:
-            self.model_select = (
-                ui.select(
-                    options=get_models(),
-                    value=get_state().model,
-                )
-                .props("outlined dense")
-                .style("width: 150px;")
-            )
-
             self.input_field = (
                 ui.input(placeholder="Type your message... (Enter to send)")
                 .props("outlined dense")
                 .style("flex: 1;")
-                .on("keydown.enter", self._handle_submit)
             )
+            self.input_field.on("keydown.enter", self._handle_submit)
 
             self.send_button = ui.button(
                 "Send",
@@ -54,15 +42,14 @@ class ChatInput:
 
     def _handle_submit(self):
         """Handle message submission."""
-        if not self.input_field or not self.model_select:
+        if not self.input_field:
             return
         message = self.input_field.value.strip()
         if not message:
             return
 
-        model = self.model_select.value
         self.input_field.value = ""
-        self.on_submit(message, model)
+        self.on_submit(message)
 
     def disable(self):
         """Disable the input during streaming."""
@@ -70,8 +57,6 @@ class ChatInput:
             self.input_field.disable()
         if self.send_button:
             self.send_button.disable()
-        if self.model_select:
-            self.model_select.disable()
 
     def enable(self):
         """Enable the input after streaming."""
@@ -79,18 +64,6 @@ class ChatInput:
             self.input_field.enable()
         if self.send_button:
             self.send_button.enable()
-        if self.model_select:
-            self.model_select.enable()
-
-
-def get_models():
-    """Get available models."""
-    from ..state import get_models
-
-    try:
-        return get_models()
-    except Exception:
-        return ["qwen3:4b-instruct"]
 
 
 def chat_input(on_submit) -> ChatInput:

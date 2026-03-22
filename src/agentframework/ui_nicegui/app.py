@@ -245,10 +245,10 @@ def _quick_action(query: str):
     ui.notify(f"Quick action: {query[:30]}...")
 
 
-async def handle_message(message: str, model: str):
+async def handle_message(message: str):
     """Handle sending a message and streaming the response."""
     state = get_page_state()
-    state.model = model
+    model = state.model
 
     if not state.current_session_id:
         new_session = _create_session()

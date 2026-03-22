@@ -122,12 +122,9 @@ def empty_state(self_ref):
 def quick_action(query: str):
     """Handle quick action button click."""
     import asyncio
-    from ..state import get_state
     from ..app import handle_message
 
-    state = get_state()
-    state.add_message("user", query)
-    asyncio.create_task(handle_message(query, state.model))
+    asyncio.create_task(handle_message(query))
 
 
 def chat_header(model: str, message_count: int):

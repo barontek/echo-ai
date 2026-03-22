@@ -30,6 +30,7 @@ dependencies = [
     "charset-normalizer<3.4.0",
     "chardet<6.0.0",
     "python-fasthtml>=0.12.0",
+    "nicegui>=3.0.0",
     "markdown>=3.7",
     "websockets>=12.0",
     "pytest==9.0.2",

@@ -122,7 +122,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app with lifespan
 app = FastAPI(title="Echo AI API", lifespan=lifespan)
 
-# Mount FastHTML UI at /ui
+# Mount FastHTML UI at /ui (legacy)
 try:
     from src.agentframework.ui.app import app as ui_app
 
@@ -130,11 +130,17 @@ try:
 except ImportError:
     logger.warning("FastHTML UI not available (python-fasthtml not installed)")
 
+# NiceGUI integration
+# Note: NiceGUI pages are defined in ui_nicegui/app.py
+# For full integration, run the NiceGUI app separately:
+#   uv run python -m src.agentframework.ui_nicegui.app
+# Or use the combined approach in a separate entry point.
+
 
 @app.get("/", include_in_schema=False)
 async def root_redirect():
-    """Redirect root path to FastHTML UI."""
-    return RedirectResponse(url="/ui", status_code=302)
+    """Redirect root path to NiceGUI UI."""
+    return RedirectResponse(url="/ui/", status_code=302)
 
 
 @app.middleware("http")

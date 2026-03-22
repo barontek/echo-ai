@@ -25,7 +25,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from src.agentframework.agent import Agent, AgentConfig, create_agent
@@ -122,25 +122,26 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app with lifespan
 app = FastAPI(title="Echo AI API", lifespan=lifespan)
 
-# Mount FastHTML UI at /ui (legacy)
+# NiceGUI integration - use run_with for proper FastAPI integration
 try:
-    from src.agentframework.ui.app import app as ui_app
+    from nicegui import ui_run_with
+    import importlib.util
 
-    app.mount("/ui", ui_app)
-except ImportError:
-    logger.warning("FastHTML UI not available (python-fasthtml not installed)")
+    if importlib.util.find_spec("src.agentframework.ui_nicegui") is not None:
+        ui_run_with.run_with(app, mount_path="/nicegui", dark=True)
+        logger.info("NiceGUI integrated at /nicegui")
+    else:
+        raise ImportError("NiceGUI module not found")
+except Exception as e:
+    logger.warning(f"NiceGUI not available: {e}")
+    # Fallback: try FastHTML UI at /ui
+    try:
+        from src.agentframework.ui.app import app as ui_app
 
-# NiceGUI integration
-# Note: NiceGUI pages are defined in ui_nicegui/app.py
-# For full integration, run the NiceGUI app separately:
-#   uv run python -m src.agentframework.ui_nicegui.app
-# Or use the combined approach in a separate entry point.
-
-
-@app.get("/", include_in_schema=False)
-async def root_redirect():
-    """Redirect root path to NiceGUI UI."""
-    return RedirectResponse(url="/ui/", status_code=302)
+        app.mount("/ui", ui_app)
+        logger.info("FastHTML UI mounted at /ui (fallback)")
+    except ImportError:
+        logger.warning("FastHTML UI not available")
 
 
 @app.middleware("http")
@@ -535,10 +536,10 @@ class WorkflowRunPayload(BaseModel):
     topic: str = Field(min_length=1)
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def index():
-    """Serve the main HTML page."""
-    return FileResponse("static/index.html")
+    """Redirect to NiceGUI UI."""
+    return RedirectResponse(url="/nicegui/", status_code=302)
 
 
 @app.get("/health", tags=["Health"])

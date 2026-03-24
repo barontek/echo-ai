@@ -11,9 +11,9 @@ def message_bubble(
     role: str, content: str, thinking: str = "", tool_calls: Optional[list] = None
 ):
     """Render a chat message bubble."""
-    bubble_classes = "message user" if role == "user" else "message assistant"
+    bubble_classes = f"message {role}"
 
-    with ui.column().classes(bubble_classes).style("width: 100%"):
+    with ui.column().classes(bubble_classes):
         with ui.row().classes("message-header"):
             avatar = "👤" if role == "user" else "🤖"
             ui.label(avatar).classes("text-sm")
@@ -21,9 +21,10 @@ def message_bubble(
                 "text-xs text-grey-6"
             )
 
-        content_html = render_markdown(content)
-        if content_html:
-            ui.html(f'<div class="message-content">{content_html}</div>')
+        with ui.column().classes("message-bubble w-full").style("gap: 0;"):
+            content_html = render_markdown(content)
+            if content_html:
+                ui.html(f'<div class="message-content">{content_html}</div>')
 
         if tool_calls:
             tool_call_section(tool_calls)
@@ -67,24 +68,25 @@ def streaming_message(content: str = "", thinking: str = ""):
             ui.label("Assistant").classes("text-xs text-grey-6")
             spinner = ui.html('<div class="loading-spinner"></div>')
 
-    content_label = ui.html('<div class="message-content"></div>')
-    thinking_label = ui.html('<div class="message-content text-grey-5"></div>')
+    with container:
+        with ui.column().classes("message-bubble").style("gap: 0;"):
+            content_display = ui.html()
+            thinking_display = ui.html()
 
     def update_streaming(new_content: str, new_thinking: str = ""):
-        content_label.clear()
-        with content_label:
-            content_html = render_markdown(new_content)
-            if content_html:
-                ui.html(f'<div class="message-content">{content_html}</div>')
-        if new_thinking:
-            thinking_label.clear()
-            with thinking_label:
-                thinking_html = render_markdown(new_thinking)
-                ui.html(
-                    f'<div class="message-content text-grey-5">{thinking_html}</div>'
-                )
+        content_html = render_markdown(new_content)
+        if content_html:
+            content_display.content = f'<div class="message-content">{content_html}</div>'
+        else:
+            content_display.content = ""
 
-    return container, content_label, thinking_label, spinner, update_streaming
+        if new_thinking:
+            thinking_html = render_markdown(new_thinking)
+            thinking_display.content = f'<div class="message-content text-grey-5">{thinking_html}</div>'
+        else:
+            thinking_display.content = ""
+
+    return container, content_display, thinking_display, spinner, update_streaming
 
 
 def finish_streaming(spinner):

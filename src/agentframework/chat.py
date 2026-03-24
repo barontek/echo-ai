@@ -5,6 +5,7 @@ import sys
 
 from rich.console import Console
 
+from .client import EchoClient, ContentEvent, ThinkingEvent, ErrorEvent
 from .agent import Agent
 from .bootstrap import setup_agent
 from .chat_commands import normalize_command, execute_command
@@ -15,7 +16,6 @@ from .chat_runtime import (
     fetch_titles,
     get_input,
 )
-from .constants import THINKING_END, THINKING_START
 
 console = Console(color_system="256")
 
@@ -34,6 +34,8 @@ async def chat_session(agent: Agent, session_name: str | None = None):
     if session_name:
         agent.load_session(session_name)
         console.print(f"[dim]Loaded chat: {session_name}[/dim]\n")
+
+    client = EchoClient(agent)
 
     while True:
         try:
@@ -55,30 +57,19 @@ async def chat_session(agent: Agent, session_name: str | None = None):
                 continue
 
             console.print("[dim]Thinking...[/dim]", end="\r")
-            in_thinking = False
 
-            def on_chunk(chunk: str):
-                nonlocal in_thinking
-                if THINKING_START in chunk:
-                    if not in_thinking:
-                        chunk = "\n" + chunk
-                    in_thinking = True
-                    chunk = chunk.replace(THINKING_START, "")
-                    if not chunk:
-                        return
-                if THINKING_END in chunk:
-                    in_thinking = False
-                    chunk = chunk.replace(THINKING_END, "\n")
-                    if not chunk:
-                        return
+            response = ""
+            async for event in client.stream_chat(user_input):
+                if isinstance(event, ThinkingEvent):
+                    sys.stdout.write("\033[90m" + event.content + "\033[0m")
+                    sys.stdout.flush()
+                elif isinstance(event, ContentEvent):
+                    sys.stdout.write(event.content)
+                    response += event.content
+                    sys.stdout.flush()
+                elif isinstance(event, ErrorEvent):
+                    console.print(f"\n[red]Error:[/red] {event.error}")
 
-                if in_thinking:
-                    sys.stdout.write("\033[90m" + chunk + "\033[0m")
-                else:
-                    sys.stdout.write(chunk)
-                sys.stdout.flush()
-
-            response = await agent.run_streaming(user_input, on_chunk=on_chunk)
             sys.stdout.write("\n")
 
             clean_response = strip_ansi(response)

@@ -526,7 +526,7 @@ class TestWorkflows:
 
 class TestReview:
     def test_static_routes(self):
-        response = client.get("/")
+        response = client.get("/", follow_redirects=False)
         assert response.status_code in [200, 302]
 
     @patch("uvicorn.run")

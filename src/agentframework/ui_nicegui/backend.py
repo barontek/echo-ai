@@ -42,11 +42,7 @@ def get_sessions_data(state: Any) -> dict:
     return backend_sessions(state)
 
 
-def save_messages(session_id: str, messages: list, state: Any) -> dict:
-    """Save messages for a session."""
-    from src.agentframework.web_api import save_messages as backend_save
 
-    return backend_save(session_id, messages, state)
 
 
 def get_models_sync() -> dict:
@@ -56,8 +52,17 @@ def get_models_sync() -> dict:
     return backend_models()
 
 
-def create_runtime_agent(model: str):
+def create_runtime_agent(model: str, session_id: str | None = None):
     """Create a runtime agent with the given model."""
     from src.agentframework.web_api import _create_runtime_agent
 
-    return _create_runtime_agent(provider="ollama", model=model)
+    return _create_runtime_agent(provider="ollama", model=model, session_id=session_id)
+
+
+def save_messages(session_id: str, messages: list, state: Any):
+    """Save messages to a session."""
+    if state and state.agent and state.agent.session_manager:
+        from src.agentframework.session import Session
+        # Create a light Session object to trigger the DB update
+        session = Session(id=session_id, messages=messages)
+        state.agent.session_manager.save_session(session)

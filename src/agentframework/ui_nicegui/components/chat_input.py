@@ -14,33 +14,25 @@ class ChatInput:
 
     def create(self):
         """Create the chat input."""
-        self.container = (
-            ui.row()
-            .classes("chat-input-container")
-            .style(
-                "display: flex; gap: 0.5rem; align-items: center; "
-                "padding: 1rem; border-top: 1px solid var(--border-color); "
-                "background: var(--bg-secondary);"
-            )
-        )
+        self.container = ui.row().classes("chat-input-wrapper w-full")
 
         with self.container:
-            self.input_field = (
-                ui.input(placeholder="Type your message... (Enter to send)")
-                .props("outlined dense")
-                .style("flex: 1;")
-            )
-            self.input_field.on("keydown.enter", self._handle_submit)
+            with ui.row().classes("chat-input-pill w-full"):
+                self.input_field = (
+                    ui.input(placeholder="Message Echo AI...")
+                    .props("borderless")
+                    .classes("chat-input-field flex-grow")
+                )
+                self.input_field.on("keydown.enter", self._handle_submit)
 
-            self.send_button = ui.button(
-                "Send",
-                icon="send",
-                on_click=self._handle_submit,
-            ).props("flat color=primary")
+                self.send_button = ui.button(
+                    icon="arrow_upward",
+                    on_click=self._handle_submit,
+                ).props("unelevated round").classes("btn-send")
 
         return self.container
 
-    def _handle_submit(self):
+    async def _handle_submit(self):
         """Handle message submission."""
         if not self.input_field:
             return
@@ -49,7 +41,10 @@ class ChatInput:
             return
 
         self.input_field.value = ""
-        self.on_submit(message)
+        res = self.on_submit(message)
+        import inspect
+        if inspect.isawaitable(res):
+            await res
 
     def disable(self):
         """Disable the input during streaming."""

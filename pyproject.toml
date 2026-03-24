@@ -29,7 +29,6 @@ dependencies = [
     "urllib3>=2.6.3",
     "charset-normalizer<3.4.0",
     "chardet<6.0.0",
-    "python-fasthtml>=0.12.0",
     "nicegui>=3.0.0",
     "markdown>=3.7",
     "websockets>=12.0",
@@ -64,8 +63,8 @@ timeout = 30
 timeout_method = "thread"
 
 [tool.ruff.lint.per-file-ignores]
-"src/agentframework/ui/*.py" = ["F403", "F405"]
+"src/agentframework/ui_nicegui/*.py" = ["F403", "F405"]
 
 [tool.pyright]
 include = ["src/agentframework"]
-exclude = ["src/agentframework/ui"]
+exclude = ["src/agentframework/ui", "src/agentframework/ui_deprecated"]

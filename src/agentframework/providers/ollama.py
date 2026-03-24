@@ -81,7 +81,7 @@ class OllamaProvider(LLMProvider):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.client = httpx.AsyncClient(timeout=300.0)
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0))
 
     def _extract_tool_calls_from_content(self, content: str) -> list[LLMToolCall]:
         """Extract tool calls from markdown code blocks or plain JSON in content."""

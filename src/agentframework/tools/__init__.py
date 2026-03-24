@@ -39,6 +39,7 @@ class Tool(ABC):
     """Base class for tools."""
 
     parameters_model: Type[BaseModel] | None = None
+    __slots__ = ("name", "description")
 
     def __init__(self, name: str, description: str):
         self.name = name

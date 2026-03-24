@@ -39,6 +39,24 @@ def load_config(path: str | None = None) -> dict:
     return {}
 
 
+def get_limits_config(config: dict) -> dict:
+    """Get limits configuration with sensible defaults."""
+    limits = config.get("limits", {})
+    return {
+        "max_web_fetch_chars": limits.get("max_web_fetch_chars", 15000),
+        "max_search_result_snippet": limits.get("max_search_result_snippet", 500),
+        "min_fetch_content_chars": limits.get("min_fetch_content_chars", 50),
+        "search_result_truncate": limits.get("search_result_truncate", 1000),
+        "max_glob_results": limits.get("max_glob_results", 100),
+        "max_grep_results": limits.get("max_grep_results", 100),
+        "max_search_query_length": limits.get("max_search_query_length", 500),
+        "max_file_read_size": limits.get("max_file_read_size", 10 * 1024 * 1024),
+        "max_file_write_size": limits.get("max_file_write_size", 5 * 1024 * 1024),
+        "max_sessions_per_page": limits.get("max_sessions_per_page", 50),
+        "max_sessions_total": limits.get("max_sessions_total", 1000),
+    }
+
+
 def get_safety_config(config: dict) -> SafetyConfig:
     """Create safety configuration from the overall config dictionary."""
     safety = config.get("safety", {})

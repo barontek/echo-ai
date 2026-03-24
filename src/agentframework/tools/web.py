@@ -5,6 +5,7 @@ from typing import Any
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
 import markdownify
+
 try:
     from crawl4ai import AsyncWebCrawler
 except ImportError:  # pragma: no cover - optional runtime dependency
@@ -16,6 +17,13 @@ from . import Tool, ToolResult
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_LIMITS = {
+    "max_web_fetch_chars": 15000,
+    "max_search_result_snippet": 500,
+    "min_fetch_content_chars": 50,
+    "search_result_truncate": 1000,
+}
+
 
 def html_to_markdown(html: str, max_length: int = 10000) -> str:
     """Parse HTML and extract readable markdown using markdownify."""
@@ -24,7 +32,16 @@ def html_to_markdown(html: str, max_length: int = 10000) -> str:
 
         # Remove script, style, nav, header, footer elements
         for tag in soup(
-            ["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript"]
+            [
+                "script",
+                "style",
+                "nav",
+                "header",
+                "footer",
+                "aside",
+                "iframe",
+                "noscript",
+            ]
         ):
             tag.decompose()
 
@@ -81,11 +98,15 @@ class WebFetchTool(Tool):
 
     parameters_model = WebFetchParams
 
-    def __init__(self, safety_config: SafetyConfig | None = None):
+    def __init__(
+        self, safety_config: SafetyConfig | None = None, limits: dict | None = None
+    ):
         super().__init__(
             name="web_fetch",
             description="Fetch content from a URL and extract readable text.",
         )
+
+        self.limits = {**DEFAULT_LIMITS, **(limits or {})}
 
         if safety_config:
             self.validator = SecurityValidator(safety_config)
@@ -109,20 +130,26 @@ class WebFetchTool(Tool):
                 try:
                     import re
                     from crawl4ai import CrawlerRunConfig
-                    from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+                    from crawl4ai.markdown_generation_strategy import (
+                        DefaultMarkdownGenerator,
+                    )
                     from crawl4ai.content_filter_strategy import PruningContentFilter
 
                     run_config = CrawlerRunConfig(
                         markdown_generator=DefaultMarkdownGenerator(
-                            options={"ignore_links": True, "ignore_images": True, "escape_html": True},
-                            content_filter=PruningContentFilter()
+                            options={
+                                "ignore_links": True,
+                                "ignore_images": True,
+                                "escape_html": True,
+                            },
+                            content_filter=PruningContentFilter(),
                         )
                     )
 
                     async with AsyncWebCrawler(verbose=True) as crawler:
                         res = await crawler.arun(url=url, magic=True, config=run_config)
                         if getattr(res, "success", False):  # type: ignore
-                            content_obj = getattr(res, "markdown", "") # type: ignore
+                            content_obj = getattr(res, "markdown", "")  # type: ignore
 
                             fit_md = getattr(content_obj, "fit_markdown", None)
                             raw_md = getattr(content_obj, "raw_markdown", None)
@@ -137,22 +164,34 @@ class WebFetchTool(Tool):
                                 content = str(content_obj)
 
                             if content:
-                                content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
-                                content = re.sub(r'\n\s*\n', '\n', content)
+                                content = re.sub(
+                                    r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+                                    "",
+                                    content,
+                                )
+                                content = re.sub(r"\n\s*\n", "\n", content)
                                 content = content.strip()
 
-                            if content and len(str(content).strip()) > 50:
-                                if isinstance(content, str) and len(content) > 8000:
-                                    content = content[:8000] + "\n... (truncated)"
+                            min_chars = self.limits.get("min_fetch_content_chars", 50)
+                            max_chars = self.limits.get("max_web_fetch_chars", 15000)
+                            if content and len(str(content).strip()) > min_chars:
+                                if (
+                                    isinstance(content, str)
+                                    and len(content) > max_chars
+                                ):
+                                    content = content[:max_chars] + "\n... (truncated)"
                                 return ToolResult(content=str(content))
                 except Exception as e:
                     logger.debug(f"Crawl4AI fetch failed, falling back to httpx: {e}")
 
             import httpx
 
-            response = await httpx.AsyncClient(follow_redirects=True, timeout=20).get(url)
+            max_chars = self.limits.get("max_web_fetch_chars", 15000)
+            response = await httpx.AsyncClient(
+                follow_redirects=True, timeout=httpx.Timeout(20.0, connect=10.0)
+            ).get(url)
             response.raise_for_status()
-            content = html_to_markdown(response.text, max_length=15000)
+            content = html_to_markdown(response.text, max_length=max_chars)
             return ToolResult(content=content)
         except Exception as e:
             return ToolResult(error=str(e))
@@ -163,18 +202,24 @@ class WebSearchTool(Tool):
 
     parameters_model = WebSearchParams
 
-    def __init__(self, safety_config: SafetyConfig | None = None):
+    def __init__(
+        self, safety_config: SafetyConfig | None = None, limits: dict | None = None
+    ):
         super().__init__(
             name="web_search",
             description="Search the web for information.",
         )
+
+        self.limits = {**DEFAULT_LIMITS, **(limits or {})}
 
         if safety_config:
             self.validator = SecurityValidator(safety_config)
         else:
             self.validator = SecurityValidator(SafetyConfig(allow_network=False))
 
-    async def _fetch_search_result(self, crawler: Any, url: str, title: str, snippet: str) -> str:
+    async def _fetch_search_result(
+        self, crawler: Any, url: str, title: str, snippet: str
+    ) -> str:
         content = ""
         try:
             import uuid
@@ -183,17 +228,22 @@ class WebSearchTool(Tool):
             from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
             from crawl4ai.content_filter_strategy import PruningContentFilter
 
-            # Natively strip images and links to prevent token bloat
             run_config = CrawlerRunConfig(
                 markdown_generator=DefaultMarkdownGenerator(
-                    options={"ignore_links": True, "ignore_images": True, "escape_html": True},
-                    content_filter=PruningContentFilter()
+                    options={
+                        "ignore_links": True,
+                        "ignore_images": True,
+                        "escape_html": True,
+                    },
+                    content_filter=PruningContentFilter(),
                 )
             )
 
-            res = await crawler.arun(url=url, session_id=str(uuid.uuid4()), magic=True, config=run_config)
-            if getattr(res, "success", False): # type: ignore
-                content_obj = getattr(res, "markdown", "") # type: ignore
+            res = await crawler.arun(
+                url=url, session_id=str(uuid.uuid4()), magic=True, config=run_config
+            )
+            if getattr(res, "success", False):  # type: ignore
+                content_obj = getattr(res, "markdown", "")  # type: ignore
 
                 fit_md = getattr(content_obj, "fit_markdown", None)
                 raw_md = getattr(content_obj, "raw_markdown", None)
@@ -208,19 +258,26 @@ class WebSearchTool(Tool):
                     content = str(content_obj)
 
                 if content:
-                    # Final regex sweep to catch lingering URLs and excessive whitespace
-                    content = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', content)
-                    content = re.sub(r'\n\s*\n', '\n', content)
+                    content = re.sub(
+                        r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+                        "",
+                        content,
+                    )
+                    content = re.sub(r"\n\s*\n", "\n", content)
                     content = content.strip()
 
-                # DECREASED TRUNCATION: Limit to 1000 chars to force AI to focus on top data
-                if isinstance(content, str) and len(content) > 1000:
-                    content = content[:1000] + "\n... (truncated)"
+                truncate_limit = self.limits.get("search_result_truncate", 1000)
+                if isinstance(content, str) and len(content) > truncate_limit:
+                    content = content[:truncate_limit] + "\n... (truncated)"
         except Exception as e:
             logger.debug(f"Crawl4AI search result fetch failed: {e}")
 
-        if not content or len(str(content).strip()) < 50:
-            content = snippet[:500] if snippet else "[Content could not be fetched]"
+        min_chars = self.limits.get("min_fetch_content_chars", 50)
+        snippet_limit = self.limits.get("max_search_result_snippet", 500)
+        if not content or len(str(content).strip()) < min_chars:
+            content = (
+                snippet[:snippet_limit] if snippet else "[Content could not be fetched]"
+            )
 
         return f"- {title}: {url}\n  {content}"
 
@@ -270,7 +327,7 @@ class WebSearchTool(Tool):
                             crawler,
                             r.get("href", ""),
                             r.get("title", ""),
-                            r.get("body", "")
+                            r.get("body", ""),
                         )
                     )
 

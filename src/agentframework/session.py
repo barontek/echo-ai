@@ -108,6 +108,12 @@ class SessionManager:
         self.engine = create_engine(
             f"sqlite:///{self.db_path}", connect_args={"check_same_thread": False}
         )
+        with self.engine.connect() as conn:
+            from sqlalchemy import text
+
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.execute(text("PRAGMA synchronous=NORMAL"))
+            conn.commit()
         Base.metadata.create_all(self.engine)
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine
@@ -260,13 +266,35 @@ class SessionManager:
                 )
             db.commit()
 
-    def list_sessions(self) -> list[Session]:
-        """List all saved sessions sorted by recency."""
+    def list_sessions(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        search: str | None = None,
+    ) -> tuple[list["Session"], int]:
+        """List saved sessions with pagination.
+
+        Args:
+            limit: Maximum number of sessions to return
+            offset: Number of sessions to skip
+            search: Optional search term for session titles
+
+        Returns:
+            Tuple of (sessions list, total count)
+        """
         sessions = []
         with self.SessionLocal() as db:
+            query = db.query(DBSessionModel)
+
+            if search:
+                query = query.filter(DBSessionModel.title.ilike(f"%{search}%"))
+
+            total = query.count()
+
             for db_session in (
-                db.query(DBSessionModel)
-                .order_by(DBSessionModel.created_at.desc())
+                query.order_by(DBSessionModel.created_at.desc())
+                .offset(offset)
+                .limit(limit)
                 .all()
             ):
                 sessions.append(
@@ -279,7 +307,7 @@ class SessionManager:
                         events=db_session.events or [],  # type: ignore
                     )
                 )
-        return sessions
+        return sessions, total
 
     def add_message(self, role: str, content: str, **kwargs) -> None:
         """Add a message to the current session and persist to DB."""

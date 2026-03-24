@@ -64,7 +64,10 @@ def execute_command(cmd: str, args: str, agent: "Agent", console: "Console") -> 
 
     # These are used to render recommended models when requested
     RECOMMENDED_MODELS = [
-        ("qwen3:4b-instruct", "Best for following instructions and tool calling (default)"),
+        (
+            "qwen3:4b-instruct",
+            "Best for following instructions and tool calling (default)",
+        ),
         ("qwen2.5-coder:3b", "Best for strict tool calling and coding"),
         ("qwen3:4b", "General purpose with strong reasoning"),
         ("qwen3.5:4b", "Latest Qwen with improved reasoning"),
@@ -85,9 +88,7 @@ def execute_command(cmd: str, args: str, agent: "Agent", console: "Console") -> 
             console.print("[dim]Started new chat[/dim]\n")
             return True
         case "/save", name:
-            result = agent.save_session(
-                name.strip() if name and name.strip() else None
-            )
+            result = agent.save_session(name.strip() if name and name.strip() else None)
             console.print(f"[cyan]{result}[/cyan]")
             return True
         case "/load", name if name and name.strip():
@@ -98,9 +99,9 @@ def execute_command(cmd: str, args: str, agent: "Agent", console: "Console") -> 
             console.print("[yellow]Usage: /load <name>[/yellow]")
             return True
         case "/chats", _:
-            sessions = agent.list_sessions()
+            sessions, total = agent.list_sessions()
             if sessions:
-                console.print("[cyan]Saved chats:[/cyan]")
+                console.print(f"[cyan]Saved chats ({total} total):[/cyan]")
                 for session in sessions:
                     console.print(f"  • {session}")
             else:
@@ -122,9 +123,7 @@ def execute_command(cmd: str, args: str, agent: "Agent", console: "Console") -> 
         case "/models", _:
             console.print("\n[bold]Recommended Models (4GB VRAM):[/bold]")
             for model_name, description in RECOMMENDED_MODELS:
-                console.print(
-                    f"  [cyan]{model_name}[/cyan] - {description}"
-                )
+                console.print(f"  [cyan]{model_name}[/cyan] - {description}")
             console.print("\n[dim]Use /model <name> to switch[/dim]\n")
             return True
         case "/model", model_name if model_name and model_name.strip():
@@ -142,34 +141,24 @@ def execute_command(cmd: str, args: str, agent: "Agent", console: "Console") -> 
                 )
             except Exception as e:
                 console.print(f"[red]Failed to switch model: {e}[/red]")
-                console.print(
-                    f"[dim]Current model remains: {old_model}[/dim]\n"
-                )
+                console.print(f"[dim]Current model remains: {old_model}[/dim]\n")
             return True
         case "/model", _:
             console.print("[yellow]Usage: /model <model_name>[/yellow]")
-            console.print(
-                "[dim]Use /models to see available models[/dim]\n"
-            )
+            console.print("[dim]Use /models to see available models[/dim]\n")
             return True
         case "/temperature", value if value and value.strip():
             try:
                 new_temp = float(value.strip())
                 if not 0.0 <= new_temp <= 2.0:
-                    raise ValueError(
-                        "Temperature must be between 0.0 and 2.0"
-                    )
+                    raise ValueError("Temperature must be between 0.0 and 2.0")
                 agent.config.temperature = new_temp
-                console.print(
-                    f"[green]Temperature set to {new_temp}[/green]\n"
-                )
+                console.print(f"[green]Temperature set to {new_temp}[/green]\n")
             except ValueError as e:
                 console.print(f"[red]Invalid temperature: {e}[/red]\n")
             return True
         case "/temperature", _:
-            console.print(
-                f"[dim]Current temperature: {agent.config.temperature}[/dim]"
-            )
+            console.print(f"[dim]Current temperature: {agent.config.temperature}[/dim]")
             console.print("[yellow]Usage: /temperature <0.0-2.0>[/yellow]\n")
             return True
         case _:

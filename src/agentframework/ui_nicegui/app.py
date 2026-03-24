@@ -6,12 +6,10 @@ Run standalone with:
 Or run the combined web_api which serves both FastAPI and NiceGUI.
 """
 
-import asyncio
 import logging
-from dataclasses import dataclass, field
 from typing import Optional
 
-from nicegui import app, ui
+from nicegui import ui
 
 from .theme import setup_theme
 from .components import (
@@ -21,315 +19,212 @@ from .components import (
     model_selector,
     session_list,
     new_chat_button,
-    render_markdown,
+    search_sessions,
+    ChatContainer,
+    streaming_message,
+    finish_streaming
 )
+from .state import get_state
 
 logger = logging.getLogger(__name__)
 
 _app_started = False
 
+CHATS_SCROLL_JS = """
+<script>
+window.chatScrollSystem = {
+    isAutoScrollEnabled: true,
+    init: function() {
+        const el = document.querySelector('.chat-container');
+        if (!el) return;
+        if (el.dataset.scrollInit) return;
+        el.dataset.scrollInit = "true";
 
-@dataclass
-class PageState:
-    """Per-client state using NiceGUI's native storage."""
+        el.addEventListener('scroll', () => {
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+            window.chatScrollSystem.isAutoScrollEnabled = atBottom;
+        });
 
-    current_session_id: Optional[str] = None
-    messages: list = field(default_factory=list)
-    model: str = "qwen3:4b-instruct"
-    is_streaming: bool = False
-
-    def add_message(self, role: str, content: str, **kwargs):
-        """Add a message to the state."""
-        import datetime
-
-        self.messages.append(
-            {
-                "role": role,
-                "content": content,
-                "timestamp": datetime.datetime.now().isoformat(),
-                **kwargs,
+        const observer = new MutationObserver(() => {
+            if (window.chatScrollSystem.isAutoScrollEnabled) {
+                el.scrollTop = el.scrollHeight;
             }
-        )
+        });
 
-
-def get_page_state() -> PageState:
-    """Get or create page state for current client."""
-    if "page_state" not in app.storage.client:
-        app.storage.client["page_state"] = PageState()
-    return app.storage.client["page_state"]
+        observer.observe(el, { childList: true, subtree: true, characterData: true });
+        el.scrollTop = el.scrollHeight;
+    },
+    forceScroll: function() {
+        const el = document.querySelector('.chat-container');
+        if (el) {
+            window.chatScrollSystem.isAutoScrollEnabled = true;
+            el.scrollTop = el.scrollHeight;
+        }
+    }
+};
+</script>
+"""
 
 
 @ui.page("/")
 async def main_page():
     """Main chat page."""
+    ui.add_head_html(CHATS_SCROLL_JS)
     setup_theme(dark_mode=True)
 
-    state = get_page_state()
+    state = get_state()
     state.current_session_id = None
     state.messages = []
 
     sessions = _get_all_sessions()
     models = _get_models()
 
-    with ui.column().classes("app-container"):
-        with ui.column().classes("sidebar"):
+    container = ChatContainer()
+
+    with ui.row().classes("app-container no-wrap"):
+        with ui.column().classes("sidebar gap-0"):
             sidebar_header()
             model_selector(models, state.model)
-            with ui.column().classes("sidebar-section flex-grow"):
-                _render_session_search()
-                session_list(sessions, active_id=state.current_session_id or "")
-            with ui.column().classes("sidebar-footer"):
+            with ui.column().classes("sidebar-section w-full gap-0").style("padding-bottom: 0;"):
                 new_chat_button()
+                search_sessions(sessions, active_id="")
+            with ui.column().classes("w-full").style("flex: 1; min-height: 0; overflow-y: auto; padding: 0 0.25rem; box-sizing: border-box; overflow-x: hidden; gap: 0;"):
+                session_list(sessions, active_id="")
 
         with ui.column().classes("main-content"):
             chat_header(state.model, 0)
-            _render_chat_area(state)
-            with ui.row().style(
-                "padding: 1rem; background: #238636; height: 80px; display: flex; gap: 0.5rem; align-items: center;"
-            ):
-                ui.input(placeholder="Type a message...").props("outlined").style(
-                    "flex: 1; background: white; color: black; height: 40px;"
-                )
-                ui.button("SEND", on_click=lambda: ui.notify("Send clicked!")).style(
-                    "background: #58a6ff; height: 40px;"
-                )
+
+            async def submit(msg):
+                await handle_message(msg, container)
+
+            container.on_quick_action = submit
+            container.create()
+            chat_input(submit)
+            ui.run_javascript("setTimeout(() => window.chatScrollSystem.init(), 100);")
 
 
 @ui.page("/sessions/{session_id}")
 async def session_page(session_id: str):
     """Load a specific session."""
+    ui.add_head_html(CHATS_SCROLL_JS)
     setup_theme(dark_mode=True)
 
-    state = get_page_state()
+    state = get_state()
     state.current_session_id = session_id
     _load_session(session_id)
 
     sessions = _get_all_sessions()
     models = _get_models()
 
-    with ui.column().classes("app-container"):
-        with ui.column().classes("sidebar"):
+    container = ChatContainer()
+
+    with ui.row().classes("app-container no-wrap"):
+        with ui.column().classes("sidebar gap-0"):
             sidebar_header()
             model_selector(models, state.model)
-            with ui.column().classes("sidebar-section flex-grow"):
-                _render_session_search()
-                session_list(sessions, active_id=session_id or "")
-            with ui.column().classes("sidebar-footer"):
+            with ui.column().classes("sidebar-section w-full gap-0").style("padding-bottom: 0;"):
                 new_chat_button()
+                search_sessions(sessions, active_id=session_id or "")
+            with ui.column().classes("w-full").style("flex: 1; min-height: 0; overflow-y: auto; padding: 0 0.25rem; box-sizing: border-box; overflow-x: hidden; gap: 0;"):
+                session_list(sessions, active_id=session_id or "")
 
         with ui.column().classes("main-content"):
             chat_header(state.model, len(state.messages))
-            _render_chat_area(state)
-            chat_input(handle_message)
+
+            async def submit(msg):
+                await handle_message(msg, container)
+
+            container.on_quick_action = submit
+            container.create()
+            container.update(state.messages)
+            chat_input(submit)
+            ui.run_javascript("setTimeout(() => window.chatScrollSystem.init(), 100);")
 
 
-def _render_chat_area(state: PageState):
-    """Render chat messages area."""
-    with (
-        ui.column()
-        .classes("chat-container")
-        .style("flex: 1; overflow-y: auto; padding: 1rem;")
-    ):
-        if not state.messages:
-            _render_empty_state()
-        else:
-            for msg in state.messages:
-                _render_message(msg)
-
-
-def _render_empty_state():
-    """Render empty state with quick actions."""
-    with (
-        ui.column()
-        .classes("empty-state")
-        .style(
-            "flex: 1; display: flex; flex-direction: column; "
-            "align-items: center; justify-content: center;"
-        )
-    ):
-        ui.label("How can I help you today?").classes("text-h4")
-
-        with (
-            ui.row()
-            .classes("quick-actions")
-            .style("gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem;")
-        ):
-            ui.button(
-                "Search AI News",
-                on_click=lambda: _quick_action(
-                    "Search the web for the latest news on Artificial Intelligence"
-                ),
-            ).props("outline")
-            ui.button(
-                "Write Python Server",
-                on_click=lambda: _quick_action(
-                    "Write a python script that implements a simple FastAPI server"
-                ),
-            ).props("outline")
-            ui.button(
-                "Extract Data",
-                on_click=lambda: _quick_action(
-                    "Help me extract structured entity data from a messy block of text"
-                ),
-            ).props("outline")
-
-
-def _render_session_search():
-    """Render session search input."""
-    ui.input(
-        placeholder="Search sessions...",
-        on_change=lambda e: _filter_sessions(e.value),
-    ).props("outlined dense").classes("w-full").style("margin-bottom: 0.5rem;")
-
-
-def _filter_sessions(query: str):
-    """Filter sessions by query."""
-    ui.notify(f"Filtering: {query}")
-
-
-def _render_message(msg: dict):
-    """Render a single message bubble."""
-    role = msg.get("role", "")
-    content = msg.get("content", "")
-    thinking = msg.get("thinking", "")
-    tool_calls = msg.get("tool_calls", [])
-
-    if role not in ("user", "assistant"):
-        return
-
-    bubble_classes = "message user" if role == "user" else "message assistant"
-
-    with ui.column().classes(bubble_classes).style("width: 100%"):
-        with ui.row().classes("message-header"):
-            avatar = "👤" if role == "user" else "🤖"
-            ui.label(avatar).classes("text-sm")
-            ui.label("You" if role == "user" else "Assistant").classes(
-                "text-xs text-grey-6"
-            )
-
-        if content:
-            content_html = render_markdown(content)
-            ui.html(f'<div class="message-content">{content_html}</div>')
-
-        if tool_calls:
-            _render_tool_calls(tool_calls)
-
-        if thinking:
-            _render_thinking(thinking)
-
-
-def _render_tool_calls(tool_calls: list):
-    """Render collapsible tool calls."""
-    import json
-
-    with ui.expansion("Tool Calls", icon="build").classes("tool-calls"):
-        for tool in tool_calls:
-            name = tool.get("name", "Unknown")
-            arguments = tool.get("arguments", {})
-            with (
-                ui.card()
-                .classes("tool-call")
-                .style(
-                    "background: var(--bg-tertiary); padding: 0.5rem; margin-bottom: 0.5rem;"
-                )
-            ):
-                ui.label(f"🔧 {name}").classes("font-bold text-sm")
-                ui.code(
-                    json.dumps(arguments, indent=2),
-                ).style("font-size: 0.75rem; max-height: 200px; overflow: auto;")
-
-
-def _render_thinking(thinking: str):
-    """Render collapsible thinking section."""
-    thinking_html = render_markdown(thinking)
-    with ui.expansion("Thinking", icon="psychology").classes("thinking-section"):
-        ui.html(f'<div class="message-content">{thinking_html}</div>')
-
-
-def _quick_action(query: str):
-    """Handle quick action button click."""
-    state = get_page_state()
-    state.add_message("user", query)
-    ui.notify(f"Quick action: {query[:30]}...")
-
-
-async def handle_message(message: str):
+async def handle_message(message: str, container: ChatContainer):
     """Handle sending a message and streaming the response."""
-    state = get_page_state()
+    state = get_state()
     model = state.model
 
+    is_new_session = False
     if not state.current_session_id:
         new_session = _create_session()
         if new_session:
             state.current_session_id = new_session["id"]
-            ui.navigate.to(f"/sessions/{new_session['id']}")
-            await asyncio.sleep(0.3)
-            state = get_page_state()
+            ui.context.client.run_javascript(f"window.history.pushState({{}}, '', '/sessions/{new_session['id']}');")
+            state = get_state()
+            is_new_session = True
 
     state.add_message("user", message)
+    user_msg_dict = {"role": "user", "content": message}
+    container.add_message(user_msg_dict)
 
     ui.notify(f"Sending: {message[:50]}...")
-
     state.is_streaming = True
+
+    from src.agentframework.client import EchoClient, ContentEvent, ThinkingEvent, CommandResultEvent, ErrorEvent
+
     accumulated_content = ""
     accumulated_thinking = ""
-    in_thinking = False
+    spinner = None
+    update_streaming = None
 
-    with (
-        ui.column()
-        .classes("message assistant")
-        .style(
-            "width: 100%; padding: 1rem; border-radius: 8px; "
-            "background: var(--bg-secondary); margin-bottom: 1rem;"
-        )
-    ):
-        with ui.row().classes("message-header"):
-            ui.label("🤖").classes("text-sm")
-            ui.label("Assistant").classes("text-xs text-grey-6")
-            spinner = ui.html('<div class="loading-spinner"></div>')
-
-        content_html = ui.html('<div class="message-content"></div>')
-
-    def on_chunk(chunk: str):
-        nonlocal accumulated_content, accumulated_thinking, in_thinking
-
-        if "__THINKING__" in chunk:
-            in_thinking = True
-            chunk = chunk.replace("__THINKING__", "")
-        if "__THINKING_END__" in chunk:
-            in_thinking = False
-            chunk = chunk.replace("__THINKING_END__", "")
-
-        if in_thinking:
-            accumulated_thinking += chunk
-        else:
-            accumulated_content += chunk
-
-        def update_ui():
-            content_label = render_markdown(accumulated_content)
-            content_html.clear()
-            with content_html:
-                ui.html(f'<div class="message-content">{content_label}</div>')
-
-        ui.context.client.safe_invoke(update_ui)
+    if container.container:
+        with container.container:
+            _, content_label, thinking_label, spinner, update_streaming = streaming_message()
+    container.scroll_to_bottom()
 
     try:
-        agent = _create_agent(model)
-        await agent.run_streaming(message, on_chunk=on_chunk)
+        agent = _create_agent(model, session_id=state.current_session_id)
+        client = EchoClient(agent)
+
+        async for event in client.stream_chat(message):
+            if isinstance(event, ThinkingEvent):
+                accumulated_thinking += event.content
+                if update_streaming:
+                    update_streaming(accumulated_content, accumulated_thinking)
+            elif isinstance(event, ContentEvent):
+                accumulated_content += event.content
+                if update_streaming:
+                    update_streaming(accumulated_content, accumulated_thinking)
+            elif isinstance(event, CommandResultEvent):
+                if event.should_exit:
+                    pass
+                else:
+                    accumulated_content += f"\nSystem: {event.result}"
+                    if update_streaming:
+                        update_streaming(accumulated_content, accumulated_thinking)
+            elif isinstance(event, ErrorEvent):
+                logger.error(f"Error event from client: {event.error}")
+                ui.notify(f"Error: {event.error}", type="negative", timeout=0)
+
+        final_msg = agent.messages[-1]
+        final_content = final_msg.content or ""
+        final_thinking = getattr(final_msg, "thinking", "") or ""
+
+        # Guarantee final output is rendered in the DOM in case chunks were bypassed
+        if update_streaming:
+            update_streaming(final_content, final_thinking)
+        container.scroll_to_bottom()
 
         state.add_message(
             "assistant",
-            accumulated_content,
-            thinking=accumulated_thinking,
+            final_content,
+            thinking=final_thinking,
+            tool_calls=getattr(final_msg, "tool_calls", None)
         )
-        _save_session(state)
+        state.persist_messages()
+        finish_streaming(spinner) if spinner else None
 
-        spinner.delete()
+        if is_new_session:
+            from src.agentframework.web_api import _generate_title_async
+            import asyncio
+            asyncio.create_task(_generate_title_async(agent))
 
     except Exception as e:
         logger.error(f"Error during streaming: {e}", exc_info=True)
         ui.notify(f"Error: {str(e)}", type="negative", timeout=0)
-        spinner.delete()
+        finish_streaming(spinner)
 
     state.is_streaming = False
 
@@ -337,8 +232,9 @@ async def handle_message(message: str):
 def _get_all_sessions() -> list:
     """Get all sessions from backend."""
     from .backend import get_sessions_data, get_backend_state
-
     state = get_backend_state()
+    if state.agent and state.agent.session_manager:
+        state.agent.session_manager.purge_empty_sessions()
     data = get_sessions_data(state)
     return data.get("sessions", [])
 
@@ -346,7 +242,6 @@ def _get_all_sessions() -> list:
 def _get_models() -> list:
     """Get available models."""
     from .backend import get_models_sync
-
     data = get_models_sync()
     return data.get("models", ["qwen3:4b-instruct"])
 
@@ -354,7 +249,6 @@ def _get_models() -> list:
 def _create_session() -> Optional[dict]:
     """Create a new session."""
     from .backend import create_session_data, get_backend_state
-
     backend_state = get_backend_state()
     data = create_session_data(backend_state)
     if session_id := data.get("session_id"):
@@ -365,32 +259,23 @@ def _create_session() -> Optional[dict]:
 def _load_session(session_id: str):
     """Load a session from backend."""
     from .backend import load_session_data, get_backend_state
-
     backend_state = get_backend_state()
     data = load_session_data(session_id, backend_state)
     if error := data.get("error"):
         logger.error(f"Failed to load session {session_id}: {error}")
         return
 
-    state = get_page_state()
+    state = get_state()
     state.messages = data.get("messages", [])
 
 
-def _save_session(state: PageState):
-    """Save session messages to backend."""
-    if not state.current_session_id:
-        return
-    from .backend import save_messages, get_backend_state
-
-    backend_state = get_backend_state()
-    save_messages(state.current_session_id, state.messages, backend_state)
 
 
-def _create_agent(model: str):
+
+def _create_agent(model: str, session_id: str | None = None):
     """Create an agent with the given model."""
     from .backend import create_runtime_agent
-
-    return create_runtime_agent(model)
+    return create_runtime_agent(model, session_id)
 
 
 def run():

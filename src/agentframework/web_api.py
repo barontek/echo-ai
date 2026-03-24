@@ -134,14 +134,6 @@ try:
         raise ImportError("NiceGUI module not found")
 except Exception as e:
     logger.warning(f"NiceGUI not available: {e}")
-    # Fallback: try FastHTML UI at /ui
-    try:
-        from src.agentframework.ui.app import app as ui_app
-
-        app.mount("/ui", ui_app)
-        logger.info("FastHTML UI mounted at /ui (fallback)")
-    except ImportError:
-        logger.warning("FastHTML UI not available")
 
 
 @app.middleware("http")
@@ -296,12 +288,13 @@ def get_sessions_data(state: AppState) -> dict[str, Any]:
     """Return session metadata for the current runtime agent."""
     active_agent = ensure_runtime_agent(state)
     if active_agent and active_agent.session_manager:
+        sessions_list, total = active_agent.session_manager.list_sessions()
         sessions = [
             {"id": s.id, "title": s.title, "created_at": s.created_at.isoformat()}
-            for s in active_agent.session_manager.list_sessions()
+            for s in sessions_list
         ]
-        return {"sessions": sessions}
-    return {"sessions": []}
+        return {"sessions": sessions, "total": total}
+    return {"sessions": [], "total": 0}
 
 
 def create_session_data(state: AppState) -> dict[str, Any]:
@@ -881,7 +874,7 @@ async def _generate_title_async(active_agent: "Agent") -> None:
 async def websocket_chat(websocket: WebSocket):
     """WebSocket chat endpoint for real-time streaming.
 
-    Connect to: `ws://localhost:8080/ws/chat`
+    Connect to: `wss://localhost:8080/ws/chat` (HTTPS/WSS required)
 
     ## Sending Messages
 
@@ -915,7 +908,7 @@ async def websocket_chat(websocket: WebSocket):
     ## JavaScript Example
 
     ```javascript
-    const ws = new WebSocket('ws://localhost:8080/ws/chat');
+    const ws = new WebSocket('wss://localhost:8080/ws/chat');
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'content') {
@@ -925,6 +918,11 @@ async def websocket_chat(websocket: WebSocket):
     ws.send(JSON.stringify({type: 'message', content: 'Hi!'}));
     ```
     """
+    scheme = websocket.scope.get("scheme", "ws")
+    if scheme == "http":
+        await websocket.close(code=4001, reason="HTTPS/WSS required")
+        return
+
     await websocket.accept()
 
     # Get state from app state (accessed via module-level _state for WebSocket)

@@ -41,9 +41,6 @@ tools:
       - mv
       - pip
       - docker
-      - curl
-      - wget
-      - ssh
       - pytest
       - uv
       - date
@@ -84,6 +81,28 @@ agent:
   max_iterations: 50
   max_context_messages: 50  # Max messages to keep in context (0 = unlimited)
   max_context_chars: 100000  # Max characters in context (0 = unlimited)
+  token_reserve_ratio: 0.7  # Keep 70% of context for content, 30% for response
+
+# Limits for various operations
+limits:
+  # Web content limits
+  max_web_fetch_chars: 15000  # Max characters when fetching web pages
+  max_search_result_snippet: 500  # Max chars in search result snippets
+  min_fetch_content_chars: 50  # Minimum content to consider fetch successful
+  search_result_truncate: 1000  # Truncate search results to this many chars
+
+  # File search limits
+  max_glob_results: 100  # Max files returned by glob
+  max_grep_results: 100  # Max grep matches per file
+  max_search_query_length: 500  # Max length of search queries
+
+  # File operation limits
+  max_file_read_size: 10485760  # 10MB - max file size to read
+  max_file_write_size: 5242880  # 5MB - max file size to write
+
+  # API limits
+  max_sessions_per_page: 50  # Default pagination size for sessions
+  max_sessions_total: 1000  # Max sessions to list without pagination
 
   # Sub-agents configuration
   sub_agents:

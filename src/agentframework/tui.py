@@ -120,10 +120,33 @@ class AgentDashboard(App):
 
     async def _run_agent(self, user_input: str) -> None:
         try:
-            # We call run using the main async loop. The agent will hit our callbacks
-            # which will use call_from_thread to write back to the UI.
-            response = await self.agent.run(user_input)
-            self.call_from_thread(self.log_panel.write_line, f"[bold cyan]Agent:[/bold cyan] {response}")
+            from src.agentframework.client import EchoClient, ContentEvent, ThinkingEvent, CommandResultEvent, ErrorEvent
+            client = EchoClient(self.agent)
+
+            # Use call_from_thread to write incrementally
+            self.call_from_thread(self.log_panel.write_line, "[bold cyan]Agent is typing...[/bold cyan]")
+
+            current_line = ""
+            async for event in client.stream_chat(user_input):
+                if isinstance(event, ContentEvent):
+                    # For TUI we batch line by line to avoid flickering
+                    current_line += event.content
+                    if "\n" in current_line:
+                        lines = current_line.split("\n")
+                        for line in lines[:-1]:
+                            self.call_from_thread(self.log_panel.write_line, line)
+                        current_line = lines[-1]
+                elif isinstance(event, ThinkingEvent):
+                    # We can log thinking process directly
+                    pass
+                elif isinstance(event, CommandResultEvent):
+                    self.call_from_thread(self.log_panel.write_line, f"[yellow]System:[/yellow] {event.result}")
+                elif isinstance(event, ErrorEvent):
+                    self.call_from_thread(self.log_panel.write_line, f"[bold red]Error:[/bold red] {event.error}")
+
+            if current_line:
+                self.call_from_thread(self.log_panel.write_line, current_line)
+
         except Exception as e:
             self.call_from_thread(self.log_panel.write_line, f"[bold red]System Error:[/bold red] {str(e)}")
 

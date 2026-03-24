@@ -180,12 +180,13 @@ class TestSessions:
         state.agent = mock_agent
         s1 = MagicMock(id="session1", title="Title 1", created_at=datetime.now())
         s2 = MagicMock(id="session2", title=None, created_at=datetime.now())
-        mock_agent.session_manager.list_sessions.return_value = [s1, s2]
+        mock_agent.session_manager.list_sessions.return_value = ([s1, s2], 2)
 
         response = client.get("/api/sessions")
         assert response.status_code == 200
         data = response.json()
         assert len(data["sessions"]) == 2
+        assert data["total"] == 2
         assert data["sessions"][0]["id"] == "session1"
         assert data["sessions"][0]["title"] == "Title 1"
         assert data["sessions"][1]["title"] is None
@@ -195,7 +196,7 @@ class TestSessions:
         state.agent = mock_agent
         s1 = MagicMock(id="s1", title="Chat about Python", created_at=datetime.now())
         s2 = MagicMock(id="s2", title=None, created_at=datetime.now())
-        mock_agent.session_manager.list_sessions.return_value = [s1, s2]
+        mock_agent.session_manager.list_sessions.return_value = ([s1, s2], 2)
 
         response = client.get("/api/sessions")
         data = response.json()
@@ -210,9 +211,10 @@ class TestSessions:
         monkeypatch.setattr(
             web_api, "_create_runtime_agent", lambda *args, **kwargs: mock_agent
         )
-        mock_agent.session_manager.list_sessions.return_value = [
-            MagicMock(id="lazy-session")
-        ]
+        mock_agent.session_manager.list_sessions.return_value = (
+            [MagicMock(id="lazy-session")],
+            1,
+        )
 
         response = client.get("/api/sessions")
         assert response.status_code == 200
@@ -526,7 +528,7 @@ class TestWorkflows:
 
 class TestReview:
     def test_static_routes(self):
-        response = client.get("/")
+        response = client.get("/", follow_redirects=False)
         assert response.status_code in [200, 302]
 
     @patch("uvicorn.run")

@@ -2,27 +2,24 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import asyncio
 import json
 
-from src.agentframework.agent import AgentConfig, create_agent
+from src.agentframework.agent import Agent, AgentConfig, create_agent
 from src.agentframework.router import SemanticRouter
-
-# A global dictionary holding active agent instances.
-# In a true deployment, you'd use a redis cache or dependency injection.
-agents = {}
+from src.agentframework.dependencies import AgentRegistry, get_agent_registry
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """Initialize a default agent and router on startup."""
+    registry = get_agent_registry()
     config = AgentConfig(provider="ollama", model="qwen3:4b-instruct")
     agent = create_agent(config)
 
-    # Register some example sub-agents for routing tests
     agent.register_sub_agent(
         name="code_agent",
         description="Handles coding, programming, debugging, and software architecture questions.",
@@ -32,7 +29,7 @@ async def lifespan(application: FastAPI):
         description="Handles web scraping, general knowledge, and deep contextual research.",
     )
 
-    agents["default"] = agent
+    registry.set("default", agent)
     application.state.router = SemanticRouter(agent)
     yield
 
@@ -57,25 +54,29 @@ class ChatRequest(BaseModel):
 class RouteRequest(BaseModel):
     prompt: str
 
-def get_or_create_agent(req: ChatRequest):
+
+def get_or_create_agent(
+    req: ChatRequest, registry: AgentRegistry = Depends(get_agent_registry)
+) -> Agent:
     """Retrieve an existing agent for a session or create a new one."""
     key = req.session_id or "default"
 
-    if key not in agents:
+    if not registry.has(key):
         config = AgentConfig(
-            provider=req.provider,
-            model=req.model,
-            session_enabled=True
+            provider=req.provider, model=req.model, session_enabled=True
         )
         agent = create_agent(config, api_key=req.api_key)
 
         if req.session_id and agent.session_manager:
-            # Load or create session history in SQLite
             agent.session_manager.create_session(req.session_id)
 
-        agents[key] = agent
+        registry.set(key, agent)
 
-    return agents[key]
+    agent = registry.get(key)
+    if agent is None:
+        raise ValueError("Failed to get or create agent")
+    return agent
+
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
@@ -83,12 +84,16 @@ async def chat(request: ChatRequest):
     try:
         agent = get_or_create_agent(request)
         response = await agent.run(request.prompt)
+        session_id = None
+        if agent.session_manager and agent.session_manager.current_session:
+            session_id = agent.session_manager.current_session.id
         return {
-            "session_id": agent.session_manager.current_session.id if agent.session_manager.current_session else None,
-            "response": response
+            "session_id": session_id,
+            "response": response,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/route")
 async def route_intent(request: RouteRequest):
@@ -100,10 +105,18 @@ async def route_intent(request: RouteRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/stream")
-async def stream_chat(prompt: str, session_id: str | None = None, provider: str = "ollama", model: str = "qwen3:4b-instruct"):
+async def stream_chat(
+    prompt: str,
+    session_id: str | None = None,
+    provider: str = "ollama",
+    model: str = "qwen3:4b-instruct",
+):
     """Server-Sent Events (SSE) streaming endpoint."""
-    req = ChatRequest(prompt=prompt, session_id=session_id, provider=provider, model=model)
+    req = ChatRequest(
+        prompt=prompt, session_id=session_id, provider=provider, model=model
+    )
     agent = get_or_create_agent(req)
 
     queue = asyncio.Queue()

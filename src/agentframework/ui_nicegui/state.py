@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 import logging
 
+from .config import DEFAULT_MODEL
+
 logger = logging.getLogger(__name__)
 
 
@@ -13,7 +15,7 @@ class ChatState:
 
     current_session_id: Optional[str] = None
     messages: list = field(default_factory=list)
-    model: str = "qwen3:4b-instruct"
+    model: str = DEFAULT_MODEL
     is_streaming: bool = False
 
     def create_session(self):
@@ -61,14 +63,14 @@ class ChatState:
             }
         )
 
-    def save_messages(self):
+    def persist_messages(self):
         """Save messages to backend."""
         if not self.current_session_id:
             return
-        from .backend import save_messages, get_backend_state
+        from .backend import save_messages as save_messages_db, get_backend_state
 
         state = get_backend_state()
-        save_messages(self.current_session_id, self.messages, state)
+        save_messages_db(self.current_session_id, self.messages, state)
 
 
 def get_state() -> ChatState:
@@ -95,9 +97,9 @@ def get_models():
 
     try:
         data = get_models_sync()
-        return data.get("models", ["qwen3:4b-instruct"])
+        return data.get("models", [DEFAULT_MODEL])
     except Exception:
-        return ["qwen3:4b-instruct"]
+        return [DEFAULT_MODEL]
 
 
 def create_agent(model: str):

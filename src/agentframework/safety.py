@@ -13,68 +13,114 @@ logger = logging.getLogger(__name__)
 
 
 DANGEROUS_PATTERNS = [
-    (re.compile(r'rm\s+-rf\s+/'), "Recursive deletion of root"),
-    (re.compile(r'rm\s+-rf\s+'), "Recursive deletion"),
-    (re.compile(r'dd\s+if='), "Direct device read"),
-    (re.compile(r':\(\)\{'), "Fork bomb"),
-    (re.compile(r'curl.*\|\s*(sh|bash|zsh)'), "Download and execute"),
-    (re.compile(r'wget.*\|\s*(sh|bash|zsh)'), "Download and execute"),
-    (re.compile(r'python.*-c.*exec'), "Python code execution"),
-    (re.compile(r'perl.*-e.*'), "Perl code execution"),
-    (re.compile(r'ruby.*-e.*'), "Ruby code execution"),
-    (re.compile(r'node.*-e.*'), "Node.js code execution"),
-    (re.compile(r'>\s*/dev/sd'), "Direct disk write"),
-    (re.compile(r'mkfs\.'), "Filesystem creation"),
-    (re.compile(r'mount\s+--bind'), "Bind mount"),
-    (re.compile(r'chmod\s+[47]777'), "Overly permissive permissions"),
-    (re.compile(r'chown\s+-R'), "Recursive ownership change"),
-    (re.compile(r'sudo\s+rm'), "sudo delete"),
-    (re.compile(r'sudo\s+rm\s+-rf'), "sudo recursive delete"),
-    (re.compile(r'sudo\s+rm\s+/'), "sudo delete root"),
-    (re.compile(r'>\s*/etc/passwd'), "Write to passwd"),
-    (re.compile(r'>\s*/etc/shadow'), "Write to shadow"),
-    (re.compile(r'git\s+push\s+--force'), "Force push"),
-    (re.compile(r'docker\s+run\s+--rm\s+-v\s+/'), "Docker volume mount"),
-    (re.compile(r'nc\s+-e\s+'), "Netcat reverse shell"),
-    (re.compile(r'/bin/(sh|bash)\s+-i'), "Interactive shell"),
-    (re.compile(r'eval\s+'), "Eval execution"),
-    (re.compile(r'exec\s+'), "Exec execution"),
+    (re.compile(r"rm\s+-rf\s+/"), "Recursive deletion of root"),
+    (re.compile(r"rm\s+-rf\s+"), "Recursive deletion"),
+    (re.compile(r"dd\s+if="), "Direct device read"),
+    (re.compile(r":\(\)\{"), "Fork bomb"),
+    (re.compile(r"curl.*\|\s*(sh|bash|zsh)"), "Download and execute"),
+    (re.compile(r"wget.*\|\s*(sh|bash|zsh)"), "Download and execute"),
+    (re.compile(r"python.*-c.*exec"), "Python code execution"),
+    (re.compile(r"perl.*-e.*"), "Perl code execution"),
+    (re.compile(r"ruby.*-e.*"), "Ruby code execution"),
+    (re.compile(r"node.*-e.*"), "Node.js code execution"),
+    (re.compile(r">\s*/dev/sd"), "Direct disk write"),
+    (re.compile(r"mkfs\."), "Filesystem creation"),
+    (re.compile(r"mount\s+--bind"), "Bind mount"),
+    (re.compile(r"chmod\s+[47]777"), "Overly permissive permissions"),
+    (re.compile(r"chown\s+-R"), "Recursive ownership change"),
+    (re.compile(r"sudo\s+rm"), "sudo delete"),
+    (re.compile(r"sudo\s+rm\s+-rf"), "sudo recursive delete"),
+    (re.compile(r"sudo\s+rm\s+/"), "sudo delete root"),
+    (re.compile(r">\s*/etc/passwd"), "Write to passwd"),
+    (re.compile(r">\s*/etc/shadow"), "Write to shadow"),
+    (re.compile(r"git\s+push\s+--force"), "Force push"),
+    (re.compile(r"docker\s+run\s+--rm\s+-v\s+/"), "Docker volume mount"),
+    (re.compile(r"nc\s+-e\s+"), "Netcat reverse shell"),
+    (re.compile(r"/bin/(sh|bash)\s+-i"), "Interactive shell"),
+    (re.compile(r"eval\s+"), "Eval execution"),
+    (re.compile(r"exec\s+"), "Exec execution"),
 ]
 
 DESTRUCTIVE_KEYWORDS = [
-    'delete', 'destroy', 'remove', 'drop', 'truncate', 'erase',
-    'rm -rf', 'rmdir', 'unlink', 'deltree',
-    'format', 'fdisk', 'mkfs',
-    '--force', '-f', '--force', 'force',
-    'chmod 777', 'chmod -r', 'chown -r',
+    "delete",
+    "destroy",
+    "remove",
+    "drop",
+    "truncate",
+    "erase",
+    "rm -rf",
+    "rmdir",
+    "unlink",
+    "deltree",
+    "format",
+    "fdisk",
+    "mkfs",
+    "--force",
+    "-f",
+    "--force",
+    "force",
+    "chmod 777",
+    "chmod -r",
+    "chown -r",
 ]
 
 SAFE_COMMANDS = {
-    'git': ['status', 'diff', 'log', 'show', 'branch', 'fetch', 'clone', 'init'],
-    'npm': ['install', 'run', 'test', 'build', 'start', 'dev'],
-    'pip': ['install', 'list', 'show', 'freeze'],
-    'cargo': ['build', 'test', 'run', 'check', 'clippy'],
-    'make': [],
-    'ls': [],
-    'cat': [],
-    'grep': [],
-    'find': [],
-    'echo': [],
-    'pwd': [],
-    'cd': [],
+    "git": ["status", "diff", "log", "show", "branch", "fetch", "clone", "init"],
+    "npm": ["install", "run", "test", "build", "start", "dev"],
+    "pip": ["install", "list", "show", "freeze"],
+    "cargo": ["build", "test", "run", "check", "clippy"],
+    "make": [],
+    "ls": [],
+    "cat": [],
+    "grep": [],
+    "find": [],
+    "echo": [],
+    "pwd": [],
+    "cd": [],
 }
 
 BLOCKED_EXTENSIONS = [
-    '*.key', '*.pem', '*.pub', '*.secret', '*.token',
-    '*.env', '*.password', '*.credential', '*.api_key',
-    '*.aws', '*.gcp', '*.azure', 'id_rsa', 'id_ed25519',
-    '.git/credentials', '.netrc', '.htpasswd',
+    "*.key",
+    "*.pem",
+    "*.pub",
+    "*.secret",
+    "*.token",
+    "*.env",
+    "*.password",
+    "*.credential",
+    "*.api_key",
+    "*.aws",
+    "*.gcp",
+    "*.azure",
+    "id_rsa",
+    "id_ed25519",
+    ".git/credentials",
+    ".netrc",
+    ".htpasswd",
+    "*.crt",
+    "*.cer",
+    "*.p12",
+    "*.pfx",
+    "*_key",
+    "*_secret",
+    "*_token",
+    "*_credential",
+    "*.ppk",
+    "*.ovpn",
+    "*.conf",
+    "*_id_rsa",
 ]
 
 BLOCKED_PATHS = [
-    '/etc/passwd', '/etc/shadow', '/etc/sudoers',
-    '/root', '/home/*/.ssh', '/home/*/.aws',
-    '*/.git/config', '*.env', '.env.*',
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/sudoers",
+    "/root",
+    "/home/*/.ssh",
+    "/home/*/.aws",
+    "*/.git/config",
+    "*.env",
+    ".env.*",
 ]
 
 
@@ -89,7 +135,9 @@ class SafetyConfig:
     allowed_domains: list[str] = field(default_factory=list)
     max_file_size: int = 10 * 1024 * 1024
     max_execution_time: int = 60
-    require_approval_for: list[str] = field(default_factory=lambda: ["bash", "write_file", "memory"])
+    require_approval_for: list[str] = field(
+        default_factory=lambda: ["bash", "write_file", "memory"]
+    )
     approval_callback: Optional[Callable[[str, str], bool]] = None
     audit_log_path: Optional[str] = None
     read_requires_approval: bool = False
@@ -107,8 +155,12 @@ class SecurityValidator:
     def _compile_patterns(self):
         """Compile regex patterns for efficiency."""
         self._dangerous_patterns = DANGEROUS_PATTERNS
-        self._blocked_extensions = [re.compile(fnmatch.translate(p)) for p in BLOCKED_EXTENSIONS]
-        self._blocked_path_patterns = [re.compile(fnmatch.translate(p)) for p in BLOCKED_PATHS]
+        self._blocked_extensions = [
+            re.compile(fnmatch.translate(p)) for p in BLOCKED_EXTENSIONS
+        ]
+        self._blocked_path_patterns = [
+            re.compile(fnmatch.translate(p)) for p in BLOCKED_PATHS
+        ]
 
     def check_path_traversal(self, path: str) -> bool:
         """Check for path traversal attempts."""
@@ -149,7 +201,7 @@ class SecurityValidator:
         try:
             # We must break the string across bash boundary chaining loops to inspect them individually
             # Because `shlex` doesn't natively treat `;` or `&&` as command splitters dynamically unless explicitly instructed.
-            sub_commands = re.split(r'(?:;|&&|\|\||\|)', cmd_lower)
+            sub_commands = re.split(r"(?:;|&&|\|\||\|)", cmd_lower)
 
             for sub_cmd in sub_commands:
                 sub_cmd = sub_cmd.strip()
@@ -168,11 +220,13 @@ class SecurityValidator:
                 # To be rigorous, we strip out leading variable assignments from the 'base_cmd' inspection natively.
                 executable_parts = []
                 for p in parts:
-                    if "=" not in p or p.startswith("-"): # Quick heuristic to skip env vars preceding a command (e.g. `DEBUG=1 npm start`)
+                    if (
+                        "=" not in p or p.startswith("-")
+                    ):  # Quick heuristic to skip env vars preceding a command (e.g. `DEBUG=1 npm start`)
                         executable_parts.append(p)
 
                 if not executable_parts:
-                    continue # It was purely an assignment
+                    continue  # It was purely an assignment
 
                 base_cmd = executable_parts[0]
 
@@ -194,7 +248,9 @@ class SecurityValidator:
                 if allowed and "*" not in allowed:
                     allowed_found = False
                     for pattern in allowed:
-                        if isinstance(pattern, str) and fnmatch.fnmatch(base_cmd, pattern):
+                        if isinstance(pattern, str) and fnmatch.fnmatch(
+                            base_cmd, pattern
+                        ):
                             allowed_found = True
                             break
                     if not allowed_found:
@@ -204,8 +260,11 @@ class SecurityValidator:
                     allowed_args = SAFE_COMMANDS[base_cmd]
                     if allowed_args and len(executable_parts) > 1:
                         subcmd = executable_parts[1]
-                        if subcmd not in allowed_args and '*' not in allowed_args:
-                            return False, f"Subcommand '{subcmd}' not allowed for {base_cmd}"
+                        if subcmd not in allowed_args and "*" not in allowed_args:
+                            return (
+                                False,
+                                f"Subcommand '{subcmd}' not allowed for {base_cmd}",
+                            )
 
         except ValueError as e:
             return False, f"Malformed command string: {e}"
@@ -218,16 +277,23 @@ class SecurityValidator:
             if not self.config.allowed_domains:
                 return True, "OK"
             from urllib.parse import urlparse
+
             domain = urlparse(url).netloc
             for allowed in self.config.allowed_domains:
                 # Remove wildcard prefix for subdomain matching
                 pattern = allowed.lstrip("*.")
-                if fnmatch.fnmatch(domain, allowed) or domain == pattern or domain.endswith("." + pattern):
+                if (
+                    fnmatch.fnmatch(domain, allowed)
+                    or domain == pattern
+                    or domain.endswith("." + pattern)
+                ):
                     return True, "OK"
             return False, f"Domain not in allowlist: {domain}"
         return False, "Network access disabled"
 
-    def check_file_size(self, content: str | None = None, path: str | None = None) -> bool:
+    def check_file_size(
+        self, content: str | None = None, path: str | None = None
+    ) -> bool:
         """Check if file size is within limits."""
         if content and len(content.encode()) > self.config.max_file_size:
             return False
@@ -239,7 +305,9 @@ class SecurityValidator:
                 pass
         return True
 
-    def requires_approval(self, tool_name: str, path: str | None = None, content: str | None = None) -> bool:
+    def requires_approval(
+        self, tool_name: str, path: str | None = None, content: str | None = None
+    ) -> bool:
         """Check if tool requires user approval."""
         if tool_name in self.config.require_approval_for:
             return True

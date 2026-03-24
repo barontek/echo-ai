@@ -8,6 +8,30 @@ from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
 
+async def _async_read_text(path: Path) -> str:
+    """Async file read to avoid blocking the event loop."""
+    try:
+        import aiofiles
+
+        async with aiofiles.open(path, "r", encoding="utf-8") as f:
+            return await f.read()
+    except ImportError:
+        return path.read_text()
+
+
+async def _async_write_text(path: Path, content: str) -> None:
+    """Async file write to avoid blocking the event loop."""
+    try:
+        import aiofiles
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            await f.write(content)
+    except ImportError:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+
 class ReadFileParams(BaseModel):
     """Parameters for ReadFileTool."""
 
@@ -103,7 +127,7 @@ class ReadFileTool(FileSystemTool):
             if not self.validator.check_file_size(path=str(full_path)):
                 return ToolResult(error="File too large")
 
-            content = full_path.read_text()
+            content = await _async_read_text(full_path)
 
             if not self.validator.check_file_size(content=content):
                 return ToolResult(error="File content too large")
@@ -156,20 +180,18 @@ class WriteFileTool(FileSystemTool):
                 return ToolResult(error="Write requires approval")
 
         try:
-            full_path.parent.mkdir(parents=True, exist_ok=True)
-
             old_content = None
             if full_path.exists():
-                old_content = full_path.read_text()
+                old_content = await _async_read_text(full_path)
 
-            full_path.write_text(content)
+            await _async_write_text(full_path, content)
 
             metadata = {
                 "change": {
                     "action": "write",
                     "path": path,
                     "old_content": old_content,
-                    "new_content": content
+                    "new_content": content,
                 }
             }
             return ToolResult(content=f"Written to {path}", metadata=metadata)

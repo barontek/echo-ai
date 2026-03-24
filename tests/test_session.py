@@ -143,13 +143,35 @@ class TestSessionManagerCRUD:
         manager.create_session(session_id="old")
         time.sleep(0.05)
         manager.create_session(session_id="new")
-        sessions = manager.list_sessions()
+        sessions, total = manager.list_sessions()
         assert len(sessions) == 2
+        assert total == 2
         assert sessions[0].id == "new"
         assert sessions[1].id == "old"
 
     def test_list_sessions_empty(self, manager):
-        assert manager.list_sessions() == []
+        sessions, total = manager.list_sessions()
+        assert sessions == []
+        assert total == 0
+
+    def test_list_sessions_pagination(self, manager):
+        for i in range(5):
+            manager.create_session(session_id=f"session_{i}")
+        sessions, total = manager.list_sessions(limit=2, offset=0)
+        assert len(sessions) == 2
+        assert total == 5
+        sessions, total = manager.list_sessions(limit=2, offset=2)
+        assert len(sessions) == 2
+        assert total == 5
+
+    def test_list_sessions_search(self, manager):
+        manager.create_session(session_id="test_alpha", title="Alpha Session")
+        manager.create_session(session_id="test_beta", title="Beta Session")
+        manager.create_session(session_id="test_gamma", title="Gamma Session")
+        sessions, total = manager.list_sessions(search="alpha")
+        assert len(sessions) == 1
+        assert total == 1
+        assert sessions[0].title == "Alpha Session"
 
 
 class TestMessagePersistence:
@@ -175,7 +197,9 @@ class TestMessagePersistence:
     def test_add_message_no_current_session_is_noop(self, manager):
         manager.current_session = None
         manager.add_message("user", "lost message")
-        assert manager.list_sessions() == []
+        sessions, total = manager.list_sessions()
+        assert sessions == []
+        assert total == 0
 
     def test_save_session_updates_existing(self, manager):
         manager.create_session(session_id="update_test", title="V1")
@@ -188,7 +212,8 @@ class TestMessagePersistence:
         assert loaded is not None
         assert loaded.title == "V2"
         assert len(loaded.messages) == 1
-        assert len(manager.list_sessions()) == 1
+        sessions, total = manager.list_sessions()
+        assert total == 1
 
     def test_save_session_none_is_noop(self, manager):
         manager.current_session = None
@@ -212,7 +237,9 @@ class TestPurge:
         manager.create_session(session_id="c")
         count = manager.purge_sessions()
         assert count == 3
-        assert manager.list_sessions() == []
+        sessions, total = manager.list_sessions()
+        assert sessions == []
+        assert total == 0
         assert manager.current_session is None
 
     def test_purge_resets_current_session(self, manager):
@@ -239,7 +266,7 @@ class TestPurge:
         manager.create_session(session_id="new_one")
         count = manager.purge_sessions(older_than_days=5)
         assert count == 1
-        remaining = manager.list_sessions()
+        remaining, total = manager.list_sessions()
         assert len(remaining) == 1
         assert remaining[0].id == "new_one"
 
@@ -253,8 +280,8 @@ class TestPurgeEmpty:
 
         count = manager.purge_empty_sessions()
         assert count == 2
-        remaining = manager.list_sessions()
-        assert len(remaining) == 1
+        remaining, total = manager.list_sessions()
+        assert total == 1
         assert remaining[0].id == "with_user"
 
     def test_purge_empty_keeps_sessions_with_any_user_message(self, manager):
@@ -303,8 +330,9 @@ class TestMigration:
         conn.close()
 
         mgr = SessionManager(str(db_dir))
-        sessions = mgr.list_sessions()
+        sessions, total = mgr.list_sessions()
         assert len(sessions) == 1
+        assert total == 1
         assert sessions[0].id == "legacy_session"
         assert sessions[0].title is None
         mgr.close()
@@ -318,8 +346,9 @@ class TestMigration:
         mgr1.close()
 
         mgr2 = SessionManager(str(db_dir))
-        sessions = mgr2.list_sessions()
+        sessions, total = mgr2.list_sessions()
         assert len(sessions) == 1
+        assert total == 1
         assert sessions[0].title == "Hello"
         mgr2.close()
 

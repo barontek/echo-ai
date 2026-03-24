@@ -529,11 +529,18 @@ class Agent:
         self.messages = deserialize_messages(session.messages)
         return f"Session loaded: {session_id}"
 
-    def list_sessions(self) -> list:
-        """List saved sessions."""
+    def list_sessions(
+        self, limit: int = 50, offset: int = 0, search: str | None = None
+    ) -> tuple[list, int]:
+        """List saved sessions.
+
+        Returns:
+            Tuple of (session ids list, total count)
+        """
         if not self.session_manager:
-            return []
-        return [s.id for s in self.session_manager.list_sessions()]
+            return [], 0
+        sessions, total = self.session_manager.list_sessions(limit, offset, search)
+        return [s.id for s in sessions], total
 
     def _ensure_session(
         self, session_id: str | None = None, title: str | None = None

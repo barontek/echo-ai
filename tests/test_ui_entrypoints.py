@@ -39,7 +39,13 @@ def test_agent_dashboard_init():
 @pytest.mark.asyncio
 async def test_agent_dashboard_full_flow():
     mock_agent = MagicMock()
-    mock_agent.run = AsyncMock(return_value="TUI Response")
+
+    async def mock_run_streaming(user_input, on_chunk=None):
+        if on_chunk:
+            on_chunk("TUI Response")
+        return "TUI Response"
+
+    mock_agent.run_streaming = AsyncMock(side_effect=mock_run_streaming)
 
     app = AgentDashboard(agent=mock_agent)
     # Mock call_from_thread to just execute the callback directly in tests
@@ -60,9 +66,9 @@ async def test_agent_dashboard_full_flow():
         await pilot.pause()
 
         # Check logs
-        # app.log_panel is a Log widget, we can check its lines if needed
-        # but the main thing is it didn't crash and called agent.run
-        mock_agent.run.assert_called_with("Hello")
+        # Call signature is (user_input, on_chunk=...)
+        assert mock_agent.run_streaming.called
+        assert mock_agent.run_streaming.call_args[0][0] == "Hello"
 
 def test_tui_callback_extended(mock_agent):
     app = MagicMock()

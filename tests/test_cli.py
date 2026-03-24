@@ -62,7 +62,7 @@ def test_execute_load_command_usage():
 
 def test_execute_chats_command():
     agent = MagicMock()
-    agent.list_sessions.return_value = ["s1", "s2"]
+    agent.list_sessions.return_value = (["s1", "s2"], 2)
     console = MagicMock()
     execute_command("/chats", "", agent, console)
     assert console.print.called

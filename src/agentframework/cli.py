@@ -4,17 +4,81 @@ import asyncio
 import sys
 
 from rich.console import Console
+from rich.markdown import Markdown
 
 from .agent import Agent
 from .bootstrap import setup_agent
-from .client import EchoClient, ContentEvent, ThinkingEvent, CommandResultEvent, ErrorEvent
+from .client import (
+    EchoClient,
+    ContentEvent,
+    ThinkingEvent,
+    CommandResultEvent,
+    ErrorEvent,
+)
 
 console = Console(color_system="256")
 
+HELP_TEXT = """
+# Echo AI - Command Line Interface
+
+## Usage
+
+```bash
+# Single task
+agent "your task here"
+
+# Interactive mode
+agent
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/new` | Start a new conversation |
+| `/save <name>` | Save current chat |
+| `/load <name>` | Load a saved chat |
+| `/chats` | List all saved chats |
+| `/model <name>` | Switch to a different model |
+| `/undo` | Undo last file change |
+| `/redo` | Redo last undone change |
+| `/clear` | Clear the screen |
+| `/help` | Show this help |
+| `/exit` | Exit the program |
+
+## Examples
+
+```bash
+# Ask a question
+agent "What is the weather in Tokyo?"
+
+# Multi-step task
+agent "Create a Python script that fetches data from an API and saves it to a JSON file"
+
+# Interactive mode
+agent
+> What files are in the current directory?
+> /chats
+> /exit
+```
+
+## Environment Variables
+
+- `ECHO_PROVIDER` - Set the LLM provider (ollama, openai, anthropic)
+- `ECHO_MODEL` - Set the model name
+- `ECHO_WORKSPACE` - Set the workspace directory
+"""
+
+
+def show_help():
+    """Display help text."""
+    console.print(Markdown(HELP_TEXT))
+
+
 async def interactive_mode(agent: Agent):
     """Run the agent in interactive mode."""
-    console.print("[bold blue]Agent Framework[/bold blue]")
-    console.print("[dim]Commands: /save, /load, /chats, /undo, /redo, /exit[/dim]\n")
+    console.print("[bold cyan]Echo AI[/bold cyan] - Interactive Mode")
+    console.print("[dim]Type /help for commands, /exit to quit[/dim]\n")
 
     client = EchoClient(agent)
 
@@ -62,6 +126,10 @@ async def interactive_mode(agent: Agent):
 
 async def run_single(agent: Agent, task: str):
     """Run a single task with streaming output."""
+    if task.lower() in ("help", "--help", "-h"):
+        show_help()
+        return
+
     client = EchoClient(agent)
 
     async for event in client.stream_chat(task):
@@ -77,14 +145,20 @@ async def run_single(agent: Agent, task: str):
 
 def main():
     """Main entry point."""
-    agent = setup_agent()
     args = [a for a in sys.argv[1:] if a not in {"--debug", "--debug-json"}]
 
-    if args:
-        task = " ".join(args)
-        asyncio.run(run_single(agent, task))
-    else:
-        asyncio.run(interactive_mode(agent))
+    if not args or args[0].lower() in ("help", "--help", "-h"):
+        show_help()
+        return
+
+    agent = setup_agent()
+
+    if len(args) == 1 and args[0].lower() == "--version":
+        console.print("[bold]Echo AI[/bold] version 0.1.0")
+        return
+
+    task = " ".join(args)
+    asyncio.run(run_single(agent, task))
 
     # Final cleanup
     agent.close()

@@ -1,6 +1,8 @@
 """Configuration management for the agent framework."""
 
+import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,10 @@ from .safety import SafetyConfig, SecurityValidator
 from .tools import TOOL_CONFIG_KEYS, TOOL_REGISTRY
 
 console = Console(color_system="256")
+logger = logging.getLogger(__name__)
+
+VALID_PROVIDERS = {"ollama", "openai", "anthropic"}
+VALID_TOOLS = set(TOOL_REGISTRY.keys())
 
 
 ENV_VAR_MAPPING = {
@@ -233,3 +239,112 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
         tools.append(tool_class(**kwargs))
 
     return tools
+
+
+@dataclass
+class ValidationError:
+    """A configuration validation error."""
+
+    field: str
+    message: str
+
+
+@dataclass
+class ConfigValidationResult:
+    """Result of configuration validation."""
+
+    valid: bool
+    errors: list[ValidationError]
+    warnings: list[str]
+
+    def __bool__(self) -> bool:
+        return self.valid
+
+
+def validate_config(config: dict) -> ConfigValidationResult:
+    """Validate configuration and return any errors or warnings.
+
+    Checks:
+    - Required fields present
+    - Valid provider names
+    - Valid tool names
+    - Workspace directory exists or can be created
+    - Temperature within valid range
+    """
+    errors: list[ValidationError] = []
+    warnings: list[str] = []
+
+    model_config = config.get("model", {})
+    provider = model_config.get("provider", "ollama")
+    if provider not in VALID_PROVIDERS:
+        errors.append(
+            ValidationError(
+                field="model.provider",
+                message=f"Invalid provider '{provider}'. Must be one of: {', '.join(VALID_PROVIDERS)}",
+            )
+        )
+
+    temperature = model_config.get("temperature", 0.3)
+    if not isinstance(temperature, (int, float)):
+        errors.append(
+            ValidationError(
+                field="model.temperature",
+                message=f"Temperature must be a number, got {type(temperature).__name__}",
+            )
+        )
+    elif temperature < 0 or temperature > 2:
+        warnings.append(f"Temperature {temperature} is outside recommended range (0-2)")
+
+    tools_config = config.get("tools", {})
+    enabled_tools = tools_config.get("enabled", [])
+
+    for tool_name in enabled_tools:
+        if tool_name not in VALID_TOOLS:
+            warnings.append(f"Unknown tool '{tool_name}' - skipping")
+
+    safety_config = config.get("safety", {})
+    workspace = safety_config.get("workspace", ".")
+
+    if workspace != ".":
+        workspace_path = Path(workspace)
+        if not workspace_path.exists():
+            warnings.append(
+                f"Workspace directory '{workspace}' does not exist - will be created on first use"
+            )
+        elif not workspace_path.is_dir():
+            errors.append(
+                ValidationError(
+                    field="safety.workspace",
+                    message=f"Workspace path '{workspace}' exists but is not a directory",
+                )
+            )
+
+    max_iterations = config.get("agent", {}).get("max_iterations", 50)
+    if max_iterations < 1:
+        errors.append(
+            ValidationError(
+                field="agent.max_iterations",
+                message=f"max_iterations must be at least 1, got {max_iterations}",
+            )
+        )
+    elif max_iterations > 1000:
+        warnings.append(
+            f"max_iterations is very high ({max_iterations}) - may cause long-running agents"
+        )
+
+    return ConfigValidationResult(
+        valid=len(errors) == 0,
+        errors=errors,
+        warnings=warnings,
+    )
+
+
+def log_config_validation(result: ConfigValidationResult) -> None:
+    """Log validation results."""
+    if result.warnings:
+        for warning in result.warnings:
+            logger.warning(f"Config warning: {warning}")
+
+    if not result.valid:
+        for error in result.errors:
+            logger.error(f"Config error [{error.field}]: {error.message}")

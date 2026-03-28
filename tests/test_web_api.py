@@ -6,6 +6,7 @@ Merged from test_web_api.py and test_web_api_extended.py.
 import pytest
 import json
 import asyncio
+import httpx
 from types import SimpleNamespace
 from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -132,24 +133,46 @@ class TestAgentBootstrap:
 
 class TestModelsAndConfig:
     def test_list_models_success(self, monkeypatch):
-        async def mock_get(*args, **kwargs):
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {
-                "models": [{"name": "model1"}, {"name": "model2"}]
-            }
-            return mock_response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "models": [{"name": "model1"}, {"name": "model2"}]
+        }
+        mock_response.raise_for_status = MagicMock()
 
-        monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
+        class MockAsyncClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, *args, **kwargs):
+                return mock_response
+
+        web_api._models_cache.clear()
+        monkeypatch.setattr(
+            "httpx.AsyncClient", lambda *args, **kwargs: MockAsyncClient()
+        )
         response = client.get("/api/models")
         assert response.status_code == 200
         assert response.json() == {"models": ["model1", "model2"]}
 
     def test_list_models_fallback(self, monkeypatch):
-        async def mock_get(*args, **kwargs):
-            raise Exception("Connection error")
+        class MockAsyncClient:
+            async def __aenter__(self):
+                return self
 
-        monkeypatch.setattr("httpx.AsyncClient.get", mock_get)
+            async def __aexit__(self, *args):
+                pass
+
+            async def get(self, *args, **kwargs):
+                raise httpx.ConnectError("Connection refused")
+
+        web_api._models_cache.clear()
+        monkeypatch.setattr(
+            "httpx.AsyncClient", lambda *args, **kwargs: MockAsyncClient()
+        )
         response = client.get("/api/models")
         assert response.status_code == 200
         assert "qwen3:4b-instruct" in response.json()["models"]

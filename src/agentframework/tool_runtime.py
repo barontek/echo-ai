@@ -24,14 +24,18 @@ class ToolError:
 
 
 ERROR_TEXT = {
-    "validation_error": "Invalid tool arguments",
+    "validation_error": "Invalid arguments provided",
     "policy_denied": "Operation blocked by safety policy",
     "execution_error": "Tool execution failed",
-    "tool_not_found": "Unknown tool",
+    "timeout": "Tool execution timed out",
+    "tool_not_found": "Tool not found in registry",
+    "file_not_found": "File does not exist",
+    "permission_denied": "Permission denied",
 }
 
 
 def format_tool_failure(error: ToolError) -> str:
+    """Format a tool error into a user-friendly message."""
     label = ERROR_TEXT.get(error.category, "Tool error")
     return f"FAILED [{error.category}] - {label}: {error.message}"
 

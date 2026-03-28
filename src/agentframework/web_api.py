@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import re
+import time
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -49,6 +50,10 @@ _INTERNAL_PATTERNS = [
     re.compile(r"^FAILED: .*"),
     re.compile(r"\[Persistent Memory\]"),
 ]
+
+# Simple in-memory cache for expensive operations
+_models_cache: dict[str, tuple[float, dict]] = {}  # key -> (timestamp, data)
+_MODELS_CACHE_TTL = 60.0  # Cache models list for 60 seconds
 
 
 @dataclass
@@ -230,6 +235,39 @@ async def rate_limit_middleware(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Log all HTTP requests and responses for debugging."""
+    import time
+
+    # Skip logging for static files and WebSocket upgrades
+    skip_paths = {"/favicon.ico", "/static", "/docs", "/openapi.json", "/redoc"}
+    if request.url.path in skip_paths:
+        return await call_next(request)
+
+    start_time = time.perf_counter()
+    cid = request.headers.get("X-Correlation-ID", "no-cid")
+
+    # Log request
+    logger.debug(f"[{cid}] --> {request.method} {request.url.path}")
+
+    try:
+        response = await call_next(request)
+        duration = time.perf_counter() - start_time
+
+        # Log response
+        logger.debug(f"[{cid}] <-- {response.status_code} ({duration * 1000:.1f}ms)")
+
+        # Add timing header
+        response.headers["X-Response-Time"] = f"{duration * 1000:.1f}ms"
+
+        return response
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        logger.error(f"[{cid}] <-- ERROR: {str(e)} ({duration * 1000:.1f}ms)")
+        raise
+
+
 def _get_cors_config() -> dict:
     """Get CORS configuration from config.yaml."""
     config = load_config()
@@ -280,33 +318,59 @@ def ensure_runtime_agent(state: AppState) -> Agent | None:
 
 
 async def get_models_data() -> dict[str, Any]:
-    """List available Ollama models for API callers."""
+    """List available Ollama models for API callers (with caching)."""
+    cache_key = "models_async"
+    now = time.monotonic()
+
+    # Check cache
+    if cache_key in _models_cache:
+        cached_time, cached_data = _models_cache[cache_key]
+        if now - cached_time < _MODELS_CACHE_TTL:
+            return cached_data
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get("http://localhost:11434/api/tags", timeout=5.0)
             response.raise_for_status()
             models = response.json().get("models", [])
-            return {"models": [m["name"] for m in models]}
+            result = {"models": [m["name"] for m in models]}
+
+            # Update cache
+            _models_cache[cache_key] = (now, result)
+            return result
     except Exception as e:
-        logger.error("Failed to fetch Ollama models: %s", e)
+        logger.debug("Failed to fetch Ollama models: %s", e)
         return {
             "models": FALLBACK_MODELS,
-            "error": "Could not reach Ollama at http://localhost:11434/api/tags. Showing fallback models.",
+            "error": "Could not reach Ollama. Showing fallback models.",
         }
 
 
 def get_models_sync() -> dict[str, Any]:
-    """List available Ollama models for in-process UI callers."""
+    """List available Ollama models for in-process UI callers (with caching)."""
+    cache_key = "models_sync"
+    now = time.monotonic()
+
+    # Check cache
+    if cache_key in _models_cache:
+        cached_time, cached_data = _models_cache[cache_key]
+        if now - cached_time < _MODELS_CACHE_TTL:
+            return cached_data
+
     try:
         response = httpx.get("http://localhost:11434/api/tags", timeout=5.0)
         response.raise_for_status()
         models = response.json().get("models", [])
-        return {"models": [m["name"] for m in models]}
+        result = {"models": [m["name"] for m in models]}
+
+        # Update cache
+        _models_cache[cache_key] = (now, result)
+        return result
     except Exception as e:
-        logger.error("Failed to fetch Ollama models: %s", e)
+        logger.debug("Failed to fetch Ollama models: %s", e)
         return {
             "models": FALLBACK_MODELS,
-            "error": "Could not reach Ollama at http://localhost:11434/api/tags. Showing fallback models.",
+            "error": "Could not reach Ollama. Showing fallback models.",
         }
 
 

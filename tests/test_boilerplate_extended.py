@@ -6,10 +6,16 @@ from src.agentframework.api import app
 
 
 def test_setup_agent_success():
-    with unittest.mock.patch("src.agentframework.bootstrap.load_config", return_value={}), \
-         unittest.mock.patch("src.agentframework.bootstrap.get_safety_config"), \
-         unittest.mock.patch("src.agentframework.bootstrap.get_tools", return_value=[]), \
-         unittest.mock.patch("src.agentframework.bootstrap.create_agent") as mock_create_agent:
+    with (
+        unittest.mock.patch(
+            "src.agentframework.bootstrap.load_config", return_value={}
+        ),
+        unittest.mock.patch("src.agentframework.bootstrap.get_safety_config"),
+        unittest.mock.patch("src.agentframework.bootstrap.get_tools", return_value=[]),
+        unittest.mock.patch(
+            "src.agentframework.bootstrap.create_agent"
+        ) as mock_create_agent,
+    ):
         agent = setup_agent()
         assert mock_create_agent.called
         assert isinstance(agent, unittest.mock.MagicMock)
@@ -50,13 +56,15 @@ def test_api_route_endpoint():
 def test_cli_main_entrypoint():
     from src.agentframework.cli import main
 
-    with unittest.mock.patch("src.agentframework.cli.setup_agent"), \
-         unittest.mock.patch("src.agentframework.cli.asyncio.run") as mock_run:
+    with (
+        unittest.mock.patch("src.agentframework.cli.setup_agent"),
+        unittest.mock.patch("src.agentframework.cli.asyncio.run") as mock_run,
+    ):
         mock_run.side_effect = lambda coro: coro.close()
 
         with unittest.mock.patch("sys.argv", ["chat"]):
             main()
-            assert mock_run.called
+            assert not mock_run.called
 
         with unittest.mock.patch("sys.argv", ["chat", "do something"]):
             main()

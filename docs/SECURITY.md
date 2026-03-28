@@ -52,6 +52,24 @@ Allowed only:
 - Common flags (--help, -v, etc.)
 - Quoted arguments
 
+#### Restricted Commands
+
+The following commands are **not allowed** in the default configuration:
+- `curl` and `wget` - can download malicious content
+- `ssh` - remote connections disabled by default
+- Any command that downloads and executes in one step
+
+### Sensitive File Protection
+
+The following file patterns are blocked from read/write operations:
+
+```
+*.key, *.pem, *.pub, *.secret, *.token, *.env, *.password,
+*.credential, *.api_key, *.aws, *.gcp, *.azure, id_rsa, id_ed25519,
+*.crt, *.cer, *.p12, *.pfx, *_key, *_secret, *_token,
+*_credential, *.ppk, *.ovpn, *.conf, *_id_rsa
+```
+
 ### Rate Limiting
 
 - 60 requests per minute per IP

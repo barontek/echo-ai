@@ -102,6 +102,15 @@ def __setattr__(name: str, value: Any) -> None:
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
     global _state
+
+    logger.info("=" * 50)
+    logger.info("  Echo AI - Starting up...")
+    logger.info("=" * 50)
+    logger.info("  Version: 0.1.0")
+    logger.info(f"  Provider: {DEFAULT_PROVIDER}")
+    logger.info(f"  Model: {DEFAULT_MODEL}")
+    logger.info("=" * 50)
+
     _state = AppState()
     try:
         _state.agent = _create_runtime_agent(

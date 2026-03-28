@@ -402,6 +402,65 @@ class SessionManager:
 
         return count
 
+    def export_session(self, session_id: str) -> dict | None:
+        """Export a session to a dictionary for JSON serialization.
+
+        Args:
+            session_id: The session ID to export.
+
+        Returns:
+            Dictionary with session data, or None if not found.
+        """
+        session = self.load_session(session_id)
+        if not session:
+            return None
+
+        return {
+            "id": session.id,
+            "title": session.title,
+            "created_at": session.created_at.isoformat()
+            if session.created_at
+            else None,
+            "messages": session.messages,
+            "metadata": session.metadata,
+            "events": session.events,
+            "exported_at": datetime.now().isoformat(),
+        }
+
+    def import_session(self, data: dict) -> Session:
+        """Import a session from a dictionary.
+
+        Args:
+            data: Dictionary with session data (from export_session).
+
+        Returns:
+            The imported session.
+
+        Raises:
+            ValueError: If data is missing required fields.
+        """
+        if "id" not in data:
+            raise ValueError("Missing required field: id")
+
+        import_date = datetime.now()
+        if data.get("created_at"):
+            try:
+                import_date = datetime.fromisoformat(data["created_at"])
+            except ValueError:
+                pass
+
+        session = Session(
+            id=data["id"],
+            title=data.get("title", "Imported Session"),
+            created_at=import_date,
+            messages=data.get("messages", []),
+            metadata=data.get("metadata", {}),
+            events=data.get("events", []),
+        )
+        self.save_session(session)
+        self.log_event("session_imported", {"original_id": data.get("id")})
+        return session
+
     def close(self) -> None:
         """Dispose of the database engine and any connections in its pool."""
         if hasattr(self, "engine") and self.engine:

@@ -152,3 +152,8 @@ web:
     - "*"
   cors_allow_headers:
     - "*"
+  host: "0.0.0.0"
+  port: 8080
+  rate_limit:
+    requests: 60  # requests per window
+    window_seconds: 60

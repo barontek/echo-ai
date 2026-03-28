@@ -183,8 +183,10 @@ async def correlation_id_middleware(request: Request, call_next):
 
 # Rate limiting configuration
 _rate_limit_storage: dict[str, list[datetime]] = defaultdict(list)
-_RATE_LIMIT_REQUESTS = 60  # requests per window
-_RATE_LIMIT_WINDOW = 60  # seconds
+_config = load_config()
+_rate_limit_config = _config.get("web", {}).get("rate_limit", {})
+_RATE_LIMIT_REQUESTS = _rate_limit_config.get("requests", 60)
+_RATE_LIMIT_WINDOW = _rate_limit_config.get("window_seconds", 60)
 
 
 def _check_rate_limit(client_ip: str) -> tuple[bool, int]:
@@ -709,6 +711,34 @@ async def list_models():
     return await get_models_data()
 
 
+@app.get("/api/config", tags=["Configuration"])
+async def get_config(
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Get the current agent configuration.
+
+    Returns the current LLM provider, model, and other settings.
+
+    Returns:
+        {"config": {"provider": "...", "model": "...", ...}}
+    """
+    if not state.agent:
+        raise HTTPException(
+            status_code=503,
+            detail="Agent not initialized. Please start the server first.",
+        )
+    agent_config = state.agent.config
+    return {
+        "config": {
+            "provider": agent_config.provider,
+            "model": agent_config.model,
+            "temperature": agent_config.temperature,
+            "max_iterations": agent_config.max_iterations,
+            "session_enabled": agent_config.session_enabled,
+        }
+    }
+
+
 @app.post("/api/config", tags=["Configuration"])
 async def update_config(
     config: ConfigPayload,
@@ -859,6 +889,72 @@ async def rename_session(
         "session_id": payload.session_id,
         "title": payload.new_title,
     }
+
+
+@app.get("/api/sessions/{session_id}/export", tags=["Sessions"])
+async def export_session(
+    session_id: str,
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Export a session to JSON format.
+
+    Args:
+        session_id: The session identifier to export
+
+    Returns:
+        Session data as JSON dictionary
+    """
+    if not (state.agent and state.agent.session_manager):
+        raise HTTPException(
+            status_code=503,
+            detail="Session service is unavailable. Please try again later.",
+        )
+
+    session_data = state.agent.session_manager.export_session(session_id)
+    if session_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session with ID '{session_id}' was not found.",
+        )
+
+    return session_data
+
+
+@app.post("/api/sessions/import", tags=["Sessions"])
+async def import_session(
+    request: Request,
+    state: Annotated[AppState, Depends(get_state)],
+):
+    """Import a session from JSON format.
+
+    Body:
+        JSON session data (from export endpoint)
+
+    Returns:
+        {"status": "ok", "session_id": "..."}
+    """
+    if not (state.agent and state.agent.session_manager):
+        raise HTTPException(
+            status_code=503,
+            detail="Session service is unavailable. Please try again later.",
+        )
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON in request body.",
+        )
+
+    try:
+        session = state.agent.session_manager.import_session(data)
+        return {"status": "ok", "session_id": session.id}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
 
 @app.post("/api/sessions/purge")

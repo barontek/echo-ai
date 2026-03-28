@@ -13,6 +13,7 @@ from .providers import LLMToolCall
 from .session import ChangeTracker
 from .tools import Tool
 from .callbacks import CallbackManager
+from .metrics import record_tool_execution
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ async def execute_single_tool(
         err = ToolError("tool_not_found", f"Unknown tool: {tool_call.name}")
         if callback_manager:
             callback_manager.on_tool_error(run_id, tool_call.name, str(err.message))
+        record_tool_execution(tool_call.name, perf_counter() - started, False)
         return (
             Message(
                 role="tool",
@@ -96,6 +98,7 @@ async def execute_single_tool(
                     callback_manager.on_tool_error(
                         run_id, tool_call.name, "Invalid JSON in arguments"
                     )
+                record_tool_execution(tool_call.name, perf_counter() - started, False)
                 return (
                     Message(
                         role="tool",
@@ -114,6 +117,7 @@ async def execute_single_tool(
                 callback_manager.on_tool_error(
                     run_id, tool_call.name, str(validation_error.message)
                 )
+            record_tool_execution(tool_call.name, perf_counter() - started, False)
             return (
                 Message(
                     role="tool",
@@ -151,6 +155,7 @@ async def execute_single_tool(
                 tool_arguments=tool_call.arguments,
                 error_category="policy_denied",
             )
+            record_tool_execution(tool_call.name, perf_counter() - started, False)
         else:
             if callback_manager:
                 callback_manager.on_tool_end(
@@ -163,6 +168,7 @@ async def execute_single_tool(
                 tool_name=tool_call.name,
                 tool_arguments=tool_call.arguments,
             )
+            record_tool_execution(tool_call.name, perf_counter() - started, True)
 
         return msg, perf_counter() - started
     except TypeError as e:
@@ -176,6 +182,7 @@ async def execute_single_tool(
         err = ToolError("validation_error", msg)
         if callback_manager:
             callback_manager.on_tool_error(run_id, tool_call.name, str(err.message))
+        record_tool_execution(tool_call.name, perf_counter() - started, False)
         return (
             Message(
                 role="tool",
@@ -192,6 +199,7 @@ async def execute_single_tool(
         err = ToolError("execution_error", str(e))
         if callback_manager:
             callback_manager.on_tool_error(run_id, tool_call.name, str(e))
+        record_tool_execution(tool_call.name, perf_counter() - started, False)
         return (
             Message(
                 role="tool",

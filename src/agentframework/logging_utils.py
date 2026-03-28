@@ -86,6 +86,10 @@ class JsonFormatter(logging.Formatter):
         except ImportError:
             pass
 
+        # Include exception info if present
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+
         return json.dumps(payload, default=str)
 
 

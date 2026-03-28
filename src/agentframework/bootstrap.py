@@ -11,11 +11,12 @@ from .config import (
     get_safety_config,
     get_tools,
     load_config,
+    validate_config,
+    log_config_validation,
 )
 from .logging_utils import configure_logging
 
 console = Console(color_system="256")
-
 
 
 def setup_agent(force_session_enabled: bool = False) -> Agent:
@@ -32,7 +33,14 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
     config_path = find_config_path()
     safety_config = get_safety_config(config)
 
-    session_enabled = True if force_session_enabled else config.get("agent", {}).get("session_enabled", True)
+    validation_result = validate_config(config)
+    log_config_validation(validation_result)
+
+    session_enabled = (
+        True
+        if force_session_enabled
+        else config.get("agent", {}).get("session_enabled", True)
+    )
 
     agent_config = AgentConfig(
         provider=config.get("model", {}).get("provider", "ollama"),
@@ -84,14 +92,17 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
             from opentelemetry import trace
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+            from opentelemetry.sdk.trace.export import (
+                BatchSpanProcessor,
+                ConsoleSpanExporter,
+            )
             from .otel import OpenTelemetryCallback
 
             # Setup provider if not already setup
             if not isinstance(trace.get_tracer_provider(), TracerProvider):
-                resource = Resource.create({
-                    "service.name": obs_config.get("service_name", "echo-ai")
-                })
+                resource = Resource.create(
+                    {"service.name": obs_config.get("service_name", "echo-ai")}
+                )
                 provider = TracerProvider(resource=resource)
 
                 if obs_config.get("console_export", False):
@@ -101,18 +112,31 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
                 otlp_endpoint = obs_config.get("otlp_endpoint")
                 if otlp_endpoint:
                     try:
-                        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-                        otlp_processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True, timeout=1))
+                        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                            OTLPSpanExporter,
+                        )
+
+                        otlp_processor = BatchSpanProcessor(
+                            OTLPSpanExporter(
+                                endpoint=otlp_endpoint, insecure=True, timeout=1
+                            )
+                        )
                         provider.add_span_processor(otlp_processor)
-                        console.print(f"[dim]Observability: OTLP exporter enabled ({otlp_endpoint})[/dim]")
+                        console.print(
+                            f"[dim]Observability: OTLP exporter enabled ({otlp_endpoint})[/dim]"
+                        )
                     except (ImportError, Exception) as e:
-                        console.print(f"[yellow]Warning: Could not initialize OTLP exporter: {e}[/yellow]")
+                        console.print(
+                            f"[yellow]Warning: Could not initialize OTLP exporter: {e}[/yellow]"
+                        )
 
                 trace.set_tracer_provider(provider)
 
             agent.add_callback(OpenTelemetryCallback())
             console.print("[dim]Observability: OpenTelemetry enabled[/dim]")
         except ImportError as e:
-            console.print(f"[yellow]Warning: Could not initialize OpenTelemetry: {e}[/yellow]")
+            console.print(
+                f"[yellow]Warning: Could not initialize OpenTelemetry: {e}[/yellow]"
+            )
 
     return agent

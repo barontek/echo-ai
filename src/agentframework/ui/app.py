@@ -1,7 +1,7 @@
 """Main NiceGUI application for Echo AI.
 
 Run standalone with:
-    uv run python -m src.agentframework.ui_nicegui.app
+    uv run python -m src.agentframework.ui.app
 
 Or run the combined web_api which serves both FastAPI and NiceGUI.
 """
@@ -22,7 +22,7 @@ from .components import (
     search_sessions,
     ChatContainer,
     streaming_message,
-    finish_streaming
+    finish_streaming,
 )
 from .state import get_state
 
@@ -85,10 +85,20 @@ async def main_page():
         with ui.column().classes("sidebar gap-0"):
             sidebar_header()
             model_selector(models, state.model)
-            with ui.column().classes("sidebar-section w-full gap-0").style("padding-bottom: 0;"):
+            with (
+                ui.column()
+                .classes("sidebar-section w-full gap-0")
+                .style("padding-bottom: 0;")
+            ):
                 new_chat_button()
                 search_sessions(sessions, active_id="")
-            with ui.column().classes("w-full").style("flex: 1; min-height: 0; overflow-y: auto; padding: 0 0.25rem; box-sizing: border-box; overflow-x: hidden; gap: 0;"):
+            with (
+                ui.column()
+                .classes("w-full")
+                .style(
+                    "flex: 1; min-height: 0; overflow-y: auto; padding: 0 0.25rem; box-sizing: border-box; overflow-x: hidden; gap: 0;"
+                )
+            ):
                 session_list(sessions, active_id="")
 
         with ui.column().classes("main-content"):
@@ -122,10 +132,20 @@ async def session_page(session_id: str):
         with ui.column().classes("sidebar gap-0"):
             sidebar_header()
             model_selector(models, state.model)
-            with ui.column().classes("sidebar-section w-full gap-0").style("padding-bottom: 0;"):
+            with (
+                ui.column()
+                .classes("sidebar-section w-full gap-0")
+                .style("padding-bottom: 0;")
+            ):
                 new_chat_button()
                 search_sessions(sessions, active_id=session_id or "")
-            with ui.column().classes("w-full").style("flex: 1; min-height: 0; overflow-y: auto; padding: 0 0.25rem; box-sizing: border-box; overflow-x: hidden; gap: 0;"):
+            with (
+                ui.column()
+                .classes("w-full")
+                .style(
+                    "flex: 1; min-height: 0; overflow-y: auto; padding: 0 0.25rem; box-sizing: border-box; overflow-x: hidden; gap: 0;"
+                )
+            ):
                 session_list(sessions, active_id=session_id or "")
 
         with ui.column().classes("main-content"):
@@ -151,7 +171,9 @@ async def handle_message(message: str, container: ChatContainer):
         new_session = _create_session()
         if new_session:
             state.current_session_id = new_session["id"]
-            ui.context.client.run_javascript(f"window.history.pushState({{}}, '', '/sessions/{new_session['id']}');")
+            ui.context.client.run_javascript(
+                f"window.history.pushState({{}}, '', '/sessions/{new_session['id']}');"
+            )
             state = get_state()
             is_new_session = True
 
@@ -162,7 +184,13 @@ async def handle_message(message: str, container: ChatContainer):
     ui.notify(f"Sending: {message[:50]}...")
     state.is_streaming = True
 
-    from src.agentframework.client import EchoClient, ContentEvent, ThinkingEvent, CommandResultEvent, ErrorEvent
+    from src.agentframework.client import (
+        EchoClient,
+        ContentEvent,
+        ThinkingEvent,
+        CommandResultEvent,
+        ErrorEvent,
+    )
 
     accumulated_content = ""
     accumulated_thinking = ""
@@ -171,7 +199,9 @@ async def handle_message(message: str, container: ChatContainer):
 
     if container.container:
         with container.container:
-            _, content_label, thinking_label, spinner, update_streaming = streaming_message()
+            _, content_label, thinking_label, spinner, update_streaming = (
+                streaming_message()
+            )
     container.scroll_to_bottom()
 
     try:
@@ -211,7 +241,7 @@ async def handle_message(message: str, container: ChatContainer):
             "assistant",
             final_content,
             thinking=final_thinking,
-            tool_calls=getattr(final_msg, "tool_calls", None)
+            tool_calls=getattr(final_msg, "tool_calls", None),
         )
         state.persist_messages()
         finish_streaming(spinner) if spinner else None
@@ -219,6 +249,7 @@ async def handle_message(message: str, container: ChatContainer):
         if is_new_session:
             from src.agentframework.web_api import _generate_title_async
             import asyncio
+
             asyncio.create_task(_generate_title_async(agent))
 
     except Exception as e:
@@ -232,6 +263,7 @@ async def handle_message(message: str, container: ChatContainer):
 def _get_all_sessions() -> list:
     """Get all sessions from backend."""
     from .backend import get_sessions_data, get_backend_state
+
     state = get_backend_state()
     if state.agent and state.agent.session_manager:
         state.agent.session_manager.purge_empty_sessions()
@@ -242,6 +274,7 @@ def _get_all_sessions() -> list:
 def _get_models() -> list:
     """Get available models."""
     from .backend import get_models_sync
+
     data = get_models_sync()
     return data.get("models", ["qwen3:4b-instruct"])
 
@@ -249,6 +282,7 @@ def _get_models() -> list:
 def _create_session() -> Optional[dict]:
     """Create a new session."""
     from .backend import create_session_data, get_backend_state
+
     backend_state = get_backend_state()
     data = create_session_data(backend_state)
     if session_id := data.get("session_id"):
@@ -259,6 +293,7 @@ def _create_session() -> Optional[dict]:
 def _load_session(session_id: str):
     """Load a session from backend."""
     from .backend import load_session_data, get_backend_state
+
     backend_state = get_backend_state()
     data = load_session_data(session_id, backend_state)
     if error := data.get("error"):
@@ -269,12 +304,10 @@ def _load_session(session_id: str):
     state.messages = data.get("messages", [])
 
 
-
-
-
 def _create_agent(model: str, session_id: str | None = None):
     """Create an agent with the given model."""
     from .backend import create_runtime_agent
+
     return create_runtime_agent(model, session_id)
 
 

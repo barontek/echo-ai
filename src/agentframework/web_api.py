@@ -158,7 +158,7 @@ try:
     from nicegui import ui_run_with
     import importlib.util
 
-    if importlib.util.find_spec("src.agentframework.ui_nicegui") is not None:
+    if importlib.util.find_spec("src.agentframework.ui") is not None:
         ui_run_with.run_with(app, mount_path="/nicegui", dark=True)
         logger.info("NiceGUI integrated at /nicegui")
     else:

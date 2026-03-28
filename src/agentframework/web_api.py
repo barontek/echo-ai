@@ -485,8 +485,6 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
             continue
         if role == "system":
             continue
-        if role == "system":
-            continue
 
         # Assistant messages with tool_calls should always be included
         # Otherwise, check skip conditions:

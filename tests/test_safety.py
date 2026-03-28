@@ -106,7 +106,7 @@ class TestSecurityValidator:
             workspace=temp_workspace,
             allow_network=True,
             allowed_commands=["echo", "ls"],
-            blocked_commands=["rm", "sudo"]
+            blocked_commands=["rm", "sudo"],
         )
         validator = SecurityValidator(config)
 
@@ -262,3 +262,110 @@ class TestApprovalCallback:
 
         result = validator.get_approval("list_dir", "list some dir")
         assert result is True
+
+
+class TestPathTraversalAttacks:
+    """Tests for path traversal attack prevention."""
+
+    def test_path_traversal_variants(self):
+        """Test various path traversal techniques are blocked."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = SafetyConfig(
+                workspace=tmpdir,
+                allow_network=True,
+                allowed_commands=["*"],
+            )
+            validator = SecurityValidator(config)
+
+            traversal_patterns = [
+                "../../../etc/passwd",
+                "/etc/passwd",
+                "/absolute/path/outside/workspace",
+            ]
+            for path in traversal_patterns:
+                assert validator.check_path_traversal(path) is False, (
+                    f"Should block: {path}"
+                )
+
+    def test_normal_paths_allowed(self):
+        """Test that normal paths within workspace are allowed."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = SafetyConfig(
+                workspace=tmpdir,
+                allow_network=True,
+                allowed_commands=["*"],
+            )
+            validator = SecurityValidator(config)
+
+            allowed_patterns = [
+                "file.txt",
+                "subdir/file.txt",
+                "./relative/path",
+                "docs/README.md",
+                "src/main.py",
+            ]
+            for path in allowed_patterns:
+                assert validator.check_path_traversal(path) is True, (
+                    f"Should allow: {path}"
+                )
+
+    def test_blocked_extensions_traversal(self):
+        """Test that blocked extensions can't be accessed via traversal."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = SafetyConfig(
+                workspace=tmpdir,
+                allow_network=True,
+                allowed_commands=["*"],
+            )
+            validator = SecurityValidator(config)
+
+            blocked_paths = [
+                "../../../.env",
+                "../../secrets.yaml",
+                "../../../.ssh/authorized_keys",
+                "../../../.git/config",
+            ]
+            for path in blocked_paths:
+                assert validator.check_path_traversal(path) is False, (
+                    f"Should block: {path}"
+                )
+
+
+class TestSQLInjection:
+    """Tests for SQL injection prevention in session management."""
+
+    def test_session_id_with_special_characters(self):
+        """Test that session IDs with special characters are stored and retrieved correctly."""
+        from src.agentframework.session import SessionManager
+        import tempfile
+        import uuid
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = SessionManager(session_dir=tmpdir)
+
+            test_ids = [
+                f"test-{uuid.uuid4().hex[:8]}",
+                f"session_{uuid.uuid4().hex[:8]}",
+                f"session.{uuid.uuid4().hex[:8]}",
+                f"session-{uuid.uuid4().hex[:8]}",
+            ]
+
+            for session_id in test_ids:
+                session = manager.create_session(session_id=session_id)
+                assert session.id == session_id
+
+            sessions, total_count = manager.list_sessions()
+            assert total_count == len(test_ids)
+            assert len(sessions) == len(test_ids)
+
+            retrieved = manager.load_session(test_ids[0])
+            assert retrieved is not None
+            assert retrieved.id == test_ids[0]
+
+            manager.close()

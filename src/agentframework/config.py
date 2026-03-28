@@ -146,6 +146,8 @@ def get_safety_config(config: dict) -> SafetyConfig:
 
     def approval_callback(tool: str, details: str) -> bool:
         """Request user approval for potentially dangerous operations."""
+        import threading
+
         warning_msg = ""
 
         if tool == "bash":
@@ -188,7 +190,29 @@ def get_safety_config(config: dict) -> SafetyConfig:
         console.print(
             f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}"
         )
-        response = Prompt.ask("[bold]Allow? (y/N)[/bold]", default="n")
+
+        approval_timeout = safety.get("approval_timeout", 30)
+        result: dict[str, str | None] = {"response": None}
+
+        def get_input_sync():
+            try:
+                result["response"] = Prompt.ask(
+                    "[bold]Allow? (y/N)[/bold]", default="n"
+                )
+            except EOFError:
+                result["response"] = "n"
+
+        thread = threading.Thread(target=get_input_sync, daemon=True)
+        thread.start()
+        thread.join(timeout=approval_timeout)
+
+        if thread.is_alive():
+            console.print(
+                f"[red]Approval timed out after {approval_timeout} seconds. Denying.[/red]"
+            )
+            return False
+
+        response = result["response"] or "n"
         return response.lower() in ("y", "yes")
 
     return SafetyConfig(

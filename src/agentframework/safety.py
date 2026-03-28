@@ -57,7 +57,6 @@ DESTRUCTIVE_KEYWORDS = [
     "mkfs",
     "--force",
     "-f",
-    "--force",
     "force",
     "chmod 777",
     "chmod -r",

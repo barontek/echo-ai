@@ -134,32 +134,42 @@ class SessionManager:
 
         self.current_session: Session | None = None
 
-    def _migrate_add_title_column(self) -> None:
-        """Add the 'title' column to agent_sessions if it's missing (pre-existing DBs)."""
+    def _with_connection(self, operation, operation_name: str) -> None:
+        """Execute a database operation with a connection.
+
+        Args:
+            operation: A callable that takes a sqlite3 connection and performs the operation.
+            operation_name: Human-readable name for logging.
+        """
         import sqlite3
 
         conn = None
         try:
             conn = sqlite3.connect(str(self.db_path))
+            operation(conn)
+        except Exception as e:
+            logger.error("Migration %s failed: %s", operation_name, e)
+        finally:
+            if conn:
+                conn.close()
+
+    def _migrate_add_title_column(self) -> None:
+        """Add the 'title' column to agent_sessions if it's missing (pre-existing DBs)."""
+
+        def migrate(conn):
             cursor = conn.execute("PRAGMA table_info(agent_sessions)")
             columns = [row[1] for row in cursor.fetchall()]
             if "title" not in columns:
                 conn.execute("ALTER TABLE agent_sessions ADD COLUMN title TEXT")
                 conn.commit()
                 logger.info("Migrated agent_sessions: added 'title' column.")
-        except Exception as e:
-            logger.error("Migration check for 'title' column failed: %s", e)
-        finally:
-            if conn:
-                conn.close()
+
+        self._with_connection(migrate, "'title' column")
 
     def _migrate_add_events_column(self) -> None:
         """Add the 'events' column to agent_sessions if it's missing (pre-existing DBs)."""
-        import sqlite3
 
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path))
+        def migrate(conn):
             cursor = conn.execute("PRAGMA table_info(agent_sessions)")
             columns = [row[1] for row in cursor.fetchall()]
             if "events" not in columns:
@@ -168,30 +178,21 @@ class SessionManager:
                 )
                 conn.commit()
                 logger.info("Migrated agent_sessions: added 'events' column.")
-        except Exception as e:
-            logger.error("Migration check for 'events' column failed: %s", e)
-        finally:
-            if conn:
-                conn.close()
+
+        self._with_connection(migrate, "'events' column")
 
     def _migrate_add_indexes(self) -> None:
         """Add indexes for faster queries."""
-        import sqlite3
 
-        conn = None
-        try:
-            conn = sqlite3.connect(str(self.db_path))
+        def migrate(conn):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_agent_sessions_created_at "
                 "ON agent_sessions(created_at DESC)"
             )
             conn.commit()
             logger.info("Migrated agent_sessions: added indexes.")
-        except Exception as e:
-            logger.error("Migration check for indexes failed: %s", e)
-        finally:
-            if conn:
-                conn.close()
+
+        self._with_connection(migrate, "indexes")
 
     def log_event(self, event_type: str, data: dict | None = None) -> None:
         """Log an event to the session's event log."""

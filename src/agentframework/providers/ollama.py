@@ -237,8 +237,10 @@ class OllamaProvider(LLMProvider):
 
         except httpx.HTTPStatusError as e:
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")
-        except Exception as e:
-            return LLMResponse(content=f"Error: {str(e)}")
+        except Exception:
+            return LLMResponse(
+                content="An internal error occurred while processing your request."
+            )
 
     @retry(
         stop=stop_after_attempt(3),
@@ -465,8 +467,10 @@ class OllamaProvider(LLMProvider):
 
         except httpx.HTTPStatusError as e:
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")
-        except Exception as e:
-            return LLMResponse(content=f"Error: {str(e)}")
+        except Exception:
+            return LLMResponse(
+                content="An internal error occurred while processing your request."
+            )
 
     @retry(
         stop=stop_after_attempt(3),
@@ -506,10 +510,8 @@ class OllamaProvider(LLMProvider):
 
     def list_models(self) -> list[str]:
         """List available models (sync)."""
-        import httpx
-
         try:
-            response = httpx.get(f"{self.base_url}/api/tags")
+            response = httpx.get(f"{self.base_url}/api/tags", timeout=30.0)
             response.raise_for_status()
             data = response.json()
             return [m["name"] for m in data.get("models", [])]

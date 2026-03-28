@@ -30,6 +30,15 @@ def _get_tiktoken_encoder():
     return _TIKTOKEN_ENCODER
 
 
+def _clear_tiktoken_encoder():
+    """Clear the cached tiktoken encoder.
+
+    Useful for long-running processes or testing.
+    """
+    global _TIKTOKEN_ENCODER
+    _TIKTOKEN_ENCODER = None
+
+
 @dataclass
 class Message:
     """A message in the conversation."""

@@ -1,6 +1,8 @@
 """Configuration management for the agent framework."""
 
+import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 from rich.console import Console
@@ -10,6 +12,67 @@ from .safety import SafetyConfig, SecurityValidator
 from .tools import TOOL_CONFIG_KEYS, TOOL_REGISTRY
 
 console = Console(color_system="256")
+
+
+ENV_VAR_MAPPING = {
+    "ECHO_PROVIDER": ("model", "provider"),
+    "ECHO_MODEL": ("model", "name"),
+    "ECHO_BASE_URL": ("model", "base_url"),
+    "ECHO_TEMPERATURE": ("model", "temperature"),
+    "ECHO_WORKSPACE": ("safety", "workspace"),
+    "ECHO_ALLOW_NETWORK": ("safety", "allow_network"),
+    "ECHO_SESSION_DIR": ("agent", "session_dir"),
+    "ECHO_MAX_ITERATIONS": ("agent", "max_iterations"),
+}
+
+
+def apply_env_overrides(config: dict) -> dict:
+    """Apply environment variable overrides to config.
+
+    Environment variables take precedence over config file values.
+    Supported variables:
+    - ECHO_PROVIDER: LLM provider (ollama, openai, anthropic)
+    - ECHO_MODEL: Model name
+    - ECHO_BASE_URL: Base URL for Ollama
+    - ECHO_TEMPERATURE: Model temperature
+    - ECHO_WORKSPACE: Workspace directory
+    - ECHO_ALLOW_NETWORK: Enable network access
+    - ECHO_SESSION_DIR: Session storage directory
+    - ECHO_MAX_ITERATIONS: Max agent iterations
+    - ANTHROPIC_API_KEY: Anthropic API key
+    - OPENAI_API_KEY: OpenAI API key
+    """
+    for env_var, path in ENV_VAR_MAPPING.items():
+        value = os.environ.get(env_var)
+        if value is not None:
+            _set_nested(config, path, _parse_value(value))
+
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        config.setdefault("api_keys", {})["anthropic"] = os.environ["ANTHROPIC_API_KEY"]
+    if os.environ.get("OPENAI_API_KEY"):
+        config.setdefault("api_keys", {})["openai"] = os.environ["OPENAI_API_KEY"]
+
+    return config
+
+
+def _set_nested(config: dict, path: tuple, value: Any) -> None:
+    """Set a nested value in config dict."""
+    current = config
+    for key in path[:-1]:
+        current = current.setdefault(key, {})
+    current[path[-1]] = value
+
+
+def _parse_value(value: str) -> Any:
+    """Parse string value to appropriate type."""
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    if value.isdigit():
+        return int(value)
+    try:
+        return float(value)
+    except ValueError:
+        return value
 
 
 def find_config_path(path: str | None = None) -> Path | None:
@@ -31,12 +94,19 @@ def find_config_path(path: str | None = None) -> Path | None:
 
 
 def load_config(path: str | None = None) -> dict:
-    """Load configuration from YAML file or return empty config."""
+    """Load configuration from YAML file or return empty config.
+
+    Environment variables can override config file values.
+    See apply_env_overrides() for supported variables.
+    """
     config_path = find_config_path(path)
     if config_path:
         with open(config_path) as f:
-            return yaml.safe_load(f)
-    return {}
+            config = yaml.safe_load(f) or {}
+    else:
+        config = {}
+
+    return apply_env_overrides(config)
 
 
 def get_limits_config(config: dict) -> dict:

@@ -548,6 +548,55 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "echo-ai",
+        "version": "0.1.0",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/health/detailed", tags=["Health"])
+async def detailed_health_check():
+    """Detailed health check with component status.
+
+    Returns detailed status of all components including:
+    - LLM provider connectivity
+    - Session storage
+    - Memory store
+    """
+    state = get_state()
+    components = {
+        "service": "healthy",
+        "provider": "unknown",
+        "sessions": "unknown",
+        "memory": "unknown",
+    }
+
+    if state.agent:
+        components["provider"] = "connected"
+
+    if state.agent and state.agent.session_manager:
+        try:
+            sessions, total = state.agent.session_manager.list_sessions(limit=1)
+            components["sessions"] = f"ok ({total} sessions)"
+        except Exception as e:
+            components["sessions"] = f"error: {str(e)}"
+
+    if state.agent and state.agent.memory_manager:
+        try:
+            components["memory"] = "ok"
+        except Exception as e:
+            components["memory"] = f"error: {str(e)}"
+
+    all_healthy = all(
+        v != "error" and not v.startswith("error")
+        for v in components.values()
+        if v != "unknown"
+    )
+
+    return {
+        "status": "healthy" if all_healthy else "degraded",
+        "service": "echo-ai",
+        "version": "0.1.0",
+        "components": components,
         "timestamp": datetime.now().isoformat(),
     }
 

@@ -103,16 +103,22 @@ class SessionManager:
         self.session_dir = Path(session_dir)
         self.session_dir.mkdir(exist_ok=True)
 
-        # Initialize SQLite database connection
+        # Initialize SQLite database connection with pooling
         self.db_path = self.session_dir / "agent_sessions.db"
         self.engine = create_engine(
-            f"sqlite:///{self.db_path}", connect_args={"check_same_thread": False}
+            f"sqlite:///{self.db_path}",
+            connect_args={"check_same_thread": False},
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+            pool_recycle=3600,
         )
         with self.engine.connect() as conn:
             from sqlalchemy import text
 
             conn.execute(text("PRAGMA journal_mode=WAL"))
             conn.execute(text("PRAGMA synchronous=NORMAL"))
+            conn.execute(text("PRAGMA busy_timeout=5000"))
             conn.commit()
         Base.metadata.create_all(self.engine)
         self.SessionLocal = sessionmaker(

@@ -1,29 +1,26 @@
-"""Backward-compatible re-export of core components.
+"""Core agent functionality.
 
-Deprecated: Import from agentframework.core instead.
+This module contains the core Agent class and related components.
 """
 
-from .core import (
-    Agent,
-    AgentConfig,
-    SubAgentConfig,
-    create_agent,
-    CallbackManager,
-    AgentCallback,
-    MemoryManager,
-    SemanticRouter,
+from .agent import Agent, AgentConfig, create_agent, SubAgentConfig
+from .callbacks import CallbackManager, AgentCallback
+from .memory import MemoryManager
+from .router import SemanticRouter
+from .tool_runtime import (
     execute_single_tool,
     execute_tool_calls,
     create_tool_result_notice,
     validate_tool_args,
     format_tool_failure,
     ToolError,
+)
+from .session_runtime import (
     undo_change,
     redo_change,
     serialize_messages,
     deserialize_messages,
 )
-from .conversation import Message
 
 __all__ = [
     "Agent",
@@ -34,7 +31,6 @@ __all__ = [
     "AgentCallback",
     "MemoryManager",
     "SemanticRouter",
-    "Message",
     "execute_single_tool",
     "execute_tool_calls",
     "create_tool_result_notice",

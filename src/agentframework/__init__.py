@@ -2,9 +2,28 @@
 
 __version__ = "0.1.0"
 
-from .agent import Agent, AgentConfig, create_agent, SubAgentConfig
+from .core import (
+    Agent,
+    AgentConfig,
+    SubAgentConfig,
+    create_agent,
+    CallbackManager,
+    AgentCallback,
+    MemoryManager,
+    SemanticRouter,
+    execute_single_tool,
+    execute_tool_calls,
+    create_tool_result_notice,
+    validate_tool_args,
+    format_tool_failure,
+    ToolError,
+    undo_change,
+    redo_change,
+    serialize_messages,
+    deserialize_messages,
+)
 from .session import SessionManager, Session, ChangeTracker
-from .router import SemanticRouter
+from .conversation import Message
 from .tools import Tool, ToolResult
 from .tools.bash import BashTool
 from .tools.file import ReadFileTool, WriteFileTool, ListDirTool
@@ -17,8 +36,12 @@ __all__ = [
     "AgentConfig",
     "SubAgentConfig",
     "create_agent",
+    "CallbackManager",
+    "AgentCallback",
+    "MemoryManager",
     "SessionManager",
     "Session",
+    "Message",
     "ChangeTracker",
     "SemanticRouter",
     "Tool",
@@ -32,4 +55,14 @@ __all__ = [
     "WebFetchTool",
     "WebSearchTool",
     "GitTool",
+    "execute_single_tool",
+    "execute_tool_calls",
+    "create_tool_result_notice",
+    "validate_tool_args",
+    "format_tool_failure",
+    "ToolError",
+    "undo_change",
+    "redo_change",
+    "serialize_messages",
+    "deserialize_messages",
 ]

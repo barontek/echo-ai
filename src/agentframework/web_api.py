@@ -114,9 +114,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"Ollama agent initialization deferred: {e}")
     yield
+    logger.info("Shutting down Echo AI...")
+
+    # Clean up rate limit storage
+    _rate_limit_storage.clear()
+
+    # Close agent and cleanup resources
     if _state and _state.agent:
-        _state.agent.close()
+        try:
+            if _state.agent.session_manager:
+                _state.agent.session_manager.close()
+        except Exception as e:
+            logger.debug(f"Error closing session manager: {e}")
+
+        try:
+            _state.agent.close()
+        except Exception as e:
+            logger.debug(f"Error closing agent: {e}")
+
     _state = None
+    logger.info("Shutdown complete")
 
 
 # Create FastAPI app with lifespan

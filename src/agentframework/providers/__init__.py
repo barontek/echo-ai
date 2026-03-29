@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol, runtime_checkable
 
 
-@dataclass
+@dataclass(slots=True)
 class LLMResponse:
     """Response from an LLM."""
 
@@ -14,7 +14,7 @@ class LLMResponse:
     tool_calls: list["LLMToolCall"] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(slots=True)
 class LLMToolCall:
     """A tool call returned by the LLM."""
 

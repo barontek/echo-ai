@@ -138,6 +138,7 @@ class SafetyConfig:
         default_factory=lambda: ["bash", "write_file", "memory"]
     )
     approval_callback: Optional[Callable[[str, str], bool]] = None
+    async_approval_callback: Optional[Callable[[str, str], bool]] = None
     audit_log_path: Optional[str] = None
     read_requires_approval: bool = False
     read_size_threshold: int = 100 * 1024
@@ -356,6 +357,32 @@ class SecurityValidator:
         """Get user approval for dangerous operation."""
         if not self.requires_approval(tool_name):
             return True
+
+        if self.config.approval_callback:
+            approved = self.config.approval_callback(tool_name, details)
+            self.log_approval(tool_name, details, approved)
+            return approved
+
+        logger.warning(f"Approval required for {tool_name}: {details}")
+        self.log_approval(tool_name, details, False)
+        return False
+
+    async def get_approval_async(self, tool_name: str, details: str) -> bool:
+        """Get user approval for dangerous operation (async version)."""
+        from typing import Any
+
+        if not self.requires_approval(tool_name):
+            return True
+
+        if self.config.async_approval_callback:
+            callback: Any = self.config.async_approval_callback
+            result = callback(tool_name, details)
+            if hasattr(result, "__await__"):
+                approved = await result
+            else:
+                approved = result
+            self.log_approval(tool_name, details, approved)
+            return approved
 
         if self.config.approval_callback:
             approved = self.config.approval_callback(tool_name, details)

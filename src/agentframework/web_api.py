@@ -108,6 +108,14 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
     global _state
 
+    # Initialize Sentry early in startup
+    try:
+        from src.agentframework.sentry import init_sentry
+
+        init_sentry()
+    except Exception as e:
+        logger.debug(f"Sentry initialization skipped: {e}")
+
     logger.info("=" * 50)
     logger.info("  Echo AI - Starting up...")
     logger.info("=" * 50)
@@ -153,7 +161,39 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app with lifespan
 app = FastAPI(title="Echo AI API", lifespan=lifespan)
 
+
+# Global exception handler with Sentry capture
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Capture all unhandled exceptions with Sentry."""
+    # Handle ExceptionGroup from Python 3.13+ (extract the original exception)
+    if isinstance(exc, ExceptionGroup):
+        exc = exc.exceptions[0] if exc.exceptions else exc
+
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    try:
+        from src.agentframework.sentry import captureException
+
+        captureException(exc, extra={"path": str(request.url.path)})
+    except Exception:
+        pass  # Don't let Sentry errors mask the original error
+
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+# Handle ExceptionGroup specifically for Python 3.13+
+try:
+
+    @app.exception_handler(ExceptionGroup)
+    async def exception_group_handler(request: Request, exc: ExceptionGroup):
+        """Handle ExceptionGroup from Python 3.13+."""
+        return await global_exception_handler(request, exc)
+except NameError:
+    pass  # ExceptionGroup not available in Python < 3.11
+
+
 # NiceGUI integration - use run_with for proper FastAPI integration
+# This may fail if NiceGUI is running standalone (middleware already added)
 try:
     from nicegui import ui_run_with
     import importlib.util
@@ -163,6 +203,11 @@ try:
         logger.info("NiceGUI integrated at /nicegui")
     else:
         raise ImportError("NiceGUI module not found")
+except RuntimeError as e:
+    if "Cannot add middleware" in str(e):
+        logger.debug(f"NiceGUI already running standalone: {e}")
+    else:
+        logger.warning(f"NiceGUI not available: {e}")
 except Exception as e:
     logger.warning(f"NiceGUI not available: {e}")
 
@@ -255,19 +300,20 @@ async def request_logging_middleware(request: Request, call_next):
 
     try:
         response = await call_next(request)
-        duration = time.perf_counter() - start_time
-
-        # Log response
-        logger.debug(f"[{cid}] <-- {response.status_code} ({duration * 1000:.1f}ms)")
-
-        # Add timing header
-        response.headers["X-Response-Time"] = f"{duration * 1000:.1f}ms"
-
-        return response
-    except Exception as e:
-        duration = time.perf_counter() - start_time
-        logger.error(f"[{cid}] <-- ERROR: {str(e)} ({duration * 1000:.1f}ms)")
+    except Exception:
+        # Let FastAPI's exception handler deal with it
         raise
+    finally:
+        duration = time.perf_counter() - start_time
+        # Log after response is ready (or on error)
+        logger.debug(
+            f"[{cid}] <-- {request.method} {request.url.path} ({duration * 1000:.1f}ms)"
+        )
+
+    # Add timing header
+    response.headers["X-Response-Time"] = f"{duration * 1000:.1f}ms"
+
+    return response
 
 
 def _get_cors_config() -> dict:
@@ -625,6 +671,12 @@ async def index():
     return RedirectResponse(url="/nicegui/", status_code=302)
 
 
+@app.get("/sentry-debug", tags=["Debug"])
+async def trigger_error():
+    """Trigger a test error for Sentry verification."""
+    1 / 0
+
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check endpoint for container orchestration and load balancers.
@@ -939,7 +991,8 @@ async def import_session(
 
     try:
         data = await request.json()
-    except Exception:
+    except Exception as e:
+        logger.warning("Invalid JSON in import request: %s", e)
         raise HTTPException(
             status_code=400,
             detail="Invalid JSON in request body.",

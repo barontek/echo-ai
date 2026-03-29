@@ -25,6 +25,31 @@ DEFAULT_LIMITS = {
 }
 
 
+def validate_url(url: str) -> tuple[bool, str]:
+    """Validate URL for security and format.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not url:
+        return False, "URL cannot be empty"
+
+    url = url.strip()
+
+    if len(url) > 2048:
+        return False, "URL exceeds maximum length of 2048 characters"
+
+    allowed_schemes = ("http", "https")
+    if not url.lower().startswith(allowed_schemes):
+        return False, f"URL must start with {allowed_schemes}"
+
+    dangerous_patterns = ["javascript:", "data:", "vbscript:", "file:"]
+    if any(url.lower().startswith(p) for p in dangerous_patterns):
+        return False, "Dangerous URL scheme not allowed"
+
+    return True, ""
+
+
 def html_to_markdown(html: str, max_length: int = 10000) -> str:
     """Parse HTML and extract readable markdown using markdownify."""
     try:
@@ -116,6 +141,10 @@ class WebFetchTool(Tool):
 
     async def execute(self, url: str, **kwargs) -> ToolResult:
         """Fetch the URL with safety checks."""
+        is_valid, error_msg = validate_url(url)
+        if not is_valid:
+            return ToolResult(error=f"Invalid URL: {error_msg}")
+
         allowed, reason = self.validator.check_network_allowed(url)
         if not allowed:
             return ToolResult(error=f"Network blocked: {reason}")

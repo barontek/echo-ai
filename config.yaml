@@ -47,7 +47,7 @@ tools:
     timeout: 60
 
 safety:
-  workspace: "/home/barontek"
+  workspace: "."  # Set via ECHO_WORKSPACE environment variable
   allow_network: true
   allowed_domains:
     - "github.com"

@@ -7,11 +7,156 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel, Field, field_validator
 from rich.console import Console
 from rich.prompt import Prompt
 
 from .safety import SafetyConfig, SecurityValidator
 from .tools import TOOL_CONFIG_KEYS, TOOL_REGISTRY
+
+
+class ModelConfig(BaseModel):
+    """Model configuration schema."""
+
+    provider: str = Field(
+        default="ollama", description="LLM provider: anthropic, openai, or ollama"
+    )
+    name: str = Field(default="qwen3:4b-instruct", description="Model name")
+    base_url: str | None = Field(default=None, description="Base URL for Ollama")
+    temperature: float = Field(
+        default=0.3, ge=0.0, le=2.0, description="Model temperature"
+    )
+
+
+class ToolsBashConfig(BaseModel):
+    """Bash tool configuration schema."""
+
+    allowed_commands: list[str] = Field(default_factory=lambda: ["*"])
+    timeout: int = Field(default=60, ge=1, le=300)
+
+
+class ToolsConfig(BaseModel):
+    """Tools configuration schema."""
+
+    enabled: list[str] = Field(default_factory=list)
+    bash: ToolsBashConfig = Field(default_factory=ToolsBashConfig)
+
+
+class SafetyConfigSchema(BaseModel):
+    """Safety configuration schema."""
+
+    workspace: str = Field(default=".", description="Allowed workspace directory")
+    allow_network: bool = Field(default=False)
+    allowed_domains: list[str] = Field(default_factory=list)
+    blocked_commands: list[str] = Field(default_factory=list)
+    max_file_size: int = Field(default=10 * 1024 * 1024, ge=0)
+    max_execution_time: int = Field(default=60, ge=1, le=300)
+    require_approval_for: list[str] = Field(default_factory=list)
+    audit_log_path: str | None = Field(default=None)
+    read_requires_approval: bool = Field(default=False)
+    read_size_threshold: int = Field(default=102400, ge=0)
+
+
+class AgentConfigSchema(BaseModel):
+    """Agent configuration schema."""
+
+    max_iterations: int = Field(default=50, ge=1, le=1000)
+    max_context_messages: int = Field(default=50, ge=0)
+    max_context_chars: int = Field(default=100000, ge=0)
+    token_reserve_ratio: float = Field(default=0.7, ge=0.1, le=0.9)
+    session_dir: str = Field(default=".agent_sessions")
+    session_enabled: bool = Field(default=True)
+
+
+class LimitsConfig(BaseModel):
+    """Limits configuration schema."""
+
+    max_web_fetch_chars: int = Field(default=15000, ge=0)
+    max_search_result_snippet: int = Field(default=500, ge=0)
+    min_fetch_content_chars: int = Field(default=50, ge=0)
+    search_result_truncate: int = Field(default=1000, ge=0)
+    max_glob_results: int = Field(default=100, ge=0)
+    max_grep_results: int = Field(default=100, ge=0)
+    max_search_query_length: int = Field(default=500, ge=0)
+    max_file_read_size: int = Field(default=10 * 1024 * 1024, ge=0)
+    max_file_write_size: int = Field(default=5 * 1024 * 1024, ge=0)
+    max_sessions_per_page: int = Field(default=50, ge=1)
+    max_sessions_total: int = Field(default=1000, ge=1)
+
+    @field_validator("max_file_read_size", "max_file_write_size")
+    @classmethod
+    def validate_file_size(cls, v: int) -> int:
+        if v > 100 * 1024 * 1024:
+            raise ValueError("File size cannot exceed 100MB")
+        return v
+
+
+class ObservabilityConfig(BaseModel):
+    """Observability configuration schema."""
+
+    otel_enabled: bool = Field(default=False)
+    console_export: bool = Field(default=False)
+    otlp_endpoint: str = Field(default="http://localhost:4317")
+    service_name: str = Field(default="echo-ai")
+
+
+class WebConfig(BaseModel):
+    """Web server configuration schema."""
+
+    cors_origins: list[str] = Field(default_factory=list)
+    cors_allow_credentials: bool = Field(default=True)
+    cors_allow_methods: list[str] = Field(default_factory=lambda: ["*"])
+    cors_allow_headers: list[str] = Field(default_factory=lambda: ["*"])
+    host: str = Field(default="0.0.0.0")
+    port: int = Field(default=8080, ge=1, le=65535)
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, v: list[str]) -> list[str]:
+        for origin in v:
+            if not (
+                origin.startswith("http://")
+                or origin.startswith("https://")
+                or origin == "*"
+            ):
+                raise ValueError(f"Invalid CORS origin: {origin}")
+        return v
+
+
+class AppConfig(BaseModel):
+    """Main application configuration schema."""
+
+    model: ModelConfig = Field(default_factory=ModelConfig)
+    tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    safety: SafetyConfigSchema = Field(default_factory=SafetyConfigSchema)
+    agent: AgentConfigSchema = Field(default_factory=AgentConfigSchema)
+    limits: LimitsConfig = Field(default_factory=LimitsConfig)
+    observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
+
+
+def validate_config_schema(config: dict) -> "ConfigValidationResult":
+    """Validate configuration using Pydantic schema.
+
+    Returns:
+        ConfigValidationResult with any errors or warnings.
+    """
+    errors: list[ValidationError] = []
+    warnings: list[str] = []
+
+    try:
+        AppConfig(**config)
+    except Exception as e:
+        errors.append(ValidationError(field="root", message=str(e)))
+
+    result = ConfigValidationResult(
+        valid=len(errors) == 0,
+        errors=errors,
+        warnings=warnings,
+    )
+
+    return result
+
 
 console = Console(color_system="256")
 logger = logging.getLogger(__name__)
@@ -294,9 +439,14 @@ def validate_config(config: dict) -> ConfigValidationResult:
     - Valid tool names
     - Workspace directory exists or can be created
     - Temperature within valid range
+    - Pydantic schema validation
     """
     errors: list[ValidationError] = []
     warnings: list[str] = []
+
+    schema_result = validate_config_schema(config)
+    if not schema_result.valid:
+        return schema_result
 
     model_config = config.get("model", {})
     provider = model_config.get("provider", "ollama")

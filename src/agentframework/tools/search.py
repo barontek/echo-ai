@@ -1,5 +1,6 @@
 """Glob and grep tools for searching files with workspace confinement."""
 
+import logging
 import re
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from pydantic import BaseModel
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 DANGEROUS_REGEX_PATTERNS = [
@@ -24,6 +27,7 @@ def sanitize_search_query(query: str) -> str:
     if not query:
         return ""
 
+    original_query = query
     dangerous = [
         "<script",
         "javascript:",
@@ -36,9 +40,18 @@ def sanitize_search_query(query: str) -> str:
         "url(",
     ]
     for pattern in dangerous:
-        query = query.replace(pattern, "")
+        if pattern in query:
+            logger.debug("Sanitized dangerous pattern '%s' from search query", pattern)
+            query = query.replace(pattern, "")
 
-    return query.strip()[:500]
+    result = query.strip()[:500]
+    if len(result) < len(original_query):
+        logger.debug(
+            "Search query truncated from %d to %d chars",
+            len(original_query),
+            len(result),
+        )
+    return result
 
 
 def sanitize_glob_pattern(pattern: str) -> str:
@@ -46,14 +59,22 @@ def sanitize_glob_pattern(pattern: str) -> str:
     if not pattern:
         return ""
 
+    original_len = len(pattern)
     pattern = pattern.strip()
 
     dangerous = ["..", "~", "$", "`", "|", ";", "&", "\n", "\r", "\0"]
     for char in dangerous:
-        pattern = pattern.replace(char, "")
+        if char in pattern:
+            logger.debug("Removed dangerous character '%s' from glob pattern", char)
+            pattern = pattern.replace(char, "")
 
     if len(pattern) > 500:
+        logger.debug("Glob pattern truncated from %d to 500 chars", len(pattern))
         pattern = pattern[:500]
+    elif len(pattern) < original_len:
+        logger.debug(
+            "Glob pattern sanitized from %d to %d chars", original_len, len(pattern)
+        )
 
     return pattern
 

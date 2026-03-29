@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from .web import WebFetchTool, WebSearchTool
 
 
-@dataclass
+@dataclass(slots=True)
 class ToolResult:
     """Result from a tool execution."""
 

@@ -11,6 +11,7 @@ from tenacity import (
     retry_if_exception,
 )
 
+from ..constants import DEFAULT_HTTP_TIMEOUT
 from . import LLMProvider, LLMResponse, LLMToolCall
 
 
@@ -62,7 +63,10 @@ class OpenAIProvider(LLMProvider):
         if tools:
             params["tools"] = tools
 
-        async with AsyncOpenAI(api_key=self.api_key) as client:
+        async with AsyncOpenAI(
+            api_key=self.api_key,
+            timeout=DEFAULT_HTTP_TIMEOUT,
+        ) as client:
             response = await client.chat.completions.create(**params)
 
         msg = response.choices[0].message
@@ -108,7 +112,10 @@ class OpenAIProvider(LLMProvider):
         content = ""
         tool_calls_dict = {}
 
-        async with AsyncOpenAI(api_key=self.api_key) as client:
+        async with AsyncOpenAI(
+            api_key=self.api_key,
+            timeout=DEFAULT_HTTP_TIMEOUT,
+        ) as client:
             response = await client.chat.completions.create(**params)
 
             async for chunk in response:
@@ -127,12 +134,17 @@ class OpenAIProvider(LLMProvider):
                     for tc in delta.tool_calls:
                         idx = tc.index
                         if idx not in tool_calls_dict:
-                            tool_calls_dict[idx] = {"id": tc.id, "name": tc.function.name, "arguments": ""}
+                            tool_calls_dict[idx] = {
+                                "id": tc.id,
+                                "name": tc.function.name,
+                                "arguments": "",
+                            }
                         if tc.function and tc.function.arguments:
                             tool_calls_dict[idx]["arguments"] += tc.function.arguments
 
         tool_calls = []
         import json
+
         for _, tc in sorted(tool_calls_dict.items()):
             args = {}
             try:
@@ -164,7 +176,10 @@ class OpenAIProvider(LLMProvider):
     ) -> Any:
         import instructor
 
-        async with AsyncOpenAI(api_key=self.api_key) as client:
+        async with AsyncOpenAI(
+            api_key=self.api_key,
+            timeout=DEFAULT_HTTP_TIMEOUT,
+        ) as client:
             instructor_client = instructor.from_openai(client)
             return await instructor_client.chat.completions.create(
                 model=self.model,

@@ -28,14 +28,21 @@ if [ ! -d ".venv" ]; then
     make install
 fi
 
+# Load environment variables from .env if present
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 case $MODE in
     nicegui)
         echo "Starting NiceGUI Web UI on http://localhost:8080..."
-        .venv/bin/python -m src.agentframework.ui_nicegui.app
+        .venv/bin/python -m src.agentframework.ui.app
         ;;
     web)
         echo "Starting FastAPI Web UI on http://localhost:8080..."
-        .venv/bin/python scripts/run_web.py
+        .venv/bin/python -m src.agentframework.web_api
         ;;
     api)
         echo "Starting FastAPI API on http://localhost:8000..."
@@ -43,11 +50,11 @@ case $MODE in
         ;;
     chat)
         echo "Starting CLI Chat..."
-        .venv/bin/python -m agentframework.chat
+        .venv/bin/python -m src.agentframework.chat
         ;;
     tui)
         echo "Starting TUI..."
-        .venv/bin/python scripts/run_tui.py
+        .venv/bin/python -m src.agentframework.tui
         ;;
     *)
         echo "Usage: ./run.sh [nicegui|web|api|chat|tui|--docker]"

@@ -1,256 +1,184 @@
 # Echo AI Codebase Review
 
-**Date**: March 28, 2026
+**Date**: March 29, 2026
 **Reviewer**: AI Analysis
-**Overall Score**: 7.1/10
 
 ---
 
 ## Project Overview
 
-- **Purpose**: Standalone AI agent framework with tool-calling capabilities (similar to OpenCode)
-- **Tech Stack**: Python 3.11+, FastAPI, NiceGUI, SQLite, ChromaDB, Pydantic v2
-- **Features**: Multiple LLM providers (Anthropic, OpenAI, Ollama), bash/file/web/git tools, memory, RAG, workflows
+Echo AI is a standalone AI agent framework with tool-calling capabilities. After previous improvements, the codebase is in good shape with proper error handling, timeouts, and input validation.
 
 ---
 
-## Architecture Assessment (7/10)
+## Previously Addressed Issues (Fixed)
 
-### Strengths
-- Modular architecture with clear separation between agent core, providers, tools, and UI
-- Clean provider abstraction for multiple LLM backends
-- Tool registry pattern for easy extensibility
-- YAML-based configuration with sensible defaults
-- Async-first design throughout
-- SQLite-backed session persistence with migrations
-- Graph-based workflow engine with parallel execution
-
-### Concerns
-- **Multiple UI frameworks**: Has both `ui_nicegui/` and `ui/` - maintenance burden
-- **Circular dependencies**: Tools import from agent, potential circular references
-- **Global state**: `agents = {}` in `api.py` uses global dict (multi-instance issues)
-- **Tight coupling**: `EchoClient` directly references `agent.messages`
-
----
-
-## Security Review (7/10)
-
-### What's Well Done
-- Path traversal prevention using `is_relative_to()`
-- Command allowlisting for bash commands
-- Comprehensive regex patterns for dangerous patterns (fork bombs, curl|sh)
-- Blocked extensions for sensitive files (.env, .pem, .key)
-- Configurable file size limits
-- User approval callbacks for dangerous operations
-- Audit logging
-- SQLite parameterized queries (no SQL injection)
-
-### Security Issues
-
-| Severity | Issue | Location |
-|----------|-------|----------|
-| **CRITICAL** | `curl` and `wget` in allowed_commands - can download and execute malicious content | `config.yaml` |
-| **HIGH** | `curl` and `wget` allowed without URL validation | `config.yaml` |
-| MEDIUM | Incomplete blocked extensions - missing `*.crt`, `*.cer`, `*.p12`, `*.pfx`, `*_key`, `*_secret` | `safety.py` |
-| MEDIUM | Shell metacharacter handling has edge cases | `safety.py:check_command_safety()` |
-| MEDIUM | No HTTPS enforcement on WebSocket connections | `api.py` |
-| LOW | LocalStorage session IDs stored as plain text | `ui_nicegui/` |
-| LOW | Audit log created with default umask permissions | `tools/memory.py` |
-
-### Recommendations
-1. **Remove `curl` and `wget` from allowed_commands** or add strict URL allowlisting
-2. Add `*.crt`, `*.cer`, `*.p12`, `*.pfx`, `*_key`, `*_secret` to BLOCKED_EXTENSIONS
-3. Add HTTPS enforcement for WebSocket
-4. Consider encrypting session IDs in LocalStorage
+1. ✅ curl/wget in allowed_commands - Already secure
+2. ✅ SQLite WAL mode - Already enabled
+3. ✅ Global state - Using AgentRegistry pattern
+4. ✅ Config schema validation - Added Pydantic models
+5. ✅ Async approval callback - Added async_approval_callback
+6. ✅ Circuit breaker - Implemented circuit_breaker.py
+7. ✅ Optional dependencies - Added extras_require groups
+8. ✅ Mock fixtures - Added in conftest.py
+9. ✅ Protocol classes - Already exist
+10. ✅ BLOCKED_EXTENSIONS - Already complete
+11. ✅ __slots__ - Added to key dataclasses
+12. ✅ Exception handling - Added logging to exception handlers
+13. ✅ HTTP timeouts - Added to all providers
+14. ✅ Magic numbers extracted - Added to constants.py
+15. ✅ Workflow hardcoded sleep - Made configurable
 
 ---
 
-## Code Quality Assessment (7/10)
+## NEW Issues Found
 
-### Strengths
-- Good use of type annotations
-- Pydantic v2 models for tool parameters and API requests
-- Clean dataclasses for configs and messages
-- Consistent async/await patterns
-- Key functions have docstrings
-- Structured error handling in `tool_runtime.py`
+### 1. Duplicate Re-export Wrappers (MEDIUM)
 
-### Issues Found
-- Excessive `Any` types where more specific types could be used
-- Some `Exception` catching where specific exceptions would be better
-- Mixed logging styles (`%s` formatting vs f-strings)
-- Some `logger.debug` where `logger.warning` would be more appropriate
-- Magic numbers in `conversation.py` and `web.py`
-- `SecurityValidator` logic duplicated in multiple tools
-- Similar path resolution code repeated in file tools
+The codebase has many wrapper modules that just re-export from `core/`:
+
+| Wrapper | Target | Lines |
+|---------|--------|-------|
+| `agent.py` | `core/agent.py` | 48 (just re-exports) |
+| `memory.py` | `core/memory.py` | 8 (just re-exports) |
+| `session_runtime.py` | `core/session_runtime.py` | 13 (just re-exports) |
+| `tool_runtime.py` | `core/tool_runtime.py` | 22 (just re-exports) |
+
+**Recommendation**: Remove these wrapper files and update all imports to use direct paths, or keep them but add clear deprecation warnings.
 
 ---
 
-## Performance Considerations (7/10)
+### 2. Duplicate Code in Providers (LOW)
 
-### What's Good
-- Cached tiktoken encoder (module-level in `conversation.py`)
-- Pre-compiled regex patterns in `safety.py`, `web_api.py`
-- Database indexes for session queries
-- Connection pooling with httpx AsyncClient
-- 120 message virtual window in UI
+Each provider has similar but not identical patterns. Could benefit from a base class:
 
-### Performance Issues
+- `anthropic.py:38-45` - Extracts system message manually
+- `openai.py` - Passes messages directly (no system extraction)
+- `ollama.py` - Has custom thinking extraction
 
-| Severity | Issue | Location |
-|----------|-------|----------|
-| **HIGH** | SQLite not using WAL mode - limits concurrency | `session.py` |
-| MEDIUM | Synchronous file I/O fallback in web tools | `web.py` |
-| MEDIUM | N+1 queries in `list_sessions()` - no pagination | `session.py` |
-| MEDIUM | No connection pooling for SQLite | `session.py` |
-| LOW | Unbounded message list before summarization | `agent.py` |
-| LOW | Memory database FTS index rebuild on large DBs | `tools/memory.py` |
+The response parsing logic is duplicated across providers.
+
+**Recommendation**: Consider a shared `BaseProvider` class with common logic.
 
 ---
 
-## Testing Coverage (7/10)
+### 3. Hardcoded max_tokens (LOW)
 
-### What's Good
-- 45+ test files
-- pytest-asyncio configured
-- Good use of fixtures in `conftest.py`
-- Edge case tests (`test_conversation_edge_cases.py`)
-- Security pattern tests (`test_safety.py`)
-- pytest-cov for coverage reporting
+Multiple hardcoded values:
 
-### Testing Gaps
+| File | Line | Value |
+|------|------|-------|
+| `anthropic.py` | 49, 107, 173 | `max_tokens=4096` |
+| `constants.py` | - | Has DEFAULT_MAX_TOKENS but not used |
 
-| Severity | Gap |
-|----------|-----|
-| MEDIUM | No integration tests with real LLM calls |
-| MEDIUM | Minimal UI end-to-end tests |
-| LOW | Workflow tests may lack depth |
-| LOW | Basic concurrency tests |
+**Recommendation**: Use `constants.DEFAULT_MAX_TOKENS` instead of hardcoding 4096.
 
 ---
 
-## Maintainability (7/10)
+### 4. Inconsistent Timeout Configuration (LOW)
 
-### Strengths
-- Consistent snake_case naming
-- Centralized YAML configuration
-- Good documentation (README, docs/, CHANGELOG)
-- Pre-commit hooks (ruff, pyright)
-- Clear Makefile targets
-- Docker support
+- `anthropic.py` - Uses `DEFAULT_TIMEOUT` constant ✅
+- `openai.py` - Uses inline `httpx.Timeout(60.0, connect=30.0)` ❌
+- `ollama.py` - Uses `httpx.Timeout(300.0, connect=30.0)` (different!)
 
-### Issues
-- Multiple UI frameworks to maintain
-- Circular imports with `# ruff: noqa: E402`
-- Magic numbers throughout code
-- Duplicate code patterns
-- No dependency injection container
-- No Protocol classes for provider interface
+**Recommendation**: Use constants from `constants.py` consistently.
 
 ---
 
-## Detailed Weaknesses
+### 5. Missing Error Handling in Tool Validation (LOW)
 
-### Security
-1. Allowlisted `curl`/`wget` commands can download malicious content
-2. Incomplete blocked extensions pattern list
-3. No HTTPS enforcement on WebSocket
-4. Plain text session IDs in browser LocalStorage
+Tools that parse user input could fail silently:
 
-### Code Quality
-1. Global mutable state `agents = {}` in `api.py`
-2. Type annotations incomplete - excessive `Any` usage
-3. No abstract base/Protocol for providers
-4. Mixed async patterns with sync fallback
-5. Magic numbers not configurable
+- `tools/search.py` - `sanitize_search_query` returns empty string on error
+- `tools/web.py` - URL validation exists but could be bypassed
 
-### Performance
-1. SQLite not using WAL mode
-2. No connection pooling for SQLite
-3. No pagination on session listing
-4. Unbounded message accumulation
-5. No Redis/cache layer for scaling
-
-### Architecture
-1. Multiple UI frameworks (NiceGUI + UI + TUI)
-2. No dependency injection
-3. Tight coupling between components
-4. Missing interface abstractions
+**Recommendation**: Add logging when sanitization/validation produces unexpected results.
 
 ---
 
-## Prioritized Recommendations
+### 6. No Connection Pooling for External Tools (LOW)
 
-### HIGH Priority (Fix Immediately)
-1. **Remove `curl` and `wget` from allowed_commands** - major attack vector
-2. **Expand BLOCKED_EXTENSIONS** - add `*.crt`, `*.p12`, `*.pfx`, `*_key`, `*_secret`, `*.cer`
-3. **Fix global state in api.py** - use dependency injection or proper state management
-4. **Enable SQLite WAL mode** - `PRAGMA journal_mode=WAL`
+Each tool execution may create new HTTP clients:
 
-### MEDIUM Priority (Fix Soon)
-5. Implement pagination for session listing
-6. Replace `Any` with proper types in critical paths
-7. Add integration tests with mocked LLM providers
-8. Consolidate UI frameworks or clearly document which to use
-9. Add input sanitization for web search queries
-10. Implement rate limiting in web_api.py
-11. Add Protocol classes for provider interface
-12. Extract magic numbers to configuration
+- `tools/web.py` - Creates new `AsyncWebCrawler` or `httpx.AsyncClient` per request
+- `tools/api.py` - Creates new client per request
 
-### LOW Priority (Nice to Have)
-13. Add Redis for session sharing (future scaling)
-14. Implement dependency injection container
-15. Add better error recovery strategies
-16. Add Prometheus metrics export
-17. Add `__slots__` to frequently instantiated classes
+**Recommendation**: Consider sharing a cached client for better performance.
 
 ---
 
-## Quick Wins (High Impact, Low Effort)
+### 7. Global State for Tiktoken Encoder (LOW)
 
-1. Add `*.p12`, `*.pfx`, `*_key`, `*_secret`, `*.crt`, `*.cer` to BLOCKED_EXTENSIONS (1 line change)
-
-2. Enable SQLite WAL mode:
+`conversation.py:25` uses global mutable state:
 ```python
-conn.execute("PRAGMA journal_mode=WAL")
+global _TIKTOKEN_ENCODER
 ```
 
-3. Remove `curl` and `wget` from config.yaml default allowed_commands
+While cached, this could cause issues in multi-threaded environments.
 
-4. Add connection timeout to httpx clients:
-```python
-httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
-```
+**Recommendation**: Use `lru_cache` or threading-safe singleton pattern.
 
-5. Add pagination to `list_sessions()`
+---
 
-6. Replace hardcoded thresholds with config:
+### 8. No Rate Limiting at Tool Level (LOW)
+
+Rate limiting exists at web server level but not at the agent/tool execution level. A malicious user could spam tool calls.
+
+**Recommendation**: Add per-user rate limiting for tool executions.
+
+---
+
+### 9. Missing Pydantic Models for Tool Parameters (LOW)
+
+Some tools use `**kwargs` instead of typed parameters:
+
+- `tools/web.py:142` - `execute(self, url: str, **kwargs)`
+- Multiple tools pass kwargs without validation
+
+**Recommendation**: Ensure all tools use their `parameters_model` for validation.
+
+---
+
+### 10. Inconsistent Error Messages (LOW)
+
+Error messages vary across the codebase:
+- Some return `ToolResult(error=...)`
+- Some return `LLMResponse(content=f"Error: ...")`
+- Some raise exceptions
+
+**Recommendation**: Standardize error handling approach.
+
+---
+
+### 11. Workspace Path in Config (MEDIUM)
+
+`config.yaml:50` has hardcoded path:
 ```yaml
-limits:
-  max_file_read_kb: 100
-  max_search_content_chars: 8000
+workspace: "/home/barontek"
 ```
 
-7. Use `logger.warning` instead of `logger.debug` for approval-required messages
+This should be relative or configurable via environment.
 
-8. Add `__slots__` to frequently instantiated classes (Message, ToolResult)
-
-9. Document the thinking tag constants with rationale
-
-10. Add type: ignore comments to pyright config or fix exclusions
+**Recommendation**: Use `~` or environment variable for workspace.
 
 ---
 
-## Summary Scores
+### 12. No Request ID Propagation (LOW)
 
-| Category | Score | Notes |
-|----------|-------|-------|
-| Security | 7/10 | Good foundation, but allowlisted commands need review |
-| Code Quality | 7/10 | Generally good, some inconsistencies |
-| Performance | 7/10 | Good caching, SQLite could be optimized |
-| Testing | 7/10 | Good coverage, missing integration tests |
-| Maintainability | 7/10 | Good docs, but multiple UIs concern |
-| Documentation | 8/10 | Excellent README, runbook, security docs |
-| Architecture | 7/10 | Clean separation, some coupling issues |
+Logs don't consistently include request/trace IDs for correlation across services.
 
-**Overall: 7.1/10** - Solid foundation with good practices. Focus on security hardening (allowed commands) and architectural cleanup (consolidate UIs, fix global state).
+**Recommendation**: Ensure all log statements include correlation IDs.
+
+---
+
+## Summary
+
+| Category | Priority | Count |
+|----------|----------|-------|
+| Duplicate Wrappers | MEDIUM | 1 |
+| Hardcoded Values | LOW | 3 |
+| Inconsistency | LOW | 3 |
+| Missing Features | LOW | 4 |
+| Configuration | MEDIUM | 1 |
+
+**Overall**: The codebase is well-structured after previous fixes. Remaining issues are minor and don't affect functionality. Focus on cleanup (remove duplicate wrappers) and consistency improvements.

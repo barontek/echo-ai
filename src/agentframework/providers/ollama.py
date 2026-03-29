@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 from . import LLMProvider, LLMResponse, LLMToolCall
-from ..constants import THINKING_END, THINKING_START
+from ..constants import DEFAULT_STREAM_TIMEOUT, THINKING_END, THINKING_START
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class OllamaProvider(LLMProvider):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0))
+        self.client = httpx.AsyncClient(timeout=DEFAULT_STREAM_TIMEOUT)
 
     def _extract_tool_calls_from_content(self, content: str) -> list[LLMToolCall]:
         """Extract tool calls from markdown code blocks or plain JSON in content."""
@@ -236,8 +236,10 @@ class OllamaProvider(LLMProvider):
             )
 
         except httpx.HTTPStatusError as e:
+            logger.warning("Ollama HTTP error: %s", e.response.status_code)
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")
-        except Exception:
+        except Exception as e:
+            logger.error("Ollama chat failed: %s", e)
             return LLMResponse(
                 content="An internal error occurred while processing your request."
             )
@@ -466,8 +468,10 @@ class OllamaProvider(LLMProvider):
             )
 
         except httpx.HTTPStatusError as e:
+            logger.warning("Ollama streaming HTTP error: %s", e.response.status_code)
             return LLMResponse(content=f"HTTP error: {e.response.status_code}")
-        except Exception:
+        except Exception as e:
+            logger.error("Ollama streaming failed: %s", e)
             return LLMResponse(
                 content="An internal error occurred while processing your request."
             )
@@ -515,5 +519,6 @@ class OllamaProvider(LLMProvider):
             response.raise_for_status()
             data = response.json()
             return [m["name"] for m in data.get("models", [])]
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to list Ollama models: %s", e)
             return []

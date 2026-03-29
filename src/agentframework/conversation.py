@@ -3,31 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 from datetime import datetime
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Literal
 
 from .constants import THINKING_END, THINKING_START
 
-
-# Cache tiktoken encoder for performance (avoid recreating on every call)
-_TIKTOKEN_ENCODER: Any | None = None
+logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=1)
 def _get_tiktoken_encoder():
-    """Get or create the cached tiktoken encoder."""
-    global _TIKTOKEN_ENCODER
-    if _TIKTOKEN_ENCODER is None:
-        try:
-            import tiktoken
+    """Get or create the cached tiktoken encoder using lru_cache."""
+    try:
+        import tiktoken
 
-            _TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
-        except Exception:
-            return None
-    return _TIKTOKEN_ENCODER
+        return tiktoken.get_encoding("cl100k_base")
+    except Exception as e:
+        logger.debug("Failed to load tiktoken encoder: %s", e)
+        return None
 
 
 def _clear_tiktoken_encoder():
@@ -35,11 +34,10 @@ def _clear_tiktoken_encoder():
 
     Useful for long-running processes or testing.
     """
-    global _TIKTOKEN_ENCODER
-    _TIKTOKEN_ENCODER = None
+    _get_tiktoken_encoder.cache_clear()
 
 
-@dataclass
+@dataclass(slots=True)
 class Message:
     """A message in the conversation."""
 
@@ -274,5 +272,6 @@ Provide a brief summary (2-3 sentences):"""
             temperature=0.3,
         )
         return summary_response.content or ""
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to summarize messages: %s", e)
         return f"[{len(messages_to_summarize)} previous messages summarized]"

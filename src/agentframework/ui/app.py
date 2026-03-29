@@ -28,6 +28,16 @@ from .state import get_state
 
 logger = logging.getLogger(__name__)
 
+# Initialize Sentry at module level BEFORE ui.run()
+# Uses the centralized init_sentry() to avoid dual initialization conflicts
+try:
+    from src.agentframework.sentry import init_sentry, captureMessage
+
+    if init_sentry():
+        captureMessage("NiceGUI app started", level="info")
+except Exception as e:
+    logger.debug(f"Sentry initialization skipped: {e}")
+
 _app_started = False
 
 CHATS_SCROLL_JS = """
@@ -311,8 +321,7 @@ def _create_agent(model: str, session_id: str | None = None):
     return create_runtime_agent(model, session_id)
 
 
-def run():
-    """Run the NiceGUI application."""
+if __name__ == "__main__":
     ui.run(
         title="Echo AI",
         port=8080,
@@ -320,7 +329,3 @@ def run():
         show=True,
         storage_secret="echo-ai-nicegui-secret",
     )
-
-
-if __name__ == "__main__":
-    run()

@@ -10,6 +10,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from ..constants import DEFAULT_HTTP_TIMEOUT, DEFAULT_MAX_TOKENS
 from . import LLMProvider, LLMResponse, LLMToolCall
 
 
@@ -43,7 +44,7 @@ class AnthropicProvider(LLMProvider):
 
         params = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": DEFAULT_MAX_TOKENS,
             "messages": filtered_messages,
             "temperature": temperature,
         }
@@ -54,7 +55,10 @@ class AnthropicProvider(LLMProvider):
         if tools:
             params["tools"] = tools
 
-        async with AsyncAnthropic(api_key=self.api_key) as client:
+        async with AsyncAnthropic(
+            api_key=self.api_key,
+            timeout=DEFAULT_HTTP_TIMEOUT,
+        ) as client:
             response = await client.messages.create(**params)
 
         content = ""
@@ -98,7 +102,7 @@ class AnthropicProvider(LLMProvider):
 
         params = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": DEFAULT_MAX_TOKENS,
             "messages": filtered_messages,
             "temperature": temperature,
         }
@@ -112,7 +116,10 @@ class AnthropicProvider(LLMProvider):
         content = ""
         tool_calls = []
 
-        async with AsyncAnthropic(api_key=self.api_key) as client:
+        async with AsyncAnthropic(
+            api_key=self.api_key,
+            timeout=DEFAULT_HTTP_TIMEOUT,
+        ) as client:
             async with client.messages.stream(**params) as stream:
                 async for text in stream.text_stream:
                     content += text
@@ -145,7 +152,10 @@ class AnthropicProvider(LLMProvider):
     ) -> Any:
         import instructor
 
-        async with AsyncAnthropic(api_key=self.api_key) as client:
+        async with AsyncAnthropic(
+            api_key=self.api_key,
+            timeout=DEFAULT_HTTP_TIMEOUT,
+        ) as client:
             instructor_client = instructor.from_anthropic(client)
 
             filtered_messages = []
@@ -158,7 +168,7 @@ class AnthropicProvider(LLMProvider):
 
             params = {
                 "model": self.model,
-                "max_tokens": 4096,
+                "max_tokens": DEFAULT_MAX_TOKENS,
                 "messages": filtered_messages,
                 "temperature": temperature,
                 "response_model": response_model,

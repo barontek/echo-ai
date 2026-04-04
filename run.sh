@@ -2,14 +2,15 @@
 set -e
 
 # Usage:
-#   ./run.sh           - Run NiceGUI web UI (recommended)
+#   ./run.sh           - Run React frontend + backend (development)
 #   ./run.sh dev       - Run React frontend + backend (for development)
-#   ./run.sh web       - Run FastAPI web UI (legacy)
+#   ./run.sh web       - Run FastAPI backend only
 #   ./run.sh api       - Run API only
 #   ./run.sh chat      - Run CLI chat
+#   ./run.sh tui       - Run TUI
 #   ./run.sh --docker  - Run in Docker
 
-MODE="${1:-nicegui}"
+MODE="${1:-dev}"
 DOCKER_MODE=0
 
 if [ "$1" == "--docker" ]; then

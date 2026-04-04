@@ -2,7 +2,7 @@
 
 This module provides Sentry integration for error tracking and performance monitoring.
 Uses lazy imports to avoid initializing Sentry until explicitly requested,
-which prevents middleware conflicts with NiceGUI and other ASGI frameworks.
+which prevents middleware conflicts with FastAPI and other ASGI frameworks.
 
 Usage:
     from src.agentframework.sentry import captureException, init_sentry
@@ -27,7 +27,7 @@ def init_sentry() -> bool:
     """Initialize Sentry SDK if DSN is configured.
 
     Uses lazy imports to avoid auto-initialization that can cause
-    middleware conflicts with NiceGUI and other frameworks.
+    middleware conflicts with FastAPI and other frameworks.
 
     Returns:
         True if Sentry was initialized, False otherwise.

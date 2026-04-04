@@ -1,6 +1,6 @@
 # Agent Framework Makefile
 
-.PHONY: help install run chat test lint typecheck verify security bench clean sessions
+.PHONY: help install run chat test lint typecheck verify security bench clean sessions frontend-test frontend-lint frontend-build frontend-check
 
 help:
 	@echo "Agent Framework - Available commands:"
@@ -19,6 +19,13 @@ help:
 	@echo "  make lock            - Generate strict dependencies using uv"
 	@echo "  make setup-precommit - Install local pre-commit hooks"
 	@echo "  make clean           - Clean up sessions and cache"
+	@echo ""
+	@echo "  Frontend (React):"
+	@echo "  make frontend-install - Install frontend dependencies"
+	@echo "  make frontend-test    - Run frontend tests"
+	@echo "  make frontend-lint    - Run frontend linter"
+	@echo "  make frontend-build   - Build frontend for production"
+	@echo "  make frontend-check   - Run all frontend checks (lint, typecheck, test, build)"
 
 install:
 	python3 -m venv .venv
@@ -74,3 +81,22 @@ requirements.txt: pyproject.toml
 
 setup-precommit:
 	.venv/bin/pre-commit install
+
+# Frontend commands
+frontend-install:
+	cd frontend && npm install
+
+frontend-test:
+	cd frontend && npm run test:run
+
+frontend-lint:
+	cd frontend && npm run lint
+
+frontend-typecheck:
+	cd frontend && npm run typecheck
+
+frontend-build:
+	cd frontend && npm run build
+
+frontend-check:
+	cd frontend && npm run lint && npm run typecheck && npm run test:run && npm run build

@@ -1,5 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
+
+pytest.importorskip("textual", reason="textual not installed")
 from src.agentframework.tui import TuiCallback, AgentDashboard
 
 @pytest.fixture

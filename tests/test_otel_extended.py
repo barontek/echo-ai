@@ -1,5 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, ANY
+
+pytest.importorskip("opentelemetry", reason="opentelemetry not installed")
 from src.agentframework.otel import OpenTelemetryCallback
 
 @pytest.fixture

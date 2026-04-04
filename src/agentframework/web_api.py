@@ -192,26 +192,6 @@ except NameError:
     pass  # ExceptionGroup not available in Python < 3.11
 
 
-# NiceGUI integration - use run_with for proper FastAPI integration
-# This may fail if NiceGUI is running standalone (middleware already added)
-try:
-    from nicegui import ui_run_with
-    import importlib.util
-
-    if importlib.util.find_spec("src.agentframework.ui") is not None:
-        ui_run_with.run_with(app, mount_path="/nicegui", dark=True)
-        logger.info("NiceGUI integrated at /nicegui")
-    else:
-        raise ImportError("NiceGUI module not found")
-except RuntimeError as e:
-    if "Cannot add middleware" in str(e):
-        logger.debug(f"NiceGUI already running standalone: {e}")
-    else:
-        logger.warning(f"NiceGUI not available: {e}")
-except Exception as e:
-    logger.warning(f"NiceGUI not available: {e}")
-
-
 @app.middleware("http")
 async def correlation_id_middleware(request: Request, call_next):
     """Add correlation ID to each request for structured logging."""
@@ -563,28 +543,36 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
             # Normalize tool_calls structure for frontend
             normalized = []
             for tc in tool_calls:
+                name = "unknown"
+                args = {}
                 if isinstance(tc, dict):
                     if "function" in tc:
-                        normalized.append(
-                            {
-                                "name": tc["function"].get("name", "unknown"),
-                                "arguments": tc["function"].get("arguments", {}),
-                            }
-                        )
+                        name = tc["function"].get("name", "unknown")
+                        raw_args = tc["function"].get("arguments", {})
                     else:
-                        normalized.append(
-                            {
-                                "name": tc.get("name", "unknown"),
-                                "arguments": tc.get("arguments", {}),
-                            }
-                        )
+                        name = tc.get("name", "unknown")
+                        raw_args = tc.get("arguments", {})
                 else:
-                    normalized.append(
-                        {
-                            "name": getattr(tc, "name", "unknown"),
-                            "arguments": getattr(tc, "arguments", {}),
-                        }
-                    )
+                    name = getattr(tc, "name", "unknown")
+                    raw_args = getattr(tc, "arguments", {})
+
+                # Handle arguments - could be string, dict, or already parsed
+                if isinstance(raw_args, str):
+                    try:
+                        # First unescape unicode
+                        unescaped = raw_args.encode().decode("unicode_escape")
+                        args = json.loads(unescaped)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        try:
+                            args = json.loads(raw_args)
+                        except json.JSONDecodeError:
+                            args = {"raw": raw_args}
+                elif isinstance(raw_args, dict):
+                    args = raw_args
+                else:
+                    args = {"raw": str(raw_args)}
+
+                normalized.append({"name": name, "arguments": args})
             msg_dict["tool_calls"] = normalized
 
         filtered.append(msg_dict)
@@ -667,8 +655,8 @@ class WorkflowRunPayload(BaseModel):
 
 @app.get("/", include_in_schema=False)
 async def index():
-    """Redirect to NiceGUI UI."""
-    return RedirectResponse(url="/nicegui/", status_code=302)
+    """Redirect to React UI."""
+    return RedirectResponse(url="http://localhost:3000", status_code=302)
 
 
 @app.get("/sentry-debug", tags=["Debug"])
@@ -1305,24 +1293,34 @@ async def websocket_chat(websocket: WebSocket):
                 if tc:
                     has_tools = True
                     for t in tc:
+                        name = "unknown"
+                        args = {}
                         if isinstance(t, dict):
-                            tool_calls_info.append(
-                                {
-                                    "name": t.get("function", {}).get(
-                                        "name", "unknown"
-                                    ),
-                                    "arguments": t.get("function", {}).get(
-                                        "arguments", {}
-                                    ),
-                                }
-                            )
+                            name = t.get("function", {}).get("name", "unknown")
+                            raw_args = t.get("function", {}).get("arguments", {})
                         else:
-                            tool_calls_info.append(
-                                {
-                                    "name": getattr(t, "name", "unknown"),
-                                    "arguments": getattr(t, "arguments", {}),
-                                }
-                            )
+                            name = getattr(t, "name", "unknown")
+                            raw_args = getattr(t, "arguments", {})
+
+                        # Handle arguments - could be string, dict, or already parsed
+                        if isinstance(raw_args, str):
+                            # First, fix any escaped unicode (e.g., \\u0131 -> ü)
+                            try:
+                                # Try to unescape and parse as JSON
+                                unescaped = raw_args.encode().decode("unicode_escape")
+                                args = json.loads(unescaped)
+                            except (json.JSONDecodeError, UnicodeDecodeError):
+                                try:
+                                    # Try direct parse
+                                    args = json.loads(raw_args)
+                                except json.JSONDecodeError:
+                                    args = {"raw": raw_args}
+                        elif isinstance(raw_args, dict):
+                            args = raw_args
+                        else:
+                            args = {"raw": str(raw_args)}
+
+                        tool_calls_info.append({"name": name, "arguments": args})
 
             if not accumulated_content:
                 accumulated_content = response

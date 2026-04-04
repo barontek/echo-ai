@@ -1,0 +1,353 @@
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { ChatContext, type ChatContextValue } from './ChatContext';
+import { api } from '../api/client';
+import type { StreamEvent } from '../types';
+
+const DEBUG = import.meta.env.DEV;
+
+function debugLog(action: string, data?: unknown) {
+  if (DEBUG) {
+    console.log(`[Chat:${action}]`, data ?? '');
+  }
+}
+
+function combineAssistantMessages(messages: ChatContextValue['messages']): ChatContextValue['messages'] {
+  const combined: ChatContextValue['messages'] = [];
+
+  for (const msg of messages) {
+    const last = combined[combined.length - 1];
+    // Combine consecutive assistant messages
+    if (last && last.role === 'assistant' && msg.role === 'assistant') {
+      last.content += '\n' + msg.content;
+      if (msg.thinking) last.thinking = (last.thinking || '') + '\n' + msg.thinking;
+      if (msg.has_tools) last.has_tools = msg.has_tools;
+      if (msg.tool_calls && msg.tool_calls.length > 0) last.tool_calls = msg.tool_calls;
+    } else {
+      combined.push(msg);
+    }
+  }
+
+  return combined;
+}
+
+export function ChatProvider({ children }: { children: ReactNode }) {
+  const [sessions, setSessions] = useState<ChatContextValue['sessions']>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [currentModel, setCurrentModel] = useState('qwen3:4b-instruct');
+  const [models, setModels] = useState<string[]>([]);
+  const [messages, setMessages] = useState<ChatContextValue['messages']>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [currentThinking, setCurrentThinking] = useState('');
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const isReadyRef = useRef(false);
+  const messageQueueRef = useRef<string[]>([]);
+  const lastSentMessageRef = useRef<string>('');
+
+  const connect = useCallback(() => {
+    debugLog('connect', { model: currentModel });
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      debugLog('connect', 'already connected');
+      return;
+    }
+
+    try {
+      // Close existing if closing
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+
+      const ws = new WebSocket('/ws/chat');
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        debugLog('ws:open');
+        setIsConnected(true);
+        // Send config to initialize
+        const configMsg = JSON.stringify({ provider: 'ollama', model: currentModel });
+        debugLog('ws:send', { type: 'config', model: currentModel });
+        ws.send(configMsg);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data: StreamEvent = JSON.parse(event.data);
+          debugLog('ws:message', { type: data.type, hasContent: !!data.content });
+
+          switch (data.type) {
+            case 'ready':
+              debugLog('ready', data);
+              isReadyRef.current = true;
+              if (data.session_id) {
+                setActiveSessionId(data.session_id);
+                debugLog('session:set', data.session_id);
+              }
+              // Process queued messages
+              while (messageQueueRef.current.length > 0) {
+                const msg = messageQueueRef.current.shift();
+                if (msg) {
+                  debugLog('ws:send:queued', msg.substring(0, 50));
+                  ws.send(msg);
+                }
+              }
+              break;
+
+            case 'message':
+              debugLog('message:user', data.content?.substring(0, 30));
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                // Skip if last message is already the same (optimistic add)
+                if (last?.role === 'user' && last.content === data.content) {
+                  return prev;
+                }
+                return [...prev, {
+                  role: 'user',
+                  content: data.content || '',
+                  timestamp: data.timestamp
+                }];
+              });
+              break;
+
+            case 'content':
+              debugLog('message:content', { content: data.content?.substring(0, 50), len: data.content?.length });
+              setIsStreaming(true);
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant') {
+                  return [...prev.slice(0, -1), { ...last, content: data.content || '' }];
+                }
+                return [...prev, { role: 'assistant', content: data.content || '' }];
+              });
+              break;
+
+            case 'thinking':
+              debugLog('message:thinking', data.content?.substring(0, 30));
+              setIsStreaming(true);
+              setCurrentThinking(data.content || '');
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant') {
+                  return [...prev.slice(0, -1), { ...last, thinking: data.content }];
+                }
+                return [...prev, { role: 'assistant', content: '', thinking: data.content }];
+              });
+              break;
+
+            case 'done':
+              debugLog('done', {
+                session_id: data.session_id,
+                title: data.title,
+                content: data.content?.substring(0, 30),
+                has_tools: data.has_tools,
+                tool_calls: data.tool_calls
+              });
+              setIsStreaming(false);
+              setCurrentThinking('');
+              isReadyRef.current = true;
+              lastSentMessageRef.current = '';
+              // Add/update assistant message with final content
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant') {
+                  return [...prev.slice(0, -1), {
+                    ...last,
+                    content: data.content || last.content,
+                    thinking: data.thinking,
+                    has_tools: data.has_tools,
+                    tool_calls: data.tool_calls,
+                    timestamp: data.timestamp || last.timestamp
+                  }];
+                }
+                return [...prev, {
+                  role: 'assistant',
+                  content: data.content || '',
+                  thinking: data.thinking,
+                  has_tools: data.has_tools,
+                  tool_calls: data.tool_calls,
+                  timestamp: data.timestamp
+                }];
+              });
+              if (data.session_id) {
+                setActiveSessionId(data.session_id);
+              }
+              if (data.title) {
+                debugLog('title:generated', data.title);
+                api.getSessions().then(setSessions).catch(console.error);
+              }
+              break;
+
+            case 'error':
+              debugLog('error', data.content);
+              setIsStreaming(false);
+              setCurrentThinking('');
+              isReadyRef.current = true;
+              lastSentMessageRef.current = ''; // Allow sending same message again
+              break;
+          }
+        } catch (err) {
+          console.error('[Chat] Failed to parse message:', err);
+        }
+      };
+
+      ws.onclose = (e) => {
+        debugLog('ws:close', { code: e.code, reason: e.reason });
+        setIsConnected(false);
+        wsRef.current = null;
+        isReadyRef.current = false;
+      };
+
+      ws.onerror = (error) => {
+        console.error('[Chat] WebSocket error:', error);
+      };
+    } catch (err) {
+      console.error('[Chat] Failed to connect:', err);
+    }
+  }, [currentModel]);
+
+  const sendMessage = useCallback((content: string) => {
+    const preview = content.substring(0, 30);
+    debugLog('sendMessage:start', preview);
+
+    // Prevent duplicate sends
+    if (content === lastSentMessageRef.current) {
+      debugLog('sendMessage:blocked-duplicate', preview);
+      return;
+    }
+    lastSentMessageRef.current = content;
+    debugLog('sendMessage:allowed', preview);
+
+    // Add user message immediately to UI
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    setMessages(prev => [...prev, { role: 'user', content, timestamp }]);
+
+    const msg = JSON.stringify({ type: 'message', content });
+
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      debugLog('ws:send:message', content.substring(0, 30));
+      ws.send(msg);
+      setIsStreaming(true);
+      isReadyRef.current = false;
+    } else {
+      debugLog('ws:not-connected', { readyState: ws?.readyState });
+      messageQueueRef.current.push(msg);
+      if (!ws || ws.readyState === WebSocket.CLOSED) {
+        debugLog('ws:reconnect-needed');
+        connect();
+      }
+    }
+  }, [connect]);
+
+  const reconnect = useCallback(() => {
+    debugLog('reconnect');
+    messageQueueRef.current = [];
+    isReadyRef.current = false;
+    wsRef.current?.close();
+    connect();
+  }, [connect]);
+
+  // Load initial data
+  useEffect(() => {
+    debugLog('mount');
+
+    const loadData = async () => {
+      try {
+        debugLog('loadData:start');
+        const [sessionsData, modelsData] = await Promise.all([
+          api.getSessions(),
+          api.getModels()
+        ]);
+        debugLog('loadData:sessions', sessionsData.length);
+        debugLog('loadData:models', modelsData.length);
+        setSessions(sessionsData);
+        setModels(modelsData);
+      } catch (err) {
+        console.error('[Chat] Failed to load data:', err);
+      }
+    };
+
+    loadData();
+    connect();
+
+    return () => {
+      debugLog('unmount');
+      wsRef.current?.close();
+    };
+  }, [connect]);
+
+  const createSession = useCallback(async () => {
+    debugLog('createSession:start');
+    try {
+      const { session_id } = await api.createSession();
+      debugLog('createSession:done', session_id);
+      setActiveSessionId(session_id);
+      setMessages([]);
+      const sessionsData = await api.getSessions();
+      setSessions(sessionsData);
+    } catch (err) {
+      console.error('[Chat] Failed to create session:', err);
+    }
+  }, []);
+
+  const selectSession = useCallback(async (sessionId: string) => {
+    debugLog('selectSession:start', sessionId);
+    try {
+      const data = await api.loadSession(sessionId);
+      debugLog('selectSession:messages', data.messages.length);
+
+      // Combine consecutive assistant messages into one
+      const combinedMessages = combineAssistantMessages(data.messages);
+
+      setActiveSessionId(sessionId);
+      setMessages(combinedMessages);
+    } catch (err) {
+      console.error('[Chat] Failed to load session:', err);
+    }
+  }, []);
+
+  const deleteSession = useCallback(async (sessionId: string) => {
+    debugLog('deleteSession:start', sessionId);
+    try {
+      await api.deleteSession(sessionId);
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null);
+        setMessages([]);
+      }
+      const sessionsData = await api.getSessions();
+      setSessions(sessionsData);
+    } catch (err) {
+      console.error('[Chat] Failed to delete session:', err);
+    }
+  }, [activeSessionId]);
+
+  const selectModel = useCallback((model: string) => {
+    debugLog('selectModel', model);
+    setCurrentModel(model);
+    reconnect();
+  }, [reconnect]);
+
+  const value: ChatContextValue = {
+    sessions,
+    activeSessionId,
+    currentModel,
+    models,
+    messages,
+    isConnected,
+    isStreaming,
+    currentThinking,
+    sendMessage,
+    createSession,
+    selectSession,
+    deleteSession,
+    selectModel,
+    reconnect
+  };
+
+  return (
+    <ChatContext.Provider value={value}>
+      {children}
+    </ChatContext.Provider>
+  );
+}

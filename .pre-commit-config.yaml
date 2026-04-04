@@ -21,3 +21,21 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.0.0
+    hooks:
+      - id: eslint
+        entry: npm run lint --prefix frontend
+        language: system
+        files: \.(js|ts|tsx)$
+        pass_filenames: false
+
+  - repo: https://github.com/prettier/pre-commit
+    rev: v3.0.0
+    hooks:
+      - id: prettier
+        entry: npx prettier --write --prefix frontend
+        language: system
+        files: \.(js|ts|tsx|css)$
+        pass_filenames: false

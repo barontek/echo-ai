@@ -31,4 +31,6 @@ export interface ChatContextValue {
   reconnect: () => void;
 }
 
-export const ChatContext: Context<ChatContextValue | null> = createContext<ChatContextValue | null>(null);
+export const ChatContext: Context<ChatContextValue | null> = createContext<ChatContextValue | null>(
+  null
+);

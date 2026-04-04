@@ -30,29 +30,46 @@ vi.mock('../api/client', () => ({
   api: mockApi,
 }));
 
-vi.stubGlobal('WebSocket', vi.fn(() => {
-  const handlers: Record<string, ((...args: unknown[]) => unknown) | null | undefined> = {};
-  return {
-    send: vi.fn((data: string) => {
-      wsCalls.push(data);
-    }),
-    close: vi.fn(),
-    readyState: 1,
-    get onopen() { return handlers.onopen; },
-    set onopen(fn: ((...args: unknown[]) => unknown) | null | undefined) {
-      handlers.onopen = fn;
-      if (fn) {
-        setTimeout(() => fn(), 0);
-      }
-    },
-    get onclose() { return handlers.onclose; },
-    set onclose(fn: ((...args: unknown[]) => unknown) | null | undefined) { handlers.onclose = fn; },
-    get onmessage() { return handlers.onmessage; },
-    set onmessage(fn: ((...args: unknown[]) => unknown) | null | undefined) { handlers.onmessage = fn; },
-    get onerror() { return handlers.onerror; },
-    set onerror(fn: ((...args: unknown[]) => unknown) | null | undefined) { handlers.onerror = fn; },
-  };
-}));
+vi.stubGlobal(
+  'WebSocket',
+  vi.fn(() => {
+    const handlers: Record<string, ((...args: unknown[]) => unknown) | null | undefined> = {};
+    return {
+      send: vi.fn((data: string) => {
+        wsCalls.push(data);
+      }),
+      close: vi.fn(),
+      readyState: 1,
+      get onopen() {
+        return handlers.onopen;
+      },
+      set onopen(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+        handlers.onopen = fn;
+        if (fn) {
+          setTimeout(() => fn(), 0);
+        }
+      },
+      get onclose() {
+        return handlers.onclose;
+      },
+      set onclose(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+        handlers.onclose = fn;
+      },
+      get onmessage() {
+        return handlers.onmessage;
+      },
+      set onmessage(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+        handlers.onmessage = fn;
+      },
+      get onerror() {
+        return handlers.onerror;
+      },
+      set onerror(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+        handlers.onerror = fn;
+      },
+    };
+  })
+);
 
 describe('Session History Bug Tests', () => {
   beforeEach(() => {
@@ -78,8 +95,10 @@ describe('Session History Bug Tests', () => {
         const { sessions } = useChat();
         return (
           <div>
-            {sessions.map(s => (
-              <span key={s.id} data-testid={`session-${s.id}`}>{s.title}</span>
+            {sessions.map((s) => (
+              <span key={s.id} data-testid={`session-${s.id}`}>
+                {s.title}
+              </span>
             ))}
           </div>
         );
@@ -110,7 +129,9 @@ describe('Session History Bug Tests', () => {
             <button onClick={() => selectSession('session-1')}>Load</button>
             <span data-testid="msg-count">{messages.length}</span>
             {messages.map((m, i) => (
-              <span key={i} data-testid={`msg-${i}`}>{m.role}:{m.content}</span>
+              <span key={i} data-testid={`msg-${i}`}>
+                {m.role}:{m.content}
+              </span>
             ))}
           </div>
         );
@@ -375,9 +396,7 @@ describe('Session History Bug Tests', () => {
     it('should delete session via API and refresh list', async () => {
       function TestComponent() {
         const { deleteSession } = useChat();
-        return (
-          <button onClick={() => deleteSession('session-1')}>Delete</button>
-        );
+        return <button onClick={() => deleteSession('session-1')}>Delete</button>;
       }
 
       render(

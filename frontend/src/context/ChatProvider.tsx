@@ -11,7 +11,9 @@ function debugLog(action: string, data?: unknown) {
   }
 }
 
-function combineAssistantMessages(messages: ChatContextValue['messages']): ChatContextValue['messages'] {
+function combineAssistantMessages(
+  messages: ChatContextValue['messages']
+): ChatContextValue['messages'] {
   const combined: ChatContextValue['messages'] = [];
 
   for (const msg of messages) {
@@ -46,6 +48,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const isReadyRef = useRef(false);
   const messageQueueRef = useRef<string[]>([]);
   const lastSentMessageRef = useRef<string>('');
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     debugLog('connect', { model: currentModel });
@@ -101,24 +104,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
             case 'message':
               debugLog('message:user', data.content?.substring(0, 30));
-              setMessages(prev => {
+              setMessages((prev) => {
                 const last = prev[prev.length - 1];
                 // Skip if last message is already the same (optimistic add)
                 if (last?.role === 'user' && last.content === data.content) {
                   return prev;
                 }
-                return [...prev, {
-                  role: 'user',
-                  content: data.content || '',
-                  timestamp: data.timestamp
-                }];
+                return [
+                  ...prev,
+                  {
+                    role: 'user',
+                    content: data.content || '',
+                    timestamp: data.timestamp,
+                  },
+                ];
               });
               break;
 
             case 'content':
-              debugLog('message:content', { content: data.content?.substring(0, 50), len: data.content?.length });
+              debugLog('message:content', {
+                content: data.content?.substring(0, 50),
+                len: data.content?.length,
+              });
               setIsStreaming(true);
-              setMessages(prev => {
+              setMessages((prev) => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
                   return [...prev.slice(0, -1), { ...last, content: data.content || '' }];
@@ -131,7 +140,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               debugLog('message:thinking', data.content?.substring(0, 30));
               setIsStreaming(true);
               setCurrentThinking(data.content || '');
-              setMessages(prev => {
+              setMessages((prev) => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
                   return [...prev.slice(0, -1), { ...last, thinking: data.content }];
@@ -146,33 +155,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 title: data.title,
                 content: data.content?.substring(0, 30),
                 has_tools: data.has_tools,
-                tool_calls: data.tool_calls
+                tool_calls: data.tool_calls,
               });
               setIsStreaming(false);
               setCurrentThinking('');
               isReadyRef.current = true;
               lastSentMessageRef.current = '';
               // Add/update assistant message with final content
-              setMessages(prev => {
+              setMessages((prev) => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
-                  return [...prev.slice(0, -1), {
-                    ...last,
-                    content: data.content || last.content,
+                  return [
+                    ...prev.slice(0, -1),
+                    {
+                      ...last,
+                      content: data.content || last.content,
+                      thinking: data.thinking,
+                      has_tools: data.has_tools,
+                      tool_calls: data.tool_calls,
+                      timestamp: data.timestamp || last.timestamp,
+                    },
+                  ];
+                }
+                return [
+                  ...prev,
+                  {
+                    role: 'assistant',
+                    content: data.content || '',
                     thinking: data.thinking,
                     has_tools: data.has_tools,
                     tool_calls: data.tool_calls,
-                    timestamp: data.timestamp || last.timestamp
-                  }];
-                }
-                return [...prev, {
-                  role: 'assistant',
-                  content: data.content || '',
-                  thinking: data.thinking,
-                  has_tools: data.has_tools,
-                  tool_calls: data.tool_calls,
-                  timestamp: data.timestamp
-                }];
+                    timestamp: data.timestamp,
+                  },
+                ];
               });
               if (data.session_id) {
                 setActiveSessionId(data.session_id);
@@ -201,14 +216,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setIsConnected(false);
         wsRef.current = null;
         isReadyRef.current = false;
-        
+
         // Auto-reconnect unless cleanly closed
         if (e.code !== 1000) {
           setConnectionStatus('reconnecting');
           debugLog('ws:reconnect:scheduled');
           setTimeout(() => {
             if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-              connect();
+              connectRef.current();
             }
           }, 2000);
         } else {
@@ -221,7 +236,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         // Schedule reconnect on error
         setTimeout(() => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            connect();
+            connectRef.current();
           }
         }, 2000);
       };
@@ -230,39 +245,49 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [currentModel]);
 
-  const sendMessage = useCallback((content: string) => {
-    const preview = content.substring(0, 30);
-    debugLog('sendMessage:start', preview);
-
-    // Prevent duplicate sends
-    if (content === lastSentMessageRef.current) {
-      debugLog('sendMessage:blocked-duplicate', preview);
-      return;
-    }
-    lastSentMessageRef.current = content;
-    debugLog('sendMessage:allowed', preview);
-
-    // Add user message immediately to UI
-    const timestamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    setMessages(prev => [...prev, { role: 'user', content, timestamp }]);
-
-    const msg = JSON.stringify({ type: 'message', content });
-
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      debugLog('ws:send:message', content.substring(0, 30));
-      ws.send(msg);
-      setIsStreaming(true);
-      isReadyRef.current = false;
-    } else {
-      debugLog('ws:not-connected', { readyState: ws?.readyState });
-      messageQueueRef.current.push(msg);
-      if (!ws || ws.readyState === WebSocket.CLOSED) {
-        debugLog('ws:reconnect-needed');
-        connect();
-      }
-    }
+  useEffect(() => {
+    connectRef.current = connect;
   }, [connect]);
+
+  const sendMessage = useCallback(
+    (content: string) => {
+      const preview = content.substring(0, 30);
+      debugLog('sendMessage:start', preview);
+
+      // Prevent duplicate sends
+      if (content === lastSentMessageRef.current) {
+        debugLog('sendMessage:blocked-duplicate', preview);
+        return;
+      }
+      lastSentMessageRef.current = content;
+      debugLog('sendMessage:allowed', preview);
+
+      // Add user message immediately to UI
+      const timestamp = new Date().toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      setMessages((prev) => [...prev, { role: 'user', content, timestamp }]);
+
+      const msg = JSON.stringify({ type: 'message', content });
+
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        debugLog('ws:send:message', content.substring(0, 30));
+        ws.send(msg);
+        setIsStreaming(true);
+        isReadyRef.current = false;
+      } else {
+        debugLog('ws:not-connected', { readyState: ws?.readyState });
+        messageQueueRef.current.push(msg);
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+          debugLog('ws:reconnect-needed');
+          connect();
+        }
+      }
+    },
+    [connect]
+  );
 
   const reconnect = useCallback(() => {
     debugLog('reconnect');
@@ -279,10 +304,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const loadData = async () => {
       try {
         debugLog('loadData:start');
-        const [sessionsData, modelsData] = await Promise.all([
-          api.getSessions(),
-          api.getModels()
-        ]);
+        const [sessionsData, modelsData] = await Promise.all([api.getSessions(), api.getModels()]);
         debugLog('loadData:sessions', sessionsData.length);
         debugLog('loadData:models', modelsData.length);
         setSessions(sessionsData);
@@ -293,8 +315,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
 
     loadData();
-    connect();
+  }, []);
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    connect();
     return () => {
       debugLog('unmount');
       wsRef.current?.close();
@@ -331,36 +356,43 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const deleteSession = useCallback(async (sessionId: string) => {
-    debugLog('deleteSession:start', sessionId);
-    try {
-      await api.deleteSession(sessionId);
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(null);
-        setMessages([]);
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      debugLog('deleteSession:start', sessionId);
+      try {
+        await api.deleteSession(sessionId);
+        if (activeSessionId === sessionId) {
+          setActiveSessionId(null);
+          setMessages([]);
+        }
+        const sessionsData = await api.getSessions();
+        setSessions(sessionsData);
+      } catch (err) {
+        console.error('[Chat] Failed to delete session:', err);
       }
-      const sessionsData = await api.getSessions();
-      setSessions(sessionsData);
-    } catch (err) {
-      console.error('[Chat] Failed to delete session:', err);
-    }
-  }, [activeSessionId]);
+    },
+    [activeSessionId]
+  );
 
-  const selectModel = useCallback((model: string) => {
-    debugLog('selectModel', model);
-    setCurrentModel(model);
-    reconnect();
-  }, [reconnect]);
+  const selectModel = useCallback(
+    (model: string) => {
+      debugLog('selectModel', model);
+      setCurrentModel(model);
+      reconnect();
+    },
+    [reconnect]
+  );
 
-  const retryMessage = useCallback((index: number) => {
-    const msg = messages[index];
-    if (msg && msg.role === 'user') {
-      setMessages(prev => prev.map((m, i) => 
-        i === index ? { ...m, error: undefined } : m
-      ));
-      sendMessage(msg.content);
-    }
-  }, [messages, sendMessage]);
+  const retryMessage = useCallback(
+    (index: number) => {
+      const msg = messages[index];
+      if (msg && msg.role === 'user') {
+        setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, error: undefined } : m)));
+        sendMessage(msg.content);
+      }
+    },
+    [messages, sendMessage]
+  );
 
   const value: ChatContextValue = {
     sessions,
@@ -380,12 +412,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     selectSession,
     deleteSession,
     selectModel,
-    reconnect
+    reconnect,
   };
 
-  return (
-    <ChatContext.Provider value={value}>
-      {children}
-    </ChatContext.Provider>
-  );
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }

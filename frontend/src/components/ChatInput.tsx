@@ -5,7 +5,9 @@ interface ChatInputProps {
   placeholder?: string;
 }
 
-export const ChatInput = memo(function ChatInput({ placeholder = 'Type your message...' }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({
+  placeholder = 'Type your message...',
+}: ChatInputProps) {
   const { sendMessage, isConnected, isStreaming } = useChat();
   const [input, setInput] = useState('');
 
@@ -43,11 +45,7 @@ export const ChatInput = memo(function ChatInput({ placeholder = 'Type your mess
           disabled={disabled}
           rows={1}
         />
-        <button
-          type="submit"
-          className="send-button"
-          disabled={disabled || !input.trim()}
-        >
+        <button type="submit" className="send-button" disabled={disabled || !input.trim()}>
           <span>Send</span>
         </button>
       </div>

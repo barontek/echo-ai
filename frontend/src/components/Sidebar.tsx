@@ -2,12 +2,23 @@ import { memo, useState } from 'react';
 import { useChat } from '../context';
 
 export const Sidebar = memo(function Sidebar() {
-  const { sessions, activeSessionId, models, currentModel, selectSession, createSession, selectModel, deleteSession, sidebarOpen, setSidebarOpen } = useChat();
+  const {
+    sessions,
+    activeSessionId,
+    models,
+    currentModel,
+    selectSession,
+    createSession,
+    selectModel,
+    deleteSession,
+    sidebarOpen,
+    setSidebarOpen,
+  } = useChat();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const filteredSessions = sessions.filter(s =>
+  const filteredSessions = sessions.filter((s) =>
     s.title?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -29,20 +40,20 @@ export const Sidebar = memo(function Sidebar() {
       </div>
 
       <div className="model-selector">
-        <button
-          className="model-button"
-          onClick={() => setShowModelDropdown(!showModelDropdown)}
-        >
+        <button className="model-button" onClick={() => setShowModelDropdown(!showModelDropdown)}>
           <span className="model-name">{currentModel}</span>
           <span className="dropdown-arrow">▼</span>
         </button>
         {showModelDropdown && (
           <div className="model-dropdown">
-            {models.map(m => (
+            {models.map((m) => (
               <button
                 key={m}
                 className={`model-option ${m === currentModel ? 'active' : ''}`}
-                onClick={() => { selectModel(m); setShowModelDropdown(false); }}
+                onClick={() => {
+                  selectModel(m);
+                  setShowModelDropdown(false);
+                }}
               >
                 {m}
               </button>
@@ -66,7 +77,7 @@ export const Sidebar = memo(function Sidebar() {
       </div>
 
       <div className="sessions-list">
-        {filteredSessions.map(session => (
+        {filteredSessions.map((session) => (
           <div
             key={session.id}
             className={`session-item ${session.id === activeSessionId ? 'active' : ''}`}
@@ -75,7 +86,10 @@ export const Sidebar = memo(function Sidebar() {
             <span className="session-title">{session.title || 'New Chat'}</span>
             <button
               className="delete-button"
-              onClick={(e) => { e.stopPropagation(); setDeleteConfirm(session.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteConfirm(session.id);
+              }}
             >
               ×
             </button>
@@ -90,11 +104,15 @@ export const Sidebar = memo(function Sidebar() {
 
       {deleteConfirm && (
         <div className="confirm-overlay" onClick={() => setDeleteConfirm(null)}>
-          <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
             <p>Delete this conversation?</p>
             <div className="confirm-actions">
-              <button className="confirm-cancel" onClick={() => setDeleteConfirm(null)}>Cancel</button>
-              <button className="confirm-delete" onClick={() => handleDelete(deleteConfirm)}>Delete</button>
+              <button className="confirm-cancel" onClick={() => setDeleteConfirm(null)}>
+                Cancel
+              </button>
+              <button className="confirm-delete" onClick={() => handleDelete(deleteConfirm)}>
+                Delete
+              </button>
             </div>
           </div>
         </div>

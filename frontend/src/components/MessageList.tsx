@@ -36,7 +36,9 @@ export const MessageList = memo(function MessageList() {
                 <div className="tool-calls">
                   {msg.tool_calls.map((tc, i) => {
                     const entries = Object.entries(tc.arguments);
-                    const argsDisplay = entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
+                    const argsDisplay = entries
+                      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+                      .join('\n');
                     return (
                       <details key={i} className="tool-call">
                         <summary className="tool-name">{tc.name}</summary>
@@ -74,7 +76,9 @@ export const MessageList = memo(function MessageList() {
                 <ReactMarkdown>{currentThinking}</ReactMarkdown>
               </div>
               <div className="typing-indicator">
-                <span></span><span></span><span></span>
+                <span></span>
+                <span></span>
+                <span></span>
               </div>
             </div>
           </div>

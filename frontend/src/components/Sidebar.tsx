@@ -22,9 +22,8 @@ export const Sidebar = memo(function Sidebar() {
   };
 
   return (
-    <>
+    <div className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
-      <div className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="sidebar-header">
         <h2>Echo AI</h2>
       </div>
@@ -71,7 +70,7 @@ export const Sidebar = memo(function Sidebar() {
           <div
             key={session.id}
             className={`session-item ${session.id === activeSessionId ? 'active' : ''}`}
-            onClick={() => selectSession(session.id)}
+            onClick={() => handleSelectSession(session.id)}
           >
             <span className="session-title">{session.title || 'New Chat'}</span>
             <button
@@ -100,6 +99,6 @@ export const Sidebar = memo(function Sidebar() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 });

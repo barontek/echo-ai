@@ -100,6 +100,6 @@ export const Sidebar = memo(function Sidebar() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 });

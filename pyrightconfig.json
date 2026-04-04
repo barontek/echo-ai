@@ -1,0 +1,16 @@
+{
+  "exclude": ["**/__pycache__", ".venv"],
+  "venvPath": ".",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": false,
+  "ignore": [
+    "src/agentframework/bootstrap.py",
+    "src/agentframework/core/agent.py",
+    "src/agentframework/logging_utils.py",
+    "src/agentframework/otel.py",
+    "src/agentframework/vector.py",
+    "src/agentframework/tui.py",
+    "src/agentframework/tools/web.py"
+  ]
+}

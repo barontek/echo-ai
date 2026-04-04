@@ -662,7 +662,7 @@ async def index():
 @app.get("/sentry-debug", tags=["Debug"])
 async def trigger_error():
     """Trigger a test error for Sentry verification."""
-    1 / 0
+    return {"result": 1 / 0}
 
 
 @app.get("/health", tags=["Health"])

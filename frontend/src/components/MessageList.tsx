@@ -46,8 +46,20 @@ export const MessageList = memo(function MessageList() {
                   })}
                 </div>
               )}
+              {msg.error && <div className="message-error">{msg.error}</div>}
             </div>
-            {msg.timestamp && <div className="message-time">{msg.timestamp}</div>}
+            <div className="message-footer">
+              {msg.timestamp && <div className="message-time">{msg.timestamp}</div>}
+              {msg.role === 'assistant' && msg.content && (
+                <button
+                  className="copy-button"
+                  onClick={() => navigator.clipboard.writeText(msg.content)}
+                  title="Copy"
+                >
+                  Copy
+                </button>
+              )}
+            </div>
           </div>
         </div>
       ))}
@@ -61,7 +73,9 @@ export const MessageList = memo(function MessageList() {
                 <span className="thinking-label">Thinking</span>
                 <ReactMarkdown>{currentThinking}</ReactMarkdown>
               </div>
-              <div className="cursor">|</div>
+              <div className="typing-indicator">
+                <span></span><span></span><span></span>
+              </div>
             </div>
           </div>
         </div>

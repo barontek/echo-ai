@@ -2,9 +2,32 @@ import { memo, useState, useEffect } from 'react';
 import { useChat } from '../context';
 
 export const Header = memo(function Header() {
-  const { currentModel, messages, isConnected } = useChat();
+  const { currentModel, messages, connectionStatus, sidebarOpen, setSidebarOpen } = useChat();
   const [logs, setLogs] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
+    if (saved) {
+      setTheme(saved);
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  }, []);
+
+  const statusText = {
+    connected: 'Connected',
+    connecting: 'Connecting...',
+    disconnected: 'Disconnected',
+    reconnecting: 'Reconnecting...'
+  }[connectionStatus];
 
   useEffect(() => {
     const originalLog = console.log;
@@ -37,9 +60,29 @@ export const Header = memo(function Header() {
     <>
       <div className="chat-header">
         <div className="header-left">
+          <button
+            className="menu-button"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            Menu
+          </button>
           <span className="model-badge">{currentModel}</span>
         </div>
         <div className="header-right">
+          <button
+            onClick={toggleTheme}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            {theme === 'dark' ? 'Light' : 'Dark'}
+          </button>
           <button
             onClick={() => setShowDebug(!showDebug)}
             style={{
@@ -55,8 +98,8 @@ export const Header = memo(function Header() {
             Debug
           </button>
           <div className="connection-status">
-            <span className={`status-dot ${isConnected ? '' : 'disconnected'}`}></span>
-            <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+            <span className={`status-dot ${connectionStatus === 'connected' ? '' : 'disconnected'}`}></span>
+            <span>{statusText}</span>
           </div>
           <span className="message-count">{messages.length > 0 ? `${messages.length} messages` : 'New chat'}</span>
         </div>

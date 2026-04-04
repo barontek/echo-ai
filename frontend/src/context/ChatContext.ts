@@ -1,5 +1,7 @@
 import { createContext, type Context } from 'react';
 
+export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
+
 export interface ChatContextValue {
   sessions: Array<{ id: string; title: string; created_at: string }>;
   activeSessionId: string | null;
@@ -12,11 +14,16 @@ export interface ChatContextValue {
     thinking?: string;
     has_tools?: boolean;
     tool_calls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+    error?: string;
   }>;
+  connectionStatus: ConnectionStatus;
   isConnected: boolean;
   isStreaming: boolean;
   currentThinking: string;
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
   sendMessage: (content: string) => void;
+  retryMessage: (index: number) => void;
   createSession: () => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;

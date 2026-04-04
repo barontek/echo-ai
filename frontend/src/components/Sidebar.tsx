@@ -2,7 +2,7 @@ import { memo, useState } from 'react';
 import { useChat } from '../context';
 
 export const Sidebar = memo(function Sidebar() {
-  const { sessions, activeSessionId, models, currentModel, selectSession, createSession, selectModel, deleteSession } = useChat();
+  const { sessions, activeSessionId, models, currentModel, selectSession, createSession, selectModel, deleteSession, sidebarOpen, setSidebarOpen } = useChat();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -16,8 +16,15 @@ export const Sidebar = memo(function Sidebar() {
     setDeleteConfirm(null);
   };
 
+  const handleSelectSession = (id: string) => {
+    selectSession(id);
+    setSidebarOpen(false);
+  };
+
   return (
-    <div className="sidebar">
+    <>
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+      <div className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="sidebar-header">
         <h2>Echo AI</h2>
       </div>

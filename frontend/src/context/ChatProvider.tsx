@@ -36,9 +36,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [currentModel, setCurrentModel] = useState('qwen3:4b-instruct');
   const [models, setModels] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatContextValue['messages']>([]);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [isConnected, setIsConnected] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentThinking, setCurrentThinking] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const isReadyRef = useRef(false);
@@ -59,12 +61,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         wsRef.current.close();
       }
 
+      setConnectionStatus('connecting');
+
       const ws = new WebSocket('/ws/chat');
       wsRef.current = ws;
 
       ws.onopen = () => {
         debugLog('ws:open');
         setIsConnected(true);
+        setConnectionStatus('connected');
         // Send config to initialize
         const configMsg = JSON.stringify({ provider: 'ollama', model: currentModel });
         debugLog('ws:send', { type: 'config', model: currentModel });
@@ -196,10 +201,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setIsConnected(false);
         wsRef.current = null;
         isReadyRef.current = false;
+        
+        // Auto-reconnect unless cleanly closed
+        if (e.code !== 1000) {
+          setConnectionStatus('reconnecting');
+          debugLog('ws:reconnect:scheduled');
+          setTimeout(() => {
+            if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+              connect();
+            }
+          }, 2000);
+        } else {
+          setConnectionStatus('disconnected');
+        }
       };
 
       ws.onerror = (error) => {
         console.error('[Chat] WebSocket error:', error);
+        // Schedule reconnect on error
+        setTimeout(() => {
+          if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+            connect();
+          }
+        }, 2000);
       };
     } catch (err) {
       console.error('[Chat] Failed to connect:', err);
@@ -328,16 +352,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     reconnect();
   }, [reconnect]);
 
+  const retryMessage = useCallback((index: number) => {
+    const msg = messages[index];
+    if (msg && msg.role === 'user') {
+      setMessages(prev => prev.map((m, i) => 
+        i === index ? { ...m, error: undefined } : m
+      ));
+      sendMessage(msg.content);
+    }
+  }, [messages, sendMessage]);
+
   const value: ChatContextValue = {
     sessions,
     activeSessionId,
     currentModel,
     models,
     messages,
+    connectionStatus,
     isConnected,
     isStreaming,
     currentThinking,
+    sidebarOpen,
+    setSidebarOpen,
     sendMessage,
+    retryMessage,
     createSession,
     selectSession,
     deleteSession,

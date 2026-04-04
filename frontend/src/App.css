@@ -337,7 +337,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 16px 28px;
-  background: rgba(24, 24, 31, 0.8);
+  background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
 }
@@ -796,7 +796,7 @@ body {
 /* Chat Input */
 .chat-input-container {
   padding: 20px 28px;
-  background: rgba(24, 24, 31, 0.9);
+  background: var(--bg-secondary);
   border-top: 1px solid var(--border);
   backdrop-filter: blur(10px);
 }

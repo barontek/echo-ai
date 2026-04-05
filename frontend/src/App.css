@@ -145,7 +145,7 @@ body {
   color: var(--text-primary);
   cursor: pointer;
   font-size: 13px;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
 }
 
 .model-button:hover {
@@ -170,7 +170,7 @@ body {
 .dropdown-arrow {
   font-size: 10px;
   color: var(--text-secondary);
-  transition: transform 0.2s;
+  transition: transform 0.3s;
 }
 
 .model-dropdown {
@@ -186,7 +186,7 @@ body {
   max-height: 220px;
   overflow-y: auto;
   box-shadow: var(--shadow-soft);
-  animation: dropdownFade 0.15s ease;
+  animation: dropdownFade 0.3s ease;
 }
 
 @keyframes dropdownFade {
@@ -209,7 +209,7 @@ body {
   text-align: left;
   cursor: pointer;
   font-size: 13px;
-  transition: background 0.15s;
+  transition: background 0.3s;
 }
 
 .model-option:hover {
@@ -232,7 +232,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -262,7 +262,7 @@ body {
   border-radius: 8px;
   color: var(--text-primary);
   font-size: 13px;
-  transition: all 0.2s;
+  transition: all 0.3s;
 }
 
 .search-input:focus {
@@ -289,7 +289,7 @@ body {
   margin: 4px 0;
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   border: 1px solid transparent;
 }
 
@@ -326,7 +326,7 @@ body {
   cursor: pointer;
   padding: 4px 8px;
   opacity: 0;
-  transition: all 0.2s;
+  transition: all 0.3s;
   border-radius: 6px;
 }
 
@@ -712,7 +712,7 @@ body {
   content: '>';
   font-size: 10px;
   color: var(--text-muted);
-  transition: transform 0.2s;
+  transition: transform 0.3s;
 }
 
 .tool-call[open] summary::before {
@@ -757,7 +757,7 @@ body {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: all 0.2s;
+  transition: all 0.3s;
 }
 
 .copy-button:hover {
@@ -790,7 +790,7 @@ body {
 }
 
 .typing-indicator span:nth-child(2) {
-  animation-delay: 0.2s;
+  animation-delay: 0.3s;
 }
 .typing-indicator span:nth-child(3) {
   animation-delay: 0.4s;
@@ -829,7 +829,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 12px 18px;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
@@ -870,7 +870,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1011,7 +1011,7 @@ body {
   color: var(--text-primary);
   cursor: pointer;
   font-size: 13px;
-  transition: all 0.2s;
+  transition: all 0.3s;
 }
 
 .confirm-cancel:hover {
@@ -1027,7 +1027,7 @@ body {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all 0.3s;
 }
 
 .confirm-delete:hover {

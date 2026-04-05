@@ -1,26 +1,20 @@
-import { memo, useState, useEffect, useSyncExternalStore } from 'react';
+import { memo, useState } from 'react';
 import { useChat } from '../context';
 
-function getTheme() {
-  return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
-}
-
-function subscribeTheme(callback: () => void) {
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'theme') callback();
-  });
-  return () => {};
+function getInitialTheme(): 'dark' | 'light' {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light' || saved === 'dark') return saved;
+  return 'dark';
 }
 
 export const Header = memo(function Header() {
-  const { currentModel, messages, connectionStatus, sidebarOpen, setSidebarOpen } = useChat();
-  const [logs, setLogs] = useState<string[]>([]);
+  const chat = useChat();
   const [showDebug, setShowDebug] = useState(false);
-
-  const theme = useSyncExternalStore(subscribeTheme, getTheme, () => 'dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
   };
@@ -30,47 +24,16 @@ export const Header = memo(function Header() {
     connecting: 'Connecting...',
     disconnected: 'Disconnected',
     reconnecting: 'Reconnecting...',
-  }[connectionStatus];
-
-  useEffect(() => {
-    const originalLog = console.log;
-    const originalError = console.error;
-    const logs: string[] = [];
-
-    console.log = (...args) => {
-      const msg = args
-        .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-        .join(' ');
-      logs.push(`[LOG] ${msg}`);
-      setLogs([...logs].slice(-50));
-      originalLog.apply(console, args);
-    };
-
-    console.error = (...args) => {
-      const msg = args
-        .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-        .join(' ');
-      logs.push(`[ERR] ${msg}`);
-      setLogs([...logs].slice(-50));
-      originalError.apply(console, args);
-    };
-
-    return () => {
-      console.log = originalLog;
-      console.error = originalError;
-    };
-  }, []);
-
-  const chat = useChat();
+  }[chat.connectionStatus];
 
   return (
     <>
       <div className="chat-header">
         <div className="header-left">
-          <button className="menu-button" onClick={() => setSidebarOpen(!sidebarOpen)}>
+          <button className="menu-button" onClick={() => chat.setSidebarOpen(!chat.sidebarOpen)}>
             Menu
           </button>
-          <span className="model-badge">{currentModel}</span>
+          <span className="model-badge">{chat.currentModel}</span>
         </div>
         <div className="header-right">
           <button
@@ -103,12 +66,12 @@ export const Header = memo(function Header() {
           </button>
           <div className="connection-status">
             <span
-              className={`status-dot ${connectionStatus === 'connected' ? '' : 'disconnected'}`}
+              className={`status-dot ${chat.connectionStatus === 'connected' ? '' : 'disconnected'}`}
             ></span>
             <span>{statusText}</span>
           </div>
           <span className="message-count">
-            {messages.length > 0 ? `${messages.length} messages` : 'New chat'}
+            {chat.messages.length > 0 ? `${chat.messages.length} messages` : 'New chat'}
           </span>
         </div>
       </div>
@@ -120,13 +83,13 @@ export const Header = memo(function Header() {
             right: '20px',
             width: '350px',
             maxHeight: '280px',
-            background: '#1a1a2e',
-            border: '1px solid #444',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
             borderRadius: '8px',
             padding: '12px',
             fontSize: '11px',
             fontFamily: 'monospace',
-            color: '#eee',
+            color: 'var(--text-primary)',
             zIndex: 9999,
             overflow: 'auto',
           }}
@@ -138,11 +101,11 @@ export const Header = memo(function Header() {
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#fff',
+                color: 'var(--text-primary)',
                 cursor: 'pointer',
               }}
             >
-              ✕
+              x
             </button>
           </div>
           <div style={{ marginBottom: '8px' }}>
@@ -161,35 +124,9 @@ export const Header = memo(function Header() {
               )}
             </pre>
           </div>
-          <div style={{ marginBottom: '8px' }}>
-            <strong>Messages:</strong>
-            {chat.messages.map((m, i) => (
-              <div
-                key={i}
-                style={{
-                  margin: '2px 0',
-                  padding: '2px',
-                  background: m.role === 'user' ? '#2d2d44' : '#1f1f35',
-                }}
-              >
-                {m.role}: {m.content.substring(0, 30)}...
-              </div>
-            ))}
-          </div>
           <div>
             <strong>Recent Logs:</strong>
-            {logs.slice(-10).map((log, i) => (
-              <div
-                key={i}
-                style={{
-                  margin: '2px 0',
-                  color: log.includes('[ERR]') ? '#ff6b6b' : '#888',
-                  fontSize: '9px',
-                }}
-              >
-                {log}
-              </div>
-            ))}
+            <div style={{ color: 'var(--text-muted)', fontSize: '9px' }}>Enable debug logging</div>
           </div>
         </div>
       )}

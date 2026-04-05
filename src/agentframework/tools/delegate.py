@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from ..agent import Agent
+from ..core import Agent
 from . import Tool, ToolResult
 
 
@@ -58,7 +58,7 @@ class DelegateTool(Tool):
             system_prompt += f"\n\n{sub_config.description}"
 
         # Create sub-agent instance
-        from ..agent import AgentConfig
+        from ..core import AgentConfig
 
         # Get provider from parent agent
         parent_llm = getattr(self.agent, "llm", None)

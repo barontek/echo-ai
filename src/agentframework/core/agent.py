@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -40,6 +41,7 @@ class AgentConfig:
     provider: str = "ollama"
     model: str = "qwen3:4b-instruct"
     temperature: float = 0.3
+    timeout: int = 60
     max_iterations: int = 50
     max_history_messages: int = 20
     max_context_messages: int = 50
@@ -141,7 +143,10 @@ class Agent:
                 self.config.tools.append(delegate_tool)
 
     async def run(self, user_input: str) -> str:
-        """Run the agent with user input and return the response."""
+        """Run the agent with user input and return the response.
+
+        Uses streaming internally for all models to ensure consistent behavior.
+        """
         if not self.messages:
             await self.load_persistent_memory()
 
@@ -149,14 +154,25 @@ class Agent:
 
         if self.session_manager:
             self._ensure_session()
-            self.session_manager.add_message("user", user_input)
+            self.session_manager.add_message(
+                "user", user_input, timestamp=datetime.now().strftime("%H:%M")
+            )
 
-        response, updated_messages = await self._run_loop(self.messages)
+        accumulated = []
+
+        def collect_chunk(chunk: str) -> None:
+            accumulated.append(chunk)
+
+        response, updated_messages = await self._run_loop_streaming(
+            self.messages, collect_chunk
+        )
 
         self.messages = updated_messages
 
         if self.session_manager:
-            self.session_manager.add_message("assistant", response)
+            self.session_manager.add_message(
+                "assistant", response, timestamp=datetime.now().strftime("%H:%M")
+            )
 
         return response
 
@@ -171,7 +187,9 @@ class Agent:
 
         if self.session_manager:
             self._ensure_session()
-            self.session_manager.add_message("user", user_input)
+            self.session_manager.add_message(
+                "user", user_input, timestamp=datetime.now().strftime("%H:%M")
+            )
 
         response, updated_messages = await self._run_loop_streaming(
             self.messages, on_chunk
@@ -180,7 +198,9 @@ class Agent:
         self.messages = updated_messages
 
         if self.session_manager:
-            self.session_manager.add_message("assistant", response)
+            self.session_manager.add_message(
+                "assistant", response, timestamp=datetime.now().strftime("%H:%M")
+            )
 
         return response
 
@@ -601,5 +621,6 @@ def create_agent(
         model=config.model,
         api_key=api_key,
         base_url=config.base_url,
+        timeout=config.timeout,
     )
     return Agent(config, provider, session_id=session_id)

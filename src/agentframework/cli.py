@@ -6,7 +6,7 @@ import sys
 from rich.console import Console
 from rich.markdown import Markdown
 
-from .agent import Agent
+from .core import Agent
 from .bootstrap import setup_agent
 from .client import (
     EchoClient,

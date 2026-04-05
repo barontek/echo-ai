@@ -39,22 +39,22 @@ run:
 	.venv/bin/python -m agentframework.cli $(ARGS)
 
 test:
-	PYTHONPATH=src .venv/bin/pytest --cov=src/agentframework --cov-report=term-missing tests/ -v
+	PYTHONPATH=src uv run pytest --cov=src/agentframework --cov-report=term-missing tests/ -v
 
 lint:
-	.venv/bin/ruff check src/
+	uv run ruff check src/ tests/
 
 typecheck:
-	.venv/bin/pyright src/
+	uv run pyright src/
 
 verify:
-	PYTHONPATH=src uv run pytest tests/ -q
+	uv run pytest tests/ -q
 	uv run ruff check src/ tests/
 	uv run pyright src/
 
 security:
-	.venv/bin/pip-audit || true
-	.venv/bin/bandit -r src/ || true
+	uv run pip-audit || true
+	uv run bandit -r src/ || true
 
 	python scripts/benchmarks/basic_benchmark.py --iterations 50
 

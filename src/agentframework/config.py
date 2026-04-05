@@ -26,6 +26,9 @@ class ModelConfig(BaseModel):
     temperature: float = Field(
         default=0.3, ge=0.0, le=2.0, description="Model temperature"
     )
+    timeout: int = Field(
+        default=60, ge=10, le=600, description="HTTP timeout in seconds"
+    )
 
 
 class ToolsBashConfig(BaseModel):

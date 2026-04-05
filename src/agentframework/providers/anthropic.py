@@ -3,6 +3,7 @@
 import os
 from typing import Any
 
+import httpx
 from anthropic import AsyncAnthropic
 from tenacity import (
     retry,
@@ -10,16 +11,17 @@ from tenacity import (
     wait_exponential,
 )
 
-from ..constants import DEFAULT_HTTP_TIMEOUT, DEFAULT_MAX_TOKENS
+from ..constants import DEFAULT_MAX_TOKENS
 from . import LLMProvider, LLMResponse, LLMToolCall
 
 
 class AnthropicProvider(LLMProvider):
     """Anthropic Claude provider."""
 
-    def __init__(self, model: str, api_key: str | None = None):
+    def __init__(self, model: str, api_key: str | None = None, timeout: int = 60):
         self.model = model
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.timeout = httpx.Timeout(timeout, connect=30.0)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -57,7 +59,7 @@ class AnthropicProvider(LLMProvider):
 
         async with AsyncAnthropic(
             api_key=self.api_key,
-            timeout=DEFAULT_HTTP_TIMEOUT,
+            timeout=self.timeout,
         ) as client:
             response = await client.messages.create(**params)
 
@@ -118,7 +120,7 @@ class AnthropicProvider(LLMProvider):
 
         async with AsyncAnthropic(
             api_key=self.api_key,
-            timeout=DEFAULT_HTTP_TIMEOUT,
+            timeout=self.timeout,
         ) as client:
             async with client.messages.stream(**params) as stream:
                 async for text in stream.text_stream:
@@ -154,7 +156,7 @@ class AnthropicProvider(LLMProvider):
 
         async with AsyncAnthropic(
             api_key=self.api_key,
-            timeout=DEFAULT_HTTP_TIMEOUT,
+            timeout=self.timeout,
         ) as client:
             instructor_client = instructor.from_anthropic(client)
 

@@ -3,7 +3,7 @@
 import pytest
 from dataclasses import dataclass
 
-from src.agentframework.agent import Agent, AgentConfig
+from src.agentframework.core import Agent, AgentConfig
 from src.agentframework.providers import LLMResponse, LLMToolCall
 from src.agentframework.tools import Tool, ToolResult
 from src.agentframework.callbacks import AgentCallback
@@ -34,6 +34,14 @@ class MockProvider:
             self.call_count += 1
             return response
         return LLMResponse(content="Mock response")
+
+    async def chat_streaming(
+        self, messages, tools=None, temperature=0.3, on_chunk=None
+    ):
+        response = await self.chat(messages, tools, temperature)
+        if on_chunk:
+            on_chunk(response.content)
+        return response
 
     async def extract_structured(self, messages, response_model, temperature=0.3):
         return response_model()

@@ -2,11 +2,13 @@ import pytest
 from pydantic import BaseModel, Field
 from unittest.mock import AsyncMock
 
-from src.agentframework.agent import AgentConfig, create_agent
+from src.agentframework.core import AgentConfig, create_agent
+
 
 class UserProfile(BaseModel):
     name: str = Field(description="The full name of the user.")
     age: int = Field(description="The age of the user in years.")
+
 
 @pytest.mark.asyncio
 async def test_agent_extract_data():
@@ -19,8 +21,7 @@ async def test_agent_extract_data():
     agent.llm.extract_structured.return_value = mock_response
 
     result = await agent.extract_data(
-        prompt="Hi, my name is Alice and I am 30 years old.",
-        response_model=UserProfile
+        prompt="Hi, my name is Alice and I am 30 years old.", response_model=UserProfile
     )
 
     assert isinstance(result, UserProfile)
@@ -31,6 +32,9 @@ async def test_agent_extract_data():
     agent.llm.extract_structured.assert_called_once()
     call_kwargs = agent.llm.extract_structured.call_args.kwargs
     assert call_kwargs["response_model"] == UserProfile
-    assert call_kwargs["messages"][0]["content"] == "Hi, my name is Alice and I am 30 years old."
+    assert (
+        call_kwargs["messages"][0]["content"]
+        == "Hi, my name is Alice and I am 30 years old."
+    )
 
     agent.close()

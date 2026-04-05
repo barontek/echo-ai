@@ -668,6 +668,46 @@ body {
   border-left: 3px solid var(--accent);
 }
 
+.thinking-collapsible {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 10px;
+  border-left: 3px solid var(--accent);
+}
+
+.thinking-collapsible summary {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  list-style: none;
+}
+
+.thinking-collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-collapsible summary::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 9px;
+  transition: transform 0.2s;
+}
+
+.thinking-collapsible[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.thinking-collapsible pre {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 .thinking-label {
   font-size: 11px;
   color: var(--accent);

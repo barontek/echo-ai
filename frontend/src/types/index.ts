@@ -29,7 +29,7 @@ export interface Config {
 }
 
 export interface StreamEvent {
-  type: 'ready' | 'message' | 'content' | 'thinking' | 'done' | 'error' | 'pong';
+  type: 'ready' | 'message' | 'content' | 'thinking' | 'done' | 'error' | 'pong' | 'session_start';
   content?: string;
   thinking?: string;
   has_tools?: boolean;

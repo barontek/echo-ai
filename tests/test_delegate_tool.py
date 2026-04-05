@@ -1,6 +1,7 @@
 import pytest
-from src.agentframework.agent import Agent, AgentConfig
+from src.agentframework.core import Agent, AgentConfig
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
+
 
 class MockProvider(LLMProvider):
     def __init__(self, responses):
@@ -20,17 +21,25 @@ class MockProvider(LLMProvider):
 
 @pytest.mark.asyncio
 async def test_delegate_tool_success():
-    provider = MockProvider([
-        # Main Agent Turn 1: Delegate
-        LLMResponse(
-            content="Delegating",
-            tool_calls=[LLMToolCall(id="call_1", name="delegate", arguments={"agent_name": "researcher", "task": "analyze"})]
-        ),
-        # Sub Agent Turn 1: Solves it
-        LLMResponse(content="Sub agent result."),
-        # Main Agent Turn 2: Done
-        LLMResponse(content="Final Response.")
-    ])
+    provider = MockProvider(
+        [
+            # Main Agent Turn 1: Delegate
+            LLMResponse(
+                content="Delegating",
+                tool_calls=[
+                    LLMToolCall(
+                        id="call_1",
+                        name="delegate",
+                        arguments={"agent_name": "researcher", "task": "analyze"},
+                    )
+                ],
+            ),
+            # Sub Agent Turn 1: Solves it
+            LLMResponse(content="Sub agent result."),
+            # Main Agent Turn 2: Done
+            LLMResponse(content="Final Response."),
+        ]
+    )
 
     agent = Agent(config=AgentConfig(session_enabled=False), llm_provider=provider)
     agent.register_sub_agent(name="researcher", description="Analyzes stuff")
@@ -48,15 +57,23 @@ async def test_delegate_tool_success():
 
 @pytest.mark.asyncio
 async def test_delegate_tool_missing_agent():
-    provider = MockProvider([
-        # Main Agent Turn 1: Delegate to unknown
-        LLMResponse(
-            content="Delegating",
-            tool_calls=[LLMToolCall(id="call_1", name="delegate", arguments={"agent_name": "unknown_agent", "task": "analyze"})]
-        ),
-        # Main Agent Turn 2: Done
-        LLMResponse(content="Final Response.")
-    ])
+    provider = MockProvider(
+        [
+            # Main Agent Turn 1: Delegate to unknown
+            LLMResponse(
+                content="Delegating",
+                tool_calls=[
+                    LLMToolCall(
+                        id="call_1",
+                        name="delegate",
+                        arguments={"agent_name": "unknown_agent", "task": "analyze"},
+                    )
+                ],
+            ),
+            # Main Agent Turn 2: Done
+            LLMResponse(content="Final Response."),
+        ]
+    )
 
     agent = Agent(config=AgentConfig(session_enabled=False), llm_provider=provider)
     # Register dummy to inject delegate tool

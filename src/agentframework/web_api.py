@@ -26,13 +26,14 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.agentframework.agent import Agent, AgentConfig, create_agent
+from src.agentframework.core import Agent, AgentConfig, create_agent
 from src.agentframework.config import get_safety_config, get_tools, load_config
 from src.agentframework.constants import THINKING_END, THINKING_START
 from src.agentframework.logging_utils import set_correlation_id
+from src.agentframework.router import SemanticRouter
 from src.agentframework.session import DBSessionModel
 from src.workflows import get_workflow, list_workflows
 
@@ -438,10 +439,18 @@ def load_session_data(session_id: str, state: AppState) -> dict[str, Any]:
     if active_agent and active_agent.session_manager:
         active_agent.load_session(session_id)
         state.current_session_id = session_id
-        state.message_history = filter_messages_for_ui(active_agent.messages)
-        title = None
+
+        # Get session creation time for fallback timestamps
+        session_created_at = None
         if active_agent.session_manager.current_session:
+            session_created_at = active_agent.session_manager.current_session.created_at
             title = active_agent.session_manager.current_session.title
+        else:
+            title = None
+
+        state.message_history = filter_messages_for_ui(
+            active_agent.messages, session_created_at=session_created_at
+        )
         return {
             "session_id": session_id,
             "title": title,
@@ -474,9 +483,16 @@ def delete_session_data(session_id: str, state: AppState) -> dict[str, Any]:
     return {"status": "ok"}
 
 
-def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
+def filter_messages_for_ui(
+    messages: list[Any], session_created_at: datetime | None = None
+) -> list[dict[str, Any]]:
     """Filter messages for UI rendering, removing raw tool/system noise."""
     filtered = []
+
+    # Default timestamp fallback based on session creation time
+    default_timestamp = (
+        session_created_at.strftime("%H:%M") if session_created_at else None
+    )
 
     for msg in messages:
         role = getattr(msg, "role", msg.get("role") if isinstance(msg, dict) else "")
@@ -530,6 +546,14 @@ def filter_messages_for_ui(messages: list[Any]) -> list[dict[str, Any]]:
             parts = content.split(THINKING_END, 1)
             thinking = parts[0].replace(THINKING_START, "").strip()
             display_content = parts[1].strip()
+
+        # Fallback timestamp if not present - use session creation time or current time
+        if not timestamp:
+            timestamp = (
+                default_timestamp
+                if default_timestamp
+                else datetime.now().strftime("%H:%M")
+            )
 
         msg_dict = {
             "role": role,
@@ -646,6 +670,7 @@ class WsConfigPayload(BaseModel):
 class WsMessagePayload(BaseModel):
     type: str | None = None
     content: str | None = None
+    session_id: str | None = None
 
 
 class WorkflowRunPayload(BaseModel):
@@ -1228,6 +1253,17 @@ async def websocket_chat(websocket: WebSocket):
         if not active_agent:
             return
 
+        # Ensure session exists and send session_start immediately
+        if active_agent.session_manager:
+            active_agent._ensure_session()
+            if active_agent.session_manager.current_session:
+                await websocket.send_json(
+                    {
+                        "type": "session_start",
+                        "session_id": active_agent.session_manager.current_session.id,
+                    }
+                )
+
         timestamp = datetime.now().strftime("%H:%M")
         state.message_history.append(
             {"role": "user", "content": prompt, "timestamp": timestamp}
@@ -1285,6 +1321,18 @@ async def websocket_chat(websocket: WebSocket):
 
         has_tools = False
         tool_calls_info = []
+
+        # Send session info immediately when AI starts responding
+        if (
+            active_agent.session_manager
+            and active_agent.session_manager.current_session
+        ):
+            await websocket.send_json(
+                {
+                    "type": "session_start",
+                    "session_id": active_agent.session_manager.current_session.id,
+                }
+            )
 
         try:
             response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
@@ -1438,6 +1486,10 @@ async def websocket_chat(websocket: WebSocket):
                 if not prompt:
                     continue
 
+                # Load the session if session_id is provided
+                if message.session_id and active_agent.session_manager:
+                    active_agent.load_session(message.session_id)
+
                 if streaming_task and not streaming_task.done():
                     streaming_task.cancel()
                     await asyncio.sleep(0.1)  # Small delay to ensure cleanup
@@ -1477,6 +1529,105 @@ async def review_document():
         if line.startswith("## "):
             sections.append(line.removeprefix("## ").strip())
     return {"sections": sections}
+
+
+class ChatRequest(BaseModel):
+    session_id: str | None = None
+    prompt: str
+    provider: str = "ollama"
+    model: str = "qwen3:4b-instruct"
+    api_key: str | None = None
+    stream: bool = False
+
+
+class RouteRequest(BaseModel):
+    prompt: str
+
+
+def get_or_create_agent(req: ChatRequest) -> Agent:
+    """Retrieve an existing agent for a session or create a new one."""
+    global _state  # noqa: F821 - global statement
+    if _state is None:
+        _state = AppState()
+    if _state.agent is None:
+        _state.agent = _create_runtime_agent(
+            provider=req.provider, model=req.model, api_key=req.api_key
+        )
+
+    agent = _state.agent
+    if req.session_id and agent.session_manager:
+        existing = agent.session_manager.load_session(req.session_id)
+        if not existing:
+            agent.session_manager.create_session(req.session_id)
+
+    return agent
+
+
+@app.post("/chat", tags=["Chat"])
+async def handle_chat(request: ChatRequest):
+    """Synchronous chat endpoint."""
+    try:
+        agent = get_or_create_agent(request)
+        response = await agent.run(request.prompt)
+        session_id = None
+        if agent.session_manager and agent.session_manager.current_session:
+            session_id = agent.session_manager.current_session.id
+        return {
+            "session_id": session_id,
+            "response": response,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/route", tags=["Routing"])
+async def route_intent(request: RouteRequest):
+    """Determine the optimal sub-agent for a user prompt via Semantic Routing."""
+    try:
+        state = get_state()
+        if state.agent is None:
+            raise HTTPException(status_code=503, detail="Agent not initialized")
+        router = SemanticRouter(state.agent)
+        target = await router.route(request.prompt)
+        return {"target_agent": target}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stream", tags=["Chat"])
+async def stream_chat(
+    prompt: str,
+    session_id: str | None = None,
+    provider: str = "ollama",
+    model: str = "qwen3:4b-instruct",
+):
+    """Server-Sent Events (SSE) streaming endpoint."""
+    req = ChatRequest(
+        prompt=prompt, session_id=session_id, provider=provider, model=model
+    )
+    agent = get_or_create_agent(req)
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    def on_chunk(chunk: str):
+        queue.put_nowait(chunk)
+
+    async def chat_runner():
+        try:
+            await agent.run_streaming(prompt, on_chunk=on_chunk)
+        finally:
+            await queue.put(None)
+
+    asyncio.create_task(chat_runner())
+
+    async def event_generator():
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 def run_server(host: str = "127.0.0.1", port: int = DEFAULT_WEB_PORT):

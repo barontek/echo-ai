@@ -3,6 +3,7 @@
 import os
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 from tenacity import (
     retry,
@@ -11,7 +12,6 @@ from tenacity import (
     retry_if_exception,
 )
 
-from ..constants import DEFAULT_HTTP_TIMEOUT
 from . import LLMProvider, LLMResponse, LLMToolCall
 
 
@@ -37,9 +37,10 @@ def _is_retryable_exception(exception: BaseException) -> bool:
 class OpenAIProvider(LLMProvider):
     """OpenAI provider."""
 
-    def __init__(self, model: str, api_key: str | None = None):
+    def __init__(self, model: str, api_key: str | None = None, timeout: int = 60):
         self.model = model
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.timeout = httpx.Timeout(timeout, connect=30.0)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -65,7 +66,7 @@ class OpenAIProvider(LLMProvider):
 
         async with AsyncOpenAI(
             api_key=self.api_key,
-            timeout=DEFAULT_HTTP_TIMEOUT,
+            timeout=self.timeout,
         ) as client:
             response = await client.chat.completions.create(**params)
 
@@ -114,7 +115,7 @@ class OpenAIProvider(LLMProvider):
 
         async with AsyncOpenAI(
             api_key=self.api_key,
-            timeout=DEFAULT_HTTP_TIMEOUT,
+            timeout=self.timeout,
         ) as client:
             response = await client.chat.completions.create(**params)
 
@@ -178,7 +179,7 @@ class OpenAIProvider(LLMProvider):
 
         async with AsyncOpenAI(
             api_key=self.api_key,
-            timeout=DEFAULT_HTTP_TIMEOUT,
+            timeout=self.timeout,
         ) as client:
             instructor_client = instructor.from_openai(client)
             return await instructor_client.chat.completions.create(

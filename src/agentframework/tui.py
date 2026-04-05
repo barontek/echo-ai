@@ -7,7 +7,8 @@ from textual.reactive import reactive
 
 from typing import Any
 from .callbacks import AgentCallback
-from .agent import Agent, AgentConfig, create_agent
+from .core import Agent, AgentConfig, create_agent
+
 
 class TuiCallback(AgentCallback):
     """Bridge between the Agent execution loop and the Textual UI logging widgets."""
@@ -16,16 +17,26 @@ class TuiCallback(AgentCallback):
         self.app = app
 
     def on_run_start(self, run_id: str, prompt: str) -> None:
-        self.app.call_from_thread(self.app.log_panel.write_line, f"[bold green]Starting Run:[/bold green] {run_id}")
-        self.app.call_from_thread(self.app.log_panel.write_line, f"[italic]{prompt}[/italic]")
+        self.app.call_from_thread(
+            self.app.log_panel.write_line,
+            f"[bold green]Starting Run:[/bold green] {run_id}",
+        )
+        self.app.call_from_thread(
+            self.app.log_panel.write_line, f"[italic]{prompt}[/italic]"
+        )
         self.app.call_from_thread(self.app.update_status, "Running...")
 
     def on_run_end(self, run_id: str, response: str) -> None:
-        self.app.call_from_thread(self.app.log_panel.write_line, f"[bold blue]Run Completed:[/bold blue] {run_id}")
+        self.app.call_from_thread(
+            self.app.log_panel.write_line,
+            f"[bold blue]Run Completed:[/bold blue] {run_id}",
+        )
         self.app.call_from_thread(self.app.update_status, "Idle")
 
     def on_run_error(self, run_id: str, error: Exception) -> None:
-        self.app.call_from_thread(self.app.log_panel.write_line, f"[bold red]Run Error:[/bold red] {error}")
+        self.app.call_from_thread(
+            self.app.log_panel.write_line, f"[bold red]Run Error:[/bold red] {error}"
+        )
         self.app.call_from_thread(self.app.update_status, "Error")
 
     def on_llm_start(self, run_id: str, messages: list[dict[str, Any]]) -> None:
@@ -34,14 +45,22 @@ class TuiCallback(AgentCallback):
     def on_llm_end(self, run_id: str, response: Any) -> None:
         pass
 
-    def on_tool_start(self, run_id: str, tool_name: str, tool_kwargs: dict[str, Any]) -> None:
-        self.app.call_from_thread(self.app.tools_panel.write_line, f"Executing: {tool_name}")
+    def on_tool_start(
+        self, run_id: str, tool_name: str, tool_kwargs: dict[str, Any]
+    ) -> None:
+        self.app.call_from_thread(
+            self.app.tools_panel.write_line, f"Executing: {tool_name}"
+        )
 
     def on_tool_end(self, run_id: str, tool_name: str, result: str) -> None:
-        self.app.call_from_thread(self.app.tools_panel.write_line, f"Completed: {tool_name}")
+        self.app.call_from_thread(
+            self.app.tools_panel.write_line, f"Completed: {tool_name}"
+        )
 
     def on_tool_error(self, run_id: str, tool_name: str, error: str) -> None:
-        self.app.call_from_thread(self.app.tools_panel.write_line, f"Failed: {tool_name} - {error}")
+        self.app.call_from_thread(
+            self.app.tools_panel.write_line, f"Failed: {tool_name} - {error}"
+        )
 
 
 class AgentDashboard(App):
@@ -113,18 +132,29 @@ class AgentDashboard(App):
         if message.value:
             user_input = message.value
             message.input.value = ""
-            self.log_panel.write_line(f"[bold magenta]User:[/bold magenta] {user_input}")
+            self.log_panel.write_line(
+                f"[bold magenta]User:[/bold magenta] {user_input}"
+            )
 
             # Spin off the agent run to a background task so UI doesn't freeze
             self.run_worker(self._run_agent(user_input), exclusive=True)
 
     async def _run_agent(self, user_input: str) -> None:
         try:
-            from src.agentframework.client import EchoClient, ContentEvent, ThinkingEvent, CommandResultEvent, ErrorEvent
+            from src.agentframework.client import (
+                EchoClient,
+                ContentEvent,
+                ThinkingEvent,
+                CommandResultEvent,
+                ErrorEvent,
+            )
+
             client = EchoClient(self.agent)
 
             # Use call_from_thread to write incrementally
-            self.call_from_thread(self.log_panel.write_line, "[bold cyan]Agent is typing...[/bold cyan]")
+            self.call_from_thread(
+                self.log_panel.write_line, "[bold cyan]Agent is typing...[/bold cyan]"
+            )
 
             current_line = ""
             async for event in client.stream_chat(user_input):
@@ -140,15 +170,24 @@ class AgentDashboard(App):
                     # We can log thinking process directly
                     pass
                 elif isinstance(event, CommandResultEvent):
-                    self.call_from_thread(self.log_panel.write_line, f"[yellow]System:[/yellow] {event.result}")
+                    self.call_from_thread(
+                        self.log_panel.write_line,
+                        f"[yellow]System:[/yellow] {event.result}",
+                    )
                 elif isinstance(event, ErrorEvent):
-                    self.call_from_thread(self.log_panel.write_line, f"[bold red]Error:[/bold red] {event.error}")
+                    self.call_from_thread(
+                        self.log_panel.write_line,
+                        f"[bold red]Error:[/bold red] {event.error}",
+                    )
 
             if current_line:
                 self.call_from_thread(self.log_panel.write_line, current_line)
 
         except Exception as e:
-            self.call_from_thread(self.log_panel.write_line, f"[bold red]System Error:[/bold red] {str(e)}")
+            self.call_from_thread(
+                self.log_panel.write_line,
+                f"[bold red]System Error:[/bold red] {str(e)}",
+            )
 
 
 def run_dashboard():

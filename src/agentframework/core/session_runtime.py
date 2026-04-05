@@ -51,14 +51,16 @@ def serialize_messages(messages: list[Message]) -> list[dict]:
             "tool_name": m.tool_name,
             "tool_arguments": m.tool_arguments,
             "error_category": m.error_category,
+            "timestamp": getattr(m, "timestamp", None),
         }
         for m in messages
     ]
 
 
 def deserialize_messages(messages: list[dict]) -> list[Message]:
-    return [
-        Message(
+    result = []
+    for m in messages:
+        msg = Message(
             role=m["role"],
             content=m["content"],
             tool_calls=m.get("tool_calls"),
@@ -67,5 +69,7 @@ def deserialize_messages(messages: list[dict]) -> list[Message]:
             tool_arguments=m.get("tool_arguments"),
             error_category=m.get("error_category"),
         )
-        for m in messages
-    ]
+        if "timestamp" in m:
+            msg.timestamp = m["timestamp"]
+        result.append(msg)
+    return result

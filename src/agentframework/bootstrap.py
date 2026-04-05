@@ -5,7 +5,7 @@ import sys
 
 from rich.console import Console
 
-from .agent import Agent, AgentConfig, create_agent
+from .core import Agent, AgentConfig, create_agent
 from .config import (
     find_config_path,
     get_safety_config,

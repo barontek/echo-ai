@@ -6,7 +6,7 @@ import sys
 from rich.console import Console
 
 from .client import EchoClient, ContentEvent, ThinkingEvent, ErrorEvent
-from .agent import Agent
+from .core import Agent
 from .bootstrap import setup_agent
 from .chat_commands import normalize_command, execute_command
 from .chat_render import print_welcome, strip_ansi

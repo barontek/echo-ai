@@ -5,8 +5,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
 
-from src.agentframework.agent import Message
-from src.agentframework.memory import MemoryManager
+from src.agentframework.conversation import Message
+from src.agentframework.core import MemoryManager
 from src.agentframework.tools.memory import MemoryTool
 
 
@@ -43,9 +43,7 @@ class TestMemoryTool:
     @pytest.mark.asyncio
     async def test_save_fact_with_category(self, tool):
         result = await tool.execute(
-            action="save_fact",
-            query="I prefer dark mode",
-            category="preference"
+            action="save_fact", query="I prefer dark mode", category="preference"
         )
         assert result.error is None
 
@@ -123,10 +121,7 @@ class TestMemoryToolEdgeCases:
 
     @pytest.mark.asyncio
     async def test_unicode_content(self, tool):
-        result = await tool.execute(
-            action="save_fact",
-            query="我的名字是张三"
-        )
+        result = await tool.execute(action="save_fact", query="我的名字是张三")
         assert result.error is None
 
         result = await tool.execute(action="recall_fact", query="名字")
@@ -136,8 +131,7 @@ class TestMemoryToolEdgeCases:
     @pytest.mark.asyncio
     async def test_special_characters(self, tool):
         result = await tool.execute(
-            action="save_fact",
-            query="Email: test@example.com | Phone: 555-1234"
+            action="save_fact", query="Email: test@example.com | Phone: 555-1234"
         )
         assert result.error is None
 
@@ -176,8 +170,12 @@ class TestMemoryPersistence:
 
     @pytest.mark.asyncio
     async def test_list_facts_all(self, tool):
-        await tool.execute(action="save_fact", query="I like coffee", category="preference")
-        await tool.execute(action="save_fact", query="My name is Alice", category="personal")
+        await tool.execute(
+            action="save_fact", query="I like coffee", category="preference"
+        )
+        await tool.execute(
+            action="save_fact", query="My name is Alice", category="personal"
+        )
         result = await tool.execute(action="list_facts", query="")
         assert result.error is None
         assert "I like coffee" in result.content
@@ -185,9 +183,15 @@ class TestMemoryPersistence:
 
     @pytest.mark.asyncio
     async def test_list_facts_category_filter(self, tool):
-        await tool.execute(action="save_fact", query="I like coffee", category="preference")
-        await tool.execute(action="save_fact", query="My name is Alice", category="personal")
-        result = await tool.execute(action="list_facts", category="preference", query="")
+        await tool.execute(
+            action="save_fact", query="I like coffee", category="preference"
+        )
+        await tool.execute(
+            action="save_fact", query="My name is Alice", category="personal"
+        )
+        result = await tool.execute(
+            action="list_facts", category="preference", query=""
+        )
         assert result.error is None
         assert "I like coffee" in result.content
         assert "My name is Alice" not in result.content
@@ -198,8 +202,12 @@ class TestMemoryPersistence:
 
     @pytest.mark.asyncio
     async def test_load_memories_returns_all(self, tool):
-        await tool.execute(action="save_fact", query="My name is Bob", category="personal")
-        await tool.execute(action="save_fact", query="I prefer dark mode", category="preference")
+        await tool.execute(
+            action="save_fact", query="My name is Bob", category="personal"
+        )
+        await tool.execute(
+            action="save_fact", query="I prefer dark mode", category="preference"
+        )
         result = tool.load_memories()
         assert "My name is Bob" in result
         assert "I prefer dark mode" in result
@@ -208,8 +216,12 @@ class TestMemoryPersistence:
 
     @pytest.mark.asyncio
     async def test_load_memories_category_filter(self, tool):
-        await tool.execute(action="save_fact", query="My name is Bob", category="personal")
-        await tool.execute(action="save_fact", query="I prefer dark mode", category="preference")
+        await tool.execute(
+            action="save_fact", query="My name is Bob", category="personal"
+        )
+        await tool.execute(
+            action="save_fact", query="I prefer dark mode", category="preference"
+        )
         result = tool.load_memories(categories=["personal"])
         assert "My name is Bob" in result
         assert "I prefer dark mode" not in result
@@ -226,6 +238,7 @@ class TestMemoryDeletion:
     @pytest.fixture
     def tool(self, temp_db):
         from src.agentframework.safety import SafetyConfig
+
         safety = SafetyConfig(approval_callback=lambda tool, details: True)
         return MemoryTool(db_path=temp_db, safety_config=safety)
 
@@ -272,7 +285,9 @@ class TestMemoryDeletion:
     async def test_clear_facts_by_category(self, tool):
         await tool.execute(action="save_fact", query="pref A", category="preference")
         await tool.execute(action="save_fact", query="personal A", category="personal")
-        result = await tool.execute(action="clear_facts", category="preference", query="")
+        result = await tool.execute(
+            action="clear_facts", category="preference", query=""
+        )
         assert result.error is None
         assert "preference" in result.content
         # personal memory should still exist
@@ -289,6 +304,7 @@ class TestMemoryDeletion:
     @pytest.mark.asyncio
     async def test_delete_denied_when_user_rejects(self, temp_db):
         from src.agentframework.safety import SafetyConfig
+
         safety = SafetyConfig(approval_callback=lambda tool, details: False)
         tool = MemoryTool(db_path=temp_db, safety_config=safety)
         await tool.execute(action="save_fact", query="secret info")
@@ -344,11 +360,16 @@ class TestMemoryManagerSummarization:
         result = await manager.summarize_if_needed(messages, mock_llm)
         assert len(result) == 6
         assert mock_llm.chat.called
-        assert mock_session_manager.current_session.metadata["summary"] == "Compact summary"
+        assert (
+            mock_session_manager.current_session.metadata["summary"]
+            == "Compact summary"
+        )
         assert mock_session_manager.save_session.called
 
     @pytest.mark.asyncio
-    async def test_summarize_with_existing_summary(self, mock_session_manager, mock_llm):
+    async def test_summarize_with_existing_summary(
+        self, mock_session_manager, mock_llm
+    ):
         manager = MemoryManager(mock_session_manager)
         mock_session_manager.current_session.metadata["summary"] = "Old summary"
         messages = [Message(role="user", content=f"msg {i}") for i in range(30)]

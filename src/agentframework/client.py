@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import AsyncGenerator
 
-from .agent import Agent
+from .core import Agent
 from .chat_commands import normalize_command
 from .constants import THINKING_START, THINKING_END
 

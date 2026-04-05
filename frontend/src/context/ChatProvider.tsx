@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import { ChatContext, type ChatContextValue } from './ChatContext';
+import { ChatContext, type ChatContextValue, type ConnectionStatus } from './ChatContext';
 import { api } from '../api/client';
 import type { StreamEvent } from '../types';
 
@@ -102,6 +102,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               }
               break;
 
+            case 'session_start':
+              // AI has started responding - refresh session list
+              if (data.session_id) {
+                setActiveSessionId(data.session_id);
+                api.getSessions().then(setSessions).catch(console.error);
+              }
+              break;
+
             case 'message':
               debugLog('message:user', data.content?.substring(0, 30));
               setMessages((prev) => {
@@ -129,6 +137,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               setIsStreaming(true);
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
+                // If last message is from assistant (created by 'thinking'), update it
                 if (last?.role === 'assistant') {
                   return [...prev.slice(0, -1), { ...last, content: data.content || '' }];
                 }
@@ -139,12 +148,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             case 'thinking':
               debugLog('message:thinking', data.content?.substring(0, 30));
               setIsStreaming(true);
+              // Only set currentThinking for potential UI use, but rely on messages array for display
               setCurrentThinking(data.content || '');
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
+                  // Update existing assistant message with thinking
                   return [...prev.slice(0, -1), { ...last, thinking: data.content }];
                 }
+                // Create new assistant message with thinking
                 return [...prev, { role: 'assistant', content: '', thinking: data.content }];
               });
               break;
@@ -192,9 +204,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               if (data.session_id) {
                 setActiveSessionId(data.session_id);
               }
+              // Always refresh session list after chat completes
+              api.getSessions().then(setSessions).catch(console.error);
               if (data.title) {
                 debugLog('title:generated', data.title);
-                api.getSessions().then(setSessions).catch(console.error);
               }
               break;
 
@@ -266,27 +279,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const timestamp = new Date().toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
+        hour12: false,
       });
       setMessages((prev) => [...prev, { role: 'user', content, timestamp }]);
-
-      const msg = JSON.stringify({ type: 'message', content });
 
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) {
         debugLog('ws:send:message', content.substring(0, 30));
-        ws.send(msg);
+        // Include session_id if we're in an active session
+        const payload = activeSessionId
+          ? { type: 'message', content, session_id: activeSessionId }
+          : { type: 'message', content };
+        ws.send(JSON.stringify(payload));
         setIsStreaming(true);
         isReadyRef.current = false;
       } else {
         debugLog('ws:not-connected', { readyState: ws?.readyState });
-        messageQueueRef.current.push(msg);
+        // Include session_id in queued message too
+        const payload = activeSessionId
+          ? { type: 'message', content, session_id: activeSessionId }
+          : { type: 'message', content };
+        messageQueueRef.current.push(JSON.stringify(payload));
         if (!ws || ws.readyState === WebSocket.CLOSED) {
           debugLog('ws:reconnect-needed');
           connect();
         }
       }
     },
-    [connect]
+    [connect, activeSessionId]
   );
 
   const reconnect = useCallback(() => {

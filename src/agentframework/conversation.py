@@ -48,6 +48,7 @@ class Message:
     tool_name: str | None = None
     tool_arguments: dict | None = None
     error_category: str | None = None
+    timestamp: str | None = None
 
 
 def sanitize_json(json_str: str) -> str:

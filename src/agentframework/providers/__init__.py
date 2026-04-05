@@ -99,6 +99,7 @@ def get_provider(
     model: str,
     api_key: str | None = None,
     base_url: str | None = None,
+    timeout: int = 60,
 ) -> LLMProvider:
     """Get an LLM provider by name."""
     import os
@@ -110,7 +111,7 @@ def get_provider(
             )
         from .anthropic import AnthropicProvider
 
-        return AnthropicProvider(model=model, api_key=api_key)
+        return AnthropicProvider(model=model, api_key=api_key, timeout=timeout)
     elif name == "openai":
         if not (api_key or os.getenv("OPENAI_API_KEY")):
             raise ValueError(
@@ -118,12 +119,15 @@ def get_provider(
             )
         from .openai import OpenAIProvider
 
-        return OpenAIProvider(model=model, api_key=api_key)
+        return OpenAIProvider(model=model, api_key=api_key, timeout=timeout)
     elif name == "ollama":
         from .ollama import OllamaProvider
 
         return OllamaProvider(
-            model=model, base_url=base_url or "http://localhost:11434", api_key=api_key
+            model=model,
+            base_url=base_url or "http://localhost:11434",
+            api_key=api_key,
+            timeout=timeout,
         )
     else:
         raise ValueError(f"Unknown provider: {name}")

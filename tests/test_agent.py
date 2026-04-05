@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.agentframework.agent import Agent, AgentConfig
+from src.agentframework.core import Agent, AgentConfig
 from src.agentframework.tools import Tool, ToolResult
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from pydantic import BaseModel
@@ -261,7 +261,7 @@ class TestSanitizeJsonIntegration:
             name="mock",
             arguments={"command": "test", "count": 1},
         )
-        tool_call.arguments = "```json\n{\"command\": \"test\", \"count\": 1}\n```"  # type: ignore[assignment]
+        tool_call.arguments = '```json\n{"command": "test", "count": 1}\n```'  # type: ignore[assignment]
 
         # The sanitization happens inside _execute_tool when parsing JSON
         # This test verifies the flow works end-to-end
@@ -290,6 +290,7 @@ class TestAgentConfig:
 # E2E tests (from test_agent_e2e.py)
 # ---------------------------------------------------------------------------
 
+
 class MockE2EProvider(LLMProvider):
     def __init__(self, responses: list[LLMResponse]):
         self.responses = responses
@@ -299,7 +300,9 @@ class MockE2EProvider(LLMProvider):
     async def extract_structured(self, messages, response_model, temperature=0.3):
         return None
 
-    async def chat(self, messages: list[dict], tools: list | None = None, temperature: float = 0.3) -> LLMResponse:
+    async def chat(
+        self, messages: list[dict], tools: list | None = None, temperature: float = 0.3
+    ) -> LLMResponse:
         self.messages_received.append(messages)
         if self.call_count < len(self.responses):
             resp = self.responses[self.call_count]
@@ -308,7 +311,11 @@ class MockE2EProvider(LLMProvider):
         return LLMResponse(content="Fallback response")
 
     async def chat_streaming(
-        self, messages: list[dict], tools: list | None = None, temperature: float = 0.3, on_chunk=None
+        self,
+        messages: list[dict],
+        tools: list | None = None,
+        temperature: float = 0.3,
+        on_chunk=None,
     ) -> LLMResponse:
         resp = await self.chat(messages, tools, temperature)
         if on_chunk and resp.content:
@@ -321,10 +328,13 @@ class CalcParams(BaseModel):
     a: int
     b: int
 
+
 class CalcTool(Tool):
     parameters_model = CalcParams
+
     def __init__(self):
         super().__init__(name="calc", description="add two numbers")
+
     async def execute(self, a: int, b: int, **kwargs) -> ToolResult:
         return ToolResult(content=str(a + b))
 
@@ -332,13 +342,17 @@ class CalcTool(Tool):
 class TestAgentE2E:
     @pytest.mark.asyncio
     async def test_agent_run_loop_e2e(self):
-        provider = MockE2EProvider([
-            LLMResponse(
-                content="Let me calculate that.",
-                tool_calls=[LLMToolCall(id="1", name="calc", arguments={"a": 5, "b": 7})]
-            ),
-            LLMResponse(content="The answer is 12.")
-        ])
+        provider = MockE2EProvider(
+            [
+                LLMResponse(
+                    content="Let me calculate that.",
+                    tool_calls=[
+                        LLMToolCall(id="1", name="calc", arguments={"a": 5, "b": 7})
+                    ],
+                ),
+                LLMResponse(content="The answer is 12."),
+            ]
+        )
         config = AgentConfig(tools=[CalcTool()], session_enabled=False)
         agent = Agent(config=config, llm_provider=provider)
         response = await agent.run("What is 5 + 7?")
@@ -351,13 +365,20 @@ class TestAgentE2E:
 
     @pytest.mark.asyncio
     async def test_agent_max_iterations(self):
-        provider = MockE2EProvider([
-            LLMResponse(
-                content="",
-                tool_calls=[LLMToolCall(id="1", name="calc", arguments={"a": 1, "b": 1})]
-            ) for _ in range(10)
-        ])
-        config = AgentConfig(tools=[CalcTool()], session_enabled=False, max_iterations=3)
+        provider = MockE2EProvider(
+            [
+                LLMResponse(
+                    content="",
+                    tool_calls=[
+                        LLMToolCall(id="1", name="calc", arguments={"a": 1, "b": 1})
+                    ],
+                )
+                for _ in range(10)
+            ]
+        )
+        config = AgentConfig(
+            tools=[CalcTool()], session_enabled=False, max_iterations=3
+        )
         agent = Agent(config=config, llm_provider=provider)
         response = await agent.run("Do math forever")
         assert "Max iterations reached" in response
@@ -366,18 +387,24 @@ class TestAgentE2E:
 
     @pytest.mark.asyncio
     async def test_agent_run_streaming_e2e(self):
-        provider = MockE2EProvider([
-            LLMResponse(
-                content="Let me calculate that.",
-                tool_calls=[LLMToolCall(id="1", name="calc", arguments={"a": 10, "b": 20})]
-            ),
-            LLMResponse(content="The answer is 30.")
-        ])
+        provider = MockE2EProvider(
+            [
+                LLMResponse(
+                    content="Let me calculate that.",
+                    tool_calls=[
+                        LLMToolCall(id="1", name="calc", arguments={"a": 10, "b": 20})
+                    ],
+                ),
+                LLMResponse(content="The answer is 30."),
+            ]
+        )
         config = AgentConfig(tools=[CalcTool()], session_enabled=False)
         agent = Agent(config=config, llm_provider=provider)
         chunks = []
+
         def on_chunk(chunk: str):
             chunks.append(chunk.strip())
+
         response = await agent.run_streaming("10 + 20?", on_chunk=on_chunk)
         assert response == "The answer is 30."
         assert "answer" in chunks
@@ -389,9 +416,11 @@ class TestAgentE2E:
 # Integration tests (from test_integration_agent_flow.py)
 # ---------------------------------------------------------------------------
 
+
 class EchoTool(Tool):
     def __init__(self):
         super().__init__(name="echo_tool", description="echo")
+
     async def execute(self, text: str = "", **kwargs):
         return ToolResult(content=f"echo:{text}")
 
@@ -400,8 +429,10 @@ class SequenceProvider(LLMProvider):
     def __init__(self, responses: list[LLMResponse]):
         self.responses = responses
         self.call_count = 0
+
     async def extract_structured(self, messages, response_model, temperature=0.3):
         return None
+
     async def chat(self, messages, tools=None, temperature=0.3):
         if self.call_count < len(self.responses):
             r = self.responses[self.call_count]
@@ -413,21 +444,42 @@ class SequenceProvider(LLMProvider):
 class TestAgentIntegration:
     def test_tool_call_then_final_response_flow(self):
         import asyncio
-        provider = SequenceProvider([
-            LLMResponse(content="", tool_calls=[LLMToolCall(id="1", name="echo_tool", arguments={"text": "hello"})]),
-            LLMResponse(content="Final summary"),
-        ])
+
+        provider = SequenceProvider(
+            [
+                LLMResponse(
+                    content="",
+                    tool_calls=[
+                        LLMToolCall(
+                            id="1", name="echo_tool", arguments={"text": "hello"}
+                        )
+                    ],
+                ),
+                LLMResponse(content="Final summary"),
+            ]
+        )
         agent = Agent(AgentConfig(tools=[EchoTool()], session_enabled=False), provider)
         out = asyncio.run(agent.run("do thing"))
         assert out == "Final summary"
-        assert any(m.role == "tool" and "echo:hello" in m.content for m in agent.messages)
+        assert any(
+            m.role == "tool" and "echo:hello" in m.content for m in agent.messages
+        )
         agent.close()
 
     def test_context_summarization_path_runs_when_budget_small(self):
         import asyncio
-        from src.agentframework.agent import Message
+        from src.agentframework.conversation import Message
+
         provider = SequenceProvider([LLMResponse(content="ok")])
-        agent = Agent(AgentConfig(tools=[], session_enabled=False, max_context_chars=20, max_context_messages=10), provider)
+        agent = Agent(
+            AgentConfig(
+                tools=[],
+                session_enabled=False,
+                max_context_chars=20,
+                max_context_messages=10,
+            ),
+            provider,
+        )
         for i in range(30):
             agent.messages.append(Message(role="user", content=f"message {i} " * 20))
         prepared = asyncio.run(agent._prepare_messages(agent.messages))
@@ -437,7 +489,10 @@ class TestAgentIntegration:
     def test_session_save_load_and_undo_redo(self, tmp_path):
         provider = SequenceProvider([LLMResponse(content="ok")])
         session_dir = tmp_path / "sessions"
-        agent = Agent(AgentConfig(tools=[], session_enabled=True, session_dir=str(session_dir)), provider)
+        agent = Agent(
+            AgentConfig(tools=[], session_enabled=True, session_dir=str(session_dir)),
+            provider,
+        )
 
         target = tmp_path / "x.txt"
         target.write_text("before")

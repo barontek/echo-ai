@@ -5,6 +5,7 @@ model:
   # For ollama, optionally specify base_url (default: http://localhost:11434)
   base_url: http://localhost:11434
   temperature: 0.1  # Low temperature for strict JSON tool calling
+  timeout: 60  # HTTP timeout in seconds (default: 60)
 
 tools:
   enabled:

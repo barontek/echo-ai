@@ -33,7 +33,7 @@ def ensure_state():
         except Exception:
             pass
     # Replace with mock
-    from src.agentframework.agent import Agent
+    from src.agentframework.core import Agent
 
     state.agent = MagicMock(spec=Agent)
     state.agent.session_manager = MagicMock()

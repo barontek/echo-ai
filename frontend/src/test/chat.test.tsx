@@ -412,4 +412,62 @@ describe('Session History Bug Tests', () => {
       });
     });
   });
+
+  describe('Session Continuity Tests', () => {
+    it('should refresh session list after chat completes', async () => {
+      let onmessageHandler: ((event: { data: string }) => void) | null = null;
+      const mockWs = {
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+        set onopen(fn: () => void) {
+          setTimeout(fn, 0);
+        },
+        get onmessage() {
+          return onmessageHandler;
+        },
+        set onmessage(fn: ((event: { data: string }) => void) | null) {
+          onmessageHandler = fn;
+        },
+      };
+
+      vi.stubGlobal(
+        'WebSocket',
+        vi.fn(() => mockWs)
+      );
+
+      function TestComponent() {
+        const { sendMessage } = useChat();
+        return (
+          <div>
+            <button onClick={() => sendMessage('test')}>Send</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Send'));
+
+      // Simulate 'done' message from server
+      if (onmessageHandler) {
+        onmessageHandler({
+          data: JSON.stringify({
+            type: 'done',
+            content: 'response',
+            session_id: 'chat-123',
+          }),
+        });
+      }
+
+      // Session list should be refreshed after chat completes
+      await waitFor(() => {
+        expect(mockApi.getSessions).toHaveBeenCalled();
+      });
+    });
+  });
 });

@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 from . import LLMProvider, LLMResponse, LLMToolCall
-from ..constants import DEFAULT_STREAM_TIMEOUT, THINKING_END, THINKING_START
+from ..constants import THINKING_END, THINKING_START
 
 logger = logging.getLogger(__name__)
 
@@ -75,13 +75,16 @@ class OllamaProvider(LLMProvider):
         model: str,
         base_url: str = "http://localhost:11434",
         api_key: str | None = None,
+        timeout: int = 60,
     ):
         import httpx
 
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.client = httpx.AsyncClient(timeout=DEFAULT_STREAM_TIMEOUT)
+        self.timeout = httpx.Timeout(timeout, connect=30.0)
+        self.stream_timeout = httpx.Timeout(timeout * 5, connect=30.0)
+        self.client = httpx.AsyncClient(timeout=self.stream_timeout)
 
     def _extract_tool_calls_from_content(self, content: str) -> list[LLMToolCall]:
         """Extract tool calls from markdown code blocks or plain JSON in content."""
@@ -192,7 +195,7 @@ class OllamaProvider(LLMProvider):
                 f"{self.base_url}/api/chat",
                 json=payload,
                 headers=headers,
-                timeout=60.0,  # Shorter timeout for non-streaming to avoid indefinite hangs
+                timeout=self.timeout,  # Configurable timeout for non-streaming requests
             )
             response.raise_for_status()
             data = response.json()
@@ -256,32 +259,7 @@ class OllamaProvider(LLMProvider):
         temperature: float = 0.3,
         on_chunk: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
-        # For non-reasoning models (like qwen2.5-coder), streaming can cause issues
-        # with tool call extraction. Fall back to non-streaming for these.
-        # Reasoning models like qwen3 work fine with streaming.
-        model_lower = self.model.lower()
-
-        # Exclude instruct variants - they don't output thinking separately
-        if "instruct" in model_lower:
-            is_reasoning_model = False
-        else:
-            reasoning_keywords = [
-                "qwen3",
-                "reasoning",
-                "deepseek",
-                "qwq",
-                "-r1",
-                "qwen3.5",
-            ]
-            is_reasoning_model = any(
-                keyword in model_lower for keyword in reasoning_keywords
-            )
-
-        if not is_reasoning_model and tools:
-            # Safely fall back to non-streaming for non-reasoning models like qwen3:4b-instruct
-            return await self.chat(messages, tools, temperature)
-
-        # Use streaming for actual reasoning models (including qwen3.5)
+        # Always use streaming for all models
         return await self._chat_streaming_impl(messages, tools, temperature, on_chunk)
 
     async def _chat_streaming_impl(

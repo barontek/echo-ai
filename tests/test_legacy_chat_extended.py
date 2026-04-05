@@ -7,16 +7,25 @@ from src.agentframework.chat_runtime import (
     fetch_titles,
     get_input,
 )
-from src.agentframework.agent import Message
+from src.agentframework.conversation import Message
+
 
 @pytest.mark.asyncio
 async def test_get_input_fallback():
-    with patch("src.agentframework.chat_runtime.prompt_session.prompt_async", side_effect=Exception("Prompt fail")), \
-         patch("src.agentframework.chat_runtime.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+    with (
+        patch(
+            "src.agentframework.chat_runtime.prompt_session.prompt_async",
+            side_effect=Exception("Prompt fail"),
+        ),
+        patch(
+            "src.agentframework.chat_runtime.asyncio.to_thread", new_callable=AsyncMock
+        ) as mock_thread,
+    ):
         mock_thread.return_value = "user input"
         result = await get_input("?")
         assert result == "user input"
         mock_thread.assert_called()
+
 
 def test_current_query_tool_messages():
     m1 = Message(role="user", content="hi")
@@ -49,9 +58,12 @@ def test_current_query_tool_messages():
 
     assert current_query_tool_messages([m_user1, m_tool, m_user2]) == [m_tool]
 
+
 def test_extract_urls():
     clean_response = "Check [Google](https://google.com) and (https://search.com)"
-    tool_messages = [Message(role="tool", content="found https://bing.com", tool_name="search")]
+    tool_messages = [
+        Message(role="tool", content="found https://bing.com", tool_name="search")
+    ]
 
     urls, cleaned = extract_urls(clean_response, tool_messages)
 
@@ -61,13 +73,16 @@ def test_extract_urls():
     assert "google.com" not in cleaned
     assert "https" not in cleaned
 
+
 @pytest.mark.asyncio
 async def test_fetch_titles():
     url_pairs = [("site", "https://example.com")]
 
     mock_resp = MagicMock()
     mock_resp.status = 200
-    mock_resp.text = AsyncMock(return_value="<html><title>Example Domain</title></html>")
+    mock_resp.text = AsyncMock(
+        return_value="<html><title>Example Domain</title></html>"
+    )
 
     mock_cm = MagicMock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -84,6 +99,7 @@ async def test_fetch_titles():
         titles = await fetch_titles(url_pairs)
         assert titles["https://example.com"] == "Example Domain"
 
+
 @pytest.mark.asyncio
 async def test_chat_session_with_thinking_and_sources():
     agent = MagicMock()
@@ -99,20 +115,31 @@ async def test_chat_session_with_thinking_and_sources():
     agent.messages = [
         Message(role="user", content="hi"),
         Message(role="assistant", content="resp", tool_calls=[{"id": "1"}]),
-        Message(role="tool", content="tool out", tool_name="web_search", tool_call_id="1")
+        Message(
+            role="tool", content="tool out", tool_name="web_search", tool_call_id="1"
+        ),
     ]
 
-    with patch("src.agentframework.chat.get_input", side_effect=["hi", "/exit"]), \
-         patch("src.agentframework.chat.execute_command", return_value=False), \
-         patch("src.agentframework.chat.fetch_titles", AsyncMock(return_value={"https://ext.com": "Title"})), \
-         patch("sys.stdout.write") as mock_write:
+    with (
+        patch("src.agentframework.chat.get_input", side_effect=["hi", "/exit"]),
+        patch("src.agentframework.chat.execute_command", return_value=False),
+        patch(
+            "src.agentframework.chat.fetch_titles",
+            AsyncMock(return_value={"https://ext.com": "Title"}),
+        ),
+        patch("sys.stdout.write") as mock_write,
+    ):
         await chat_session(agent)
         assert mock_write.called
 
+
 def test_chat_main_entry():
     from src.agentframework.chat import main
-    with patch("src.agentframework.chat.setup_agent"), \
-         patch("src.agentframework.chat.asyncio.run") as mock_run:
+
+    with (
+        patch("src.agentframework.chat.setup_agent"),
+        patch("src.agentframework.chat.asyncio.run") as mock_run,
+    ):
         mock_run.side_effect = lambda coro: coro.close()
 
         # Test interactive
@@ -124,6 +151,7 @@ def test_chat_main_entry():
         with patch("sys.argv", ["chat", "do something"]):
             main()
             assert mock_run.called
+
 
 def test_strip_ansi():
     text = "\033[91mRed\033[0m Text"

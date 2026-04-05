@@ -15,7 +15,8 @@ body,
 .sidebar,
 .chat-header,
 .chat-input-container,
-.message-list {
+.message-list,
+.empty-state {
   transition:
     background-color 0.3s ease,
     color 0.3s ease,

@@ -115,6 +115,7 @@ body {
 .sidebar-header {
   padding: 20px;
   border-bottom: 1px solid var(--border);
+  transition: border-color 0.3s ease;
 }
 
 .sidebar-header h2 {
@@ -131,6 +132,7 @@ body {
   padding: 16px;
   border-bottom: 1px solid var(--border);
   position: relative;
+  transition: border-color 0.3s ease;
 }
 
 .model-button {
@@ -251,7 +253,9 @@ body {
 }
 
 .search-container {
-  padding: 0 16px 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: border-color 0.3s ease;
 }
 
 .search-input {
@@ -360,6 +364,7 @@ body {
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
+  transition: border-color 0.3s ease;
 }
 
 .header-left {

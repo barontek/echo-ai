@@ -889,6 +889,7 @@ body {
 
 .chat-input::placeholder {
   color: var(--text-muted);
+  transition: color 0.3s ease;
 }
 
 .chat-input:disabled {

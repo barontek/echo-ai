@@ -37,6 +37,7 @@ export const ChatInput = memo(function ChatInput({
     <form className="chat-input-container" onSubmit={handleSubmit}>
       <div className="input-wrapper">
         <textarea
+          id="chat-input"
           className="chat-input"
           value={input}
           onChange={(e) => setInput(e.target.value)}

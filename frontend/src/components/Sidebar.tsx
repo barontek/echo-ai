@@ -68,6 +68,7 @@ export const Sidebar = memo(function Sidebar() {
 
       <div className="search-container">
         <input
+          id="search-conversations"
           type="text"
           className="search-input"
           placeholder="Search conversations..."

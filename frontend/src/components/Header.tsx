@@ -48,7 +48,7 @@ export const Header = memo(function Header() {
               fontSize: '12px',
             }}
           >
-            {theme === 'dark' ? 'Light' : 'Dark'}
+            {theme === 'dark' ? 'Dark' : 'Light'}
           </button>
           <button
             onClick={() => setShowDebug(!showDebug)}

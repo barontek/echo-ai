@@ -1257,25 +1257,31 @@ async def websocket_chat(websocket: WebSocket):
         if active_agent.session_manager:
             active_agent._ensure_session()
             if active_agent.session_manager.current_session:
-                await websocket.send_json(
-                    {
-                        "type": "session_start",
-                        "session_id": active_agent.session_manager.current_session.id,
-                    }
-                )
+                try:
+                    await websocket.send_json(
+                        {
+                            "type": "session_start",
+                            "session_id": active_agent.session_manager.current_session.id,
+                        }
+                    )
+                except WebSocketDisconnect:
+                    return
 
         timestamp = datetime.now().strftime("%H:%M")
         state.message_history.append(
             {"role": "user", "content": prompt, "timestamp": timestamp}
         )
-        await websocket.send_json(
-            {
-                "type": "message",
-                "role": "user",
-                "content": prompt,
-                "timestamp": timestamp,
-            }
-        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": prompt,
+                    "timestamp": timestamp,
+                }
+            )
+        except WebSocketDisconnect:
+            return
 
         accumulated_content = ""
         thinking_content = ""
@@ -1327,12 +1333,15 @@ async def websocket_chat(websocket: WebSocket):
             active_agent.session_manager
             and active_agent.session_manager.current_session
         ):
-            await websocket.send_json(
-                {
-                    "type": "session_start",
-                    "session_id": active_agent.session_manager.current_session.id,
-                }
-            )
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "session_start",
+                        "session_id": active_agent.session_manager.current_session.id,
+                    }
+                )
+            except WebSocketDisconnect:
+                return
 
         try:
             response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
@@ -1405,24 +1414,27 @@ async def websocket_chat(websocket: WebSocket):
         )
 
         # Send done message first
-        await websocket.send_json(
-            {
-                "type": "done",
-                "content": accumulated_content,
-                "thinking": thinking_content,
-                "timestamp": timestamp,
-                "has_tools": has_tools,
-                "tool_calls": tool_calls_info,
-                "session_id": active_agent.session_manager.current_session.id
-                if active_agent.session_manager
-                and active_agent.session_manager.current_session
-                else None,
-                "title": active_agent.session_manager.current_session.title
-                if active_agent.session_manager
-                and active_agent.session_manager.current_session
-                else None,
-            }
-        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": "done",
+                    "content": accumulated_content,
+                    "thinking": thinking_content,
+                    "timestamp": timestamp,
+                    "has_tools": has_tools,
+                    "tool_calls": tool_calls_info,
+                    "session_id": active_agent.session_manager.current_session.id
+                    if active_agent.session_manager
+                    and active_agent.session_manager.current_session
+                    else None,
+                    "title": active_agent.session_manager.current_session.title
+                    if active_agent.session_manager
+                    and active_agent.session_manager.current_session
+                    else None,
+                }
+            )
+        except WebSocketDisconnect:
+            pass
 
         # Generate title in background (after sending done)
         if (

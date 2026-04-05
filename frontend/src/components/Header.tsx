@@ -1,39 +1,28 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useSyncExternalStore } from 'react';
 import { useChat } from '../context';
+
+function getTheme() {
+  return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+}
+
+function subscribeTheme(callback: () => void) {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'theme') callback();
+  });
+  return () => {};
+}
 
 export const Header = memo(function Header() {
   const { currentModel, messages, connectionStatus, sidebarOpen, setSidebarOpen } = useChat();
   const [logs, setLogs] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
-  });
+
+  const theme = useSyncExternalStore(subscribeTheme, getTheme, () => 'dark');
 
   const toggleTheme = () => {
-    setTheme((prev) => {
-      const newTheme = prev === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', newTheme);
-      localStorage.setItem('theme', newTheme);
-      return newTheme;
-    });
-  };
-
-  // Sync theme on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
-    if (saved) {
-      setTheme(saved);
-      document.documentElement.setAttribute('data-theme', saved);
-    } else {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    setTheme((prev) => {
-      const newTheme = prev === 'dark' ? 'light' : 'dark';
-      return newTheme;
-    });
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
   };
 
   const statusText = {

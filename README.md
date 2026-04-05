@@ -1,12 +1,14 @@
 # Echo AI
 
+> **Disclaimer**: This project is entirely vibecoded. Don't use for anything important.
+
 A standalone AI agent framework built from scratch, similar to OpenCode but simpler.
 
 ## Features
 
 - **Multiple LLM Providers**: Anthropic, OpenAI, Ollama
 - **Tool Calling**: bash, read/write files, list directories, glob, grep, web fetch, web search, git, memory, notes
-- **Modern Web UI**: Responsive interface with streaming metrics, collapsible thought process, sources dropdown, and mobile support
+- **Modern Web UI**: React + Vite frontend with WebSocket streaming, markdown rendering, tool call display, dark/light theme
 - **Safety**: Workspace confinement, command allowlisting, path traversal prevention, and dangerous pattern blocking
 - **Sessions**: Save/load conversations, session renaming, and automatic titling
 - **Chat Mode**: Interactive continuous conversation with command history and WebSocket streaming
@@ -215,8 +217,7 @@ src/agentframework/
 ├── agent.py           # Main agent logic
 ├── chat.py           # Interactive chat interface
 ├── cli.py            # CLI for single commands
-├── api.py            # FastAPI REST endpoints
-├── web_api.py        # Web server with NiceGUI
+├── web_api.py        # FastAPI backend with WebSocket
 ├── providers/        # LLM provider implementations
 │   ├── anthropic.py
 │   ├── openai.py
@@ -225,9 +226,9 @@ src/agentframework/
 ├── session.py        # Chat session management (SQLite)
 ├── memory.py         # Memory management
 ├── router.py         # Semantic routing for sub-agents
-├── metrics.py       # Prometheus metrics
+├── metrics.py        # Prometheus metrics
 ├── config.py         # Configuration management
-├── dependencies.py   # Dependency injection
+├── dependencies.py  # Dependency injection
 ├── tools/           # Tool implementations
 │   ├── bash.py
 │   ├── file.py
@@ -236,5 +237,10 @@ src/agentframework/
 │   ├── search.py
 │   ├── memory.py
 │   └── notes.py
-└── ui_nicegui/     # NiceGUI web interface
+
+frontend/            # React + Vite + TypeScript frontend
+├── src/
+│   ├── components/ # React UI components
+│   ├── context/   # Chat state management
+│   └── api/       # API client
 ```

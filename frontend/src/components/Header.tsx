@@ -9,10 +9,25 @@ export const Header = memo(function Header() {
     return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
   });
 
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const newTheme = prev === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      return newTheme;
+    });
+  };
+
+  // Sync theme on mount
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
+    if (saved) {
+      setTheme(saved);
+      document.documentElement.setAttribute('data-theme', saved);
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  }, []);
 
   const toggleTheme = () => {
     setTheme((prev) => {

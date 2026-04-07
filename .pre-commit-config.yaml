@@ -47,3 +47,13 @@ repos:
         entry: bash -c 'cd frontend && npx prettier --write .'
         language: system
         files: ^frontend/
+
+  - repo: local
+    hooks:
+      - id: mkdocs
+        name: mkdocs-build
+        entry: bash
+        args: ["-c", "export PYTHONPATH=src && uv run mkdocs build"]
+        language: system
+        files: ^docs/|mkdocs\.yml|pyproject\.toml
+        pass_filenames: false

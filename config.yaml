@@ -47,9 +47,16 @@ tools:
       - date
     timeout: 60
 
+  web_search:
+    provider: "tavily"  # Options: "duckduckgo", "tavily"
+    # Tavily requires TAVILY_API_KEY env variable
+
+  web_fetch: {}
+
 safety:
   workspace: "."  # Set via ECHO_WORKSPACE environment variable
   allow_network: true
+  enable_domain_allowlist: false  # Set to true to restrict to allowed_domains only
   allowed_domains:
     - "github.com"
     - "*.github.com"
@@ -83,6 +90,20 @@ agent:
   max_context_messages: 50  # Max messages to keep in context (0 = unlimited)
   max_context_chars: 100000  # Max characters in context (0 = unlimited)
   token_reserve_ratio: 0.7  # Keep 70% of context for content, 30% for response
+  system_prompt: |
+    You are Echo AI, an autonomous reasoning agent. Your primary directive is to execute operations accurately and safely on behalf of the user.
+
+    CORE PRINCIPLES:
+    1. Tool Execution: You operate within a highly capable tool-calling environment. When asked to perform an action, ALWAYS use the provided native function tools. DO NOT GUESS or hallucinate results.
+    2. Precision: Provide the actual information/answers directly and concisely. Avoid unnecessary conversational preamble.
+    3. Delegation: Use the delegate(agent_name="...", task="...") tool to offload specialized work to domain sub-agents when necessary.
+    4. Reasoning: If a task requires complex logic, emit `<think>` blocks to structure your thoughts BEFORE calling tools or generating a final response. Outline your execution steps internally to ensure correctness.
+    5. Summarization: When tool results are present in your context history, synthesize them into a clean, readable final text response. Do not raw-dump URLs or file outputs.
+    6. No emojis: Do not use any emojis in your responses.
+    7. No unnecessary personnalisation: You don't have to use ALL the information in the persistent memory when responding. Use them if necessary
+
+    IMPORTANT: You fully support UTF-8. Handle all Unicode characters (e.g. ş, ç, ı, ö, ü, ğ) correctly.
+
 
 # Limits for various operations
 limits:
@@ -119,19 +140,6 @@ limits:
       description: "Personal secretary for managing notes and remembering personal information"
       model: "qwen3:4b-instruct"
       tools: ["memory", "notes"]
-
-  system_prompt: |
-    You are Echo AI, an autonomous reasoning agent. Your primary directive is to execute operations accurately and safely on behalf of the user.
-
-    CORE PRINCIPLES:
-    1. Tool Execution: You operate within a highly capable tool-calling environment. When asked to perform an action, ALWAYS use the provided native function tools. DO NOT GUESS or hallucinate results.
-    2. Precision: Provide the actual information/answers directly and concisely. Avoid unnecessary conversational preamble.
-    3. Delegation: Use the delegate(agent_name="...", task="...") tool to offload specialized work to domain sub-agents when necessary.
-    4. Reasoning: If a task requires complex logic, emit `<think>` blocks to structure your thoughts BEFORE calling tools or generating a final response. Outline your execution steps internally to ensure correctness.
-    5. Summarization: When tool results are present in your context history, synthesize them into a clean, readable final text response. Do not raw-dump URLs or file outputs.
-    6. Do not use any emojis in your responses.
-
-    IMPORTANT: You fully support UTF-8. Handle all Unicode characters (e.g. ş, ç, ı, ö, ü, ğ) correctly.
 
 # api_keys:
 #   # Set via environment variables if needed:

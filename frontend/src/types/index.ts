@@ -18,6 +18,10 @@ export interface Message {
 export interface ToolCall {
   name: string;
   arguments: Record<string, unknown>;
+  result?: {
+    content: string;
+    error: string | null;
+  };
 }
 
 export interface Config {

@@ -326,6 +326,35 @@ class SessionManager:
             )
             self.save_session()
 
+    def add_tool_results_to_last_assistant(self, tool_results: list[dict]) -> None:
+        """Attach tool results to the last assistant message's tool_calls."""
+        if not self.current_session or not tool_results:
+            return
+
+        # Find last assistant message with tool_calls (go backwards)
+        for i in range(len(self.current_session.messages) - 1, -1, -1):
+            msg = self.current_session.messages[i]
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                # Attach each result to its corresponding tool_call
+                tool_calls = msg["tool_calls"]
+                for result in tool_results:
+                    tc_id = result.get("tool_call_id")
+                    for tc in tool_calls:
+                        # Check both new and old format for id
+                        tc_id_found = tc.get("id") or tc.get("function", {}).get("id")
+                        if tc_id_found == tc_id:
+                            tc["result"] = {
+                                "content": result.get("content"),
+                                "error": result.get("error"),
+                            }
+                            break
+                self.log_event(
+                    "tool_results_attached",
+                    {"count": len(tool_results)},
+                )
+                self.save_session()
+                return
+
     def save_checkpoint(self, workflow_id: str, current_node: str, state: dict) -> None:
         """Save a state checkout for workflow graphs."""
         if self.current_session and self.current_session.id == workflow_id:

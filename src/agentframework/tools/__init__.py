@@ -112,7 +112,7 @@ TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
     "glob": {"base_dir": ".", "safety_config": None},
     "grep": {"base_dir": ".", "safety_config": None},
     "web_fetch": {"safety_config": None},
-    "web_search": {"safety_config": None},
+    "web_search": {"safety_config": None, "provider": "duckduckgo"},
     "git": {"base_dir": ".", "safety_config": None},
     "memory": {"db_path": None, "safety_config": None},
     "notes": {"notes_dir": None},

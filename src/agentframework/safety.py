@@ -131,6 +131,7 @@ class SafetyConfig:
     allowed_commands: list[str] = field(default_factory=lambda: ["*"])
     blocked_commands: list[str] = field(default_factory=list)
     allow_network: bool = False
+    enable_domain_allowlist: bool = False
     allowed_domains: list[str] = field(default_factory=list)
     max_file_size: int = 10 * 1024 * 1024
     max_execution_time: int = 60
@@ -273,23 +274,30 @@ class SecurityValidator:
 
     def check_network_allowed(self, url: str) -> tuple[bool, str]:
         """Check if network request is allowed."""
-        if self.config.allow_network:
-            if not self.config.allowed_domains:
-                return True, "OK"
-            from urllib.parse import urlparse
+        if not self.config.allow_network:
+            return False, "Network access disabled"
 
-            domain = urlparse(url).netloc
-            for allowed in self.config.allowed_domains:
-                # Remove wildcard prefix for subdomain matching
-                pattern = allowed.lstrip("*.")
-                if (
-                    fnmatch.fnmatch(domain, allowed)
-                    or domain == pattern
-                    or domain.endswith("." + pattern)
-                ):
-                    return True, "OK"
-            return False, f"Domain not in allowlist: {domain}"
-        return False, "Network access disabled"
+        # If domain allowlist is disabled, allow all domains
+        if not self.config.enable_domain_allowlist:
+            return True, "OK"
+
+        # Domain allowlist is enabled - check against allowed_domains
+        if not self.config.allowed_domains:
+            return True, "OK"
+
+        from urllib.parse import urlparse
+
+        domain = urlparse(url).netloc
+        for allowed in self.config.allowed_domains:
+            # Remove wildcard prefix for subdomain matching
+            pattern = allowed.lstrip("*.")
+            if (
+                fnmatch.fnmatch(domain, allowed)
+                or domain == pattern
+                or domain.endswith("." + pattern)
+            ):
+                return True, "OK"
+        return False, f"Domain not in allowlist: {domain}"
 
     def check_file_size(
         self, content: str | None = None, path: str | None = None

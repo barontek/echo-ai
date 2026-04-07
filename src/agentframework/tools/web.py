@@ -236,7 +236,6 @@ class WebFetchTool(Tool):
                 except Exception as e:
                     logger.debug(f"Crawl4AI fetch failed, falling back to httpx: {e}")
 
-
             max_chars = self.limits.get("max_web_fetch_chars", 15000)
             client = get_http_client()
             response = await client.get(url)
@@ -253,7 +252,10 @@ class WebSearchTool(Tool):
     parameters_model = WebSearchParams
 
     def __init__(
-        self, safety_config: SafetyConfig | None = None, limits: dict | None = None
+        self,
+        safety_config: SafetyConfig | None = None,
+        limits: dict | None = None,
+        **kwargs: Any,
     ):
         super().__init__(
             name="web_search",
@@ -262,10 +264,26 @@ class WebSearchTool(Tool):
 
         self.limits = {**DEFAULT_LIMITS, **(limits or {})}
 
+        # Handle provider from kwargs (passed by config system)
+        if "provider" in kwargs:
+            self.limits["provider"] = kwargs["provider"]
+
         if safety_config:
             self.validator = SecurityValidator(safety_config)
         else:
             self.validator = SecurityValidator(SafetyConfig(allow_network=False))
+
+        # Initialize search provider
+        provider_type = self.limits.get("provider", "duckduckgo")
+        from src.agentframework.tools.search_providers import get_search_provider
+
+        try:
+            self.search_provider = get_search_provider(provider_type)
+        except Exception as e:
+            logger.warning(
+                f"Failed to initialize search provider '{provider_type}': {e}"
+            )
+            self.search_provider = None
 
     async def _fetch_search_result(
         self, crawler: Any, url: str, title: str, snippet: str
@@ -341,21 +359,12 @@ class WebSearchTool(Tool):
             if not approved:
                 return ToolResult(error="Web search requires approval")
 
-        try:
-            import io
-            import sys
-            from ddgs import DDGS
+        if not self.search_provider:
+            return ToolResult(error="Search provider not initialized")
 
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            try:
-                sys.stdout = io.StringIO()
-                sys.stderr = io.StringIO()
-                ddgs = DDGS()
-                results = list(ddgs.text(query, max_results=5))
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
+        try:
+            max_results = self.limits.get("max_search_results", 5)
+            results = await self.search_provider.search(query, max_results=max_results)
 
             if not results:
                 return ToolResult(content="No results found.")
@@ -364,8 +373,8 @@ class WebSearchTool(Tool):
             if AsyncWebCrawler is None:
                 for r in results:
                     title = r.get("title", "")
-                    url = r.get("href", "")
-                    snippet = r.get("body", "")
+                    url = r.get("url", "")
+                    snippet = r.get("snippet", "")
                     formatted.append(f"- {title}: {url}\n  {snippet[:500]}")
                 return ToolResult(content="\n\n".join(formatted))
 
@@ -375,9 +384,9 @@ class WebSearchTool(Tool):
                     tasks.append(
                         self._fetch_search_result(
                             crawler,
-                            r.get("href", ""),
+                            r.get("url", ""),
                             r.get("title", ""),
-                            r.get("body", ""),
+                            r.get("snippet", ""),
                         )
                     )
 
@@ -385,9 +394,9 @@ class WebSearchTool(Tool):
 
                 for i, r in enumerate(gathered_results):
                     if isinstance(r, Exception):
-                        snippet = results[i].get("body", "")
+                        snippet = results[i].get("snippet", "")
                         title = results[i].get("title", "")
-                        url = results[i].get("href", "")
+                        url = results[i].get("url", "")
                         formatted.append(f"- {title}: {url}\n  {snippet[:500]}")
                     else:
                         formatted.append(r)

@@ -569,6 +569,7 @@ def filter_messages_for_ui(
             for tc in tool_calls:
                 name = "unknown"
                 args = {}
+                result = None
                 if isinstance(tc, dict):
                     if "function" in tc:
                         name = tc["function"].get("name", "unknown")
@@ -576,6 +577,9 @@ def filter_messages_for_ui(
                     else:
                         name = tc.get("name", "unknown")
                         raw_args = tc.get("arguments", {})
+                    # Get result if attached
+                    if "result" in tc:
+                        result = tc["result"]
                 else:
                     name = getattr(tc, "name", "unknown")
                     raw_args = getattr(tc, "arguments", {})
@@ -596,8 +600,21 @@ def filter_messages_for_ui(
                 else:
                     args = {"raw": str(raw_args)}
 
-                normalized.append({"name": name, "arguments": args})
+                tc_normalized = {"name": name, "arguments": args}
+                if result:
+                    tc_normalized["result"] = result
+                normalized.append(tc_normalized)
             msg_dict["tool_calls"] = normalized
+
+        # Remove separate tool_results field (now attached to tool_calls)
+        # Legacy: still handle if exists
+        tool_results = getattr(
+            msg,
+            "tool_results",
+            msg.get("tool_results") if isinstance(msg, dict) else None,
+        )
+        if tool_results and not msg_dict.get("tool_calls"):
+            msg_dict["tool_results"] = tool_results
 
         filtered.append(msg_dict)
 
@@ -1377,7 +1394,10 @@ async def websocket_chat(websocket: WebSocket):
                         else:
                             args = {"raw": str(raw_args)}
 
-                        tool_calls_info.append({"name": name, "arguments": args})
+                        tc_info = {"name": name, "arguments": args}
+                        if "result" in t:
+                            tc_info["result"] = t["result"]
+                        tool_calls_info.append(tc_info)
 
             if not accumulated_content:
                 accumulated_content = response

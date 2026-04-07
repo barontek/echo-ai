@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useChat } from '../context';
 
 export const MessageList = memo(function MessageList() {
@@ -28,10 +29,16 @@ export const MessageList = memo(function MessageList() {
               {msg.thinking && (
                 <details className="thinking-collapsible">
                   <summary className="thinking-label">Thinking</summary>
-                  <ReactMarkdown>{msg.thinking}</ReactMarkdown>
+                  <div className="markdown-content">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.thinking}</ReactMarkdown>
+                  </div>
                 </details>
               )}
-              {msg.content && <ReactMarkdown>{msg.content}</ReactMarkdown>}
+              {msg.content && (
+                <div className="markdown-content">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                </div>
+              )}
               {msg.has_tools && msg.tool_calls && msg.tool_calls.length > 0 && (
                 <div className="tool-calls">
                   {msg.tool_calls.map((tc, i) => {
@@ -43,6 +50,12 @@ export const MessageList = memo(function MessageList() {
                       <details key={i} className="tool-call">
                         <summary className="tool-name">{tc.name}</summary>
                         <pre className="tool-args">{argsDisplay}</pre>
+                        {tc.result && (
+                          <div className="tool-result">
+                            <div className="tool-result-label">Result:</div>
+                            <pre className="tool-result-content">{tc.result.content || tc.result.error || '(empty)'}</pre>
+                          </div>
+                        )}
                       </details>
                     );
                   })}

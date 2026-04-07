@@ -144,6 +144,7 @@ class TestSecurityValidator:
         config = SafetyConfig(
             workspace=temp_workspace,
             allow_network=True,
+            enable_domain_allowlist=True,
             allowed_domains=["github.com", "*.python.org"],
         )
         validator = SecurityValidator(config)

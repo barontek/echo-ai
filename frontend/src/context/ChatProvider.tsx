@@ -35,7 +35,14 @@ function combineAssistantMessages(
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<ChatContextValue['sessions']>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [currentModel, setCurrentModel] = useState('qwen3:4b-instruct');
+  const [currentModel, setCurrentModel] = useState<string>(() => {
+    // Try to load last used model from localStorage
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('last_model');
+      if (stored) return stored;
+    }
+    return 'qwen3:4b-instruct';
+  });
   const [models, setModels] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatContextValue['messages']>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
@@ -141,7 +148,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 if (last?.role === 'assistant') {
                   return [...prev.slice(0, -1), { ...last, content: data.content || '' }];
                 }
-                return [...prev, { role: 'assistant', content: data.content || '' }];
+                return [...prev, { role: 'assistant', content: data.content || '', has_tools: false }];
               });
               break;
 
@@ -157,7 +164,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   return [...prev.slice(0, -1), { ...last, thinking: data.content }];
                 }
                 // Create new assistant message with thinking
-                return [...prev, { role: 'assistant', content: '', thinking: data.content }];
+                return [...prev, { role: 'assistant', content: '', thinking: data.content, has_tools: false }];
               });
               break;
 
@@ -173,18 +180,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               setCurrentThinking('');
               isReadyRef.current = true;
               lastSentMessageRef.current = '';
-              // Add/update assistant message with final content
+              // Find last assistant message and update it (not user message)
               setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                if (last?.role === 'assistant') {
+                const lastAssistantIdx = prev.findLastIndex((m) => m.role === 'assistant');
+                if (lastAssistantIdx >= 0) {
+                  const last = prev[lastAssistantIdx];
                   return [
-                    ...prev.slice(0, -1),
+                    ...prev.slice(0, lastAssistantIdx),
                     {
                       ...last,
                       content: data.content || last.content,
                       thinking: data.thinking,
-                      has_tools: data.has_tools,
-                      tool_calls: data.tool_calls,
+                      has_tools: data.has_tools ?? last.has_tools,
+                      tool_calls: (data.tool_calls && data.tool_calls.length > 0)
+                        ? data.tool_calls
+                        : last.tool_calls,
                       timestamp: data.timestamp || last.timestamp,
                     },
                   ];
@@ -398,6 +408,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (model: string) => {
       debugLog('selectModel', model);
       setCurrentModel(model);
+      // Save to localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('last_model', model);
+      }
       reconnect();
     },
     [reconnect]

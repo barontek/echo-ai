@@ -368,6 +368,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
         allowed_commands=tools_config.get("bash", {}).get("allowed_commands", ["*"]),
         blocked_commands=safety.get("blocked_commands", []),
         allow_network=safety.get("allow_network", False),
+        enable_domain_allowlist=safety.get("enable_domain_allowlist", False),
         allowed_domains=safety.get("allowed_domains", []),
         max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
         max_execution_time=safety.get("max_execution_time", 60),

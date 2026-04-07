@@ -216,6 +216,11 @@ class Agent:
         if not first_user_msg:
             return None
 
+        # Simple fallback: use first words of user message (don't use the LLM prompt!)
+        simple_title = first_user_msg[:30].strip()
+        if len(first_user_msg) > 30:
+            simple_title += "..."
+
         prompt = (
             "Summarize the following user request into a very short, "
             "descriptive title (max 5 words). Do not use quotes or a period.\n\n"
@@ -229,15 +234,15 @@ class Agent:
                     self.llm.chat(
                         messages=[{"role": "user", "content": prompt}], temperature=0.3
                     ),
-                    timeout=10.0,
+                    timeout=30.0,  # Increased timeout for slower reasoning models
                 )
                 return title_response.content.strip().strip('"').strip("'")
             except (asyncio.TimeoutError, Exception) as e:
                 logger.debug(f"Title generation failed or timed out: {e}")
-                return prompt[:30] + "..." if len(prompt) > 30 else prompt
+                return simple_title  # Use first words of user message, not the prompt
         except Exception as e:
             logger.error(f"Failed to generate session title: {e}")
-            return None
+            return simple_title  # Use fallback instead of None
 
     async def extract_data(self, prompt: str, response_model: type[Any]) -> Any:
         """Extract strictly typed JSON data mapped to the given Pydantic model natively."""
@@ -366,17 +371,20 @@ class Agent:
             )
             current_messages = updated_messages
 
-            # Persist tool execution results
-            if self.session_manager:
+            # Persist tool execution results - attach to last assistant message
+            if self.session_manager and tool_messages:
+                tool_results = []
                 for msg in tool_messages:
-                    self.session_manager.add_message(
-                        msg.role,
-                        msg.content,
-                        tool_call_id=msg.tool_call_id,
-                        tool_name=msg.tool_name,
-                        tool_arguments=msg.tool_arguments,
+                    tool_results.append(
+                        {
+                            "tool_call_id": msg.tool_call_id,
+                            "tool_name": msg.tool_name,
+                            "arguments": msg.tool_arguments,
+                            "content": msg.content,
+                            "error": None,
+                        }
                     )
-                # Save session to ensure everything is on disk
+                self.session_manager.add_tool_results_to_last_assistant(tool_results)
                 self.save_session()
 
         err_msg = "Max iterations reached. The agent could not complete the task."

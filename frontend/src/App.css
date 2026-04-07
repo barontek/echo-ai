@@ -792,6 +792,30 @@ body {
   max-height: 150px;
 }
 
+.tool-result {
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.tool-result-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 12px 4px;
+  text-transform: uppercase;
+}
+
+.tool-result-content {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 0 12px 10px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 .message-time {
   font-size: 11px;
   color: var(--text-muted);
@@ -1107,4 +1131,29 @@ body {
 
 .confirm-delete:hover {
   background: #dc2626;
+}
+
+/* Table styling for markdown tables */
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.markdown-content th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-content tr:nth-child(even) {
+  background: var(--bg-secondary);
 }

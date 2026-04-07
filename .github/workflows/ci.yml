@@ -27,16 +27,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          uv pip install --system -r requirements-dev.txt
-          uv pip install --system -e .
+      - name: Install dev dependencies
+        run: uv pip install --system -e ".[dev]"
 
       - name: Run verify
-        run: make verify
+        run: |
+          export PYTHONPATH=src
+          make verify
 
       - name: Verify Docs Build
-        run: NO_MKDOCS_2_WARNING=1 mkdocs build --strict
+        run: |
+          export PYTHONPATH=src
+          NO_MKDOCS_2_WARNING=1 mkdocs build --strict
 
   frontend:
     runs-on: ubuntu-latest

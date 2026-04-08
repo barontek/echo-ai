@@ -331,11 +331,44 @@ class Agent:
             llm_messages = await self._prepare_messages(current_messages)
 
             self.callback_manager.on_llm_start(request_id, llm_messages)
-            response = await self._call_llm(
-                llm_messages,
-                get_tool_schemas(self.config.tools),
-                on_chunk=on_chunk,
-            )
+
+            partial_chunks: list[str] = []
+
+            def wrapped_on_chunk(chunk: str) -> None:
+                partial_chunks.append(chunk)
+                if on_chunk:
+                    on_chunk(chunk)
+
+            try:
+                response = await self._call_llm(
+                    llm_messages,
+                    get_tool_schemas(self.config.tools),
+                    on_chunk=wrapped_on_chunk,
+                )
+            except asyncio.CancelledError:
+                partial_response = "".join(partial_chunks)
+                if partial_response:
+                    assistant_msg = create_assistant_message(
+                        partial_response, thinking_process
+                    )
+                    current_messages.append(assistant_msg)
+
+                    if self._pending_summary:
+                        asyncio.create_task(self._background_summarize())
+
+                    if self.session_manager:
+                        self.session_manager.add_message(
+                            "assistant",
+                            partial_response,
+                            timestamp=datetime.now().strftime("%H:%M"),
+                        )
+
+                logger.debug(
+                    "Generation stopped by user",
+                    extra={"partial_length": len(partial_response)},
+                )
+                return partial_response, current_messages
+
             self.callback_manager.on_llm_end(request_id, response)
 
             if not response.tool_calls:

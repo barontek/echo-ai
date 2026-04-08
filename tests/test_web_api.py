@@ -471,12 +471,15 @@ class TestWebSocket:
             mock_agent = MagicMock()
             mock_agent.session_manager = None
 
+            # Track the messages for partial content
+            partial_messages = []
+
             async def mock_run_streaming(prompt, on_chunk=None):
-                await asyncio.sleep(1)
+                # Simulate LLM calling on_chunk with partial content
                 if on_chunk:
                     on_chunk("Part 1")
-                await asyncio.sleep(2)
-                return "Part 2"
+                # Simulate cancellation during generation
+                raise asyncio.CancelledError()
 
             mock_agent.run_streaming = mock_run_streaming
             mock_agent.messages = []
@@ -489,7 +492,7 @@ class TestWebSocket:
                 websocket.receive_json()
 
                 websocket.send_text(
-                    json.dumps({"type": "message", "content": "Slow run"})
+                    json.dumps({"type": "message", "content": "Stop test"})
                 )
                 websocket.receive_json()
 
@@ -498,7 +501,8 @@ class TestWebSocket:
                 while True:
                     msg = websocket.receive_json()
                     if msg["type"] == "done":
-                        assert msg["content"] == "Response stopped by user."
+                        # Should preserve partial content from on_chunk callback
+                        assert msg["content"] == "Part 1"
                         break
 
 

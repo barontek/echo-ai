@@ -1283,10 +1283,11 @@ async def websocket_chat(websocket: WebSocket):
                 accumulated_content = response
 
         except asyncio.CancelledError:
-            accumulated_content = "Response stopped by user."
+            # Keep accumulated_content as-is (partial response preserved)
             thinking_content = ""
             has_tools = False
             tool_calls_info = []
+            logger.debug("Generation cancelled, preserving partial content")
         except Exception as e:
             logger.error(f"WebSocket chat error: {e}", exc_info=True)
             await websocket.send_json(

@@ -327,6 +327,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     connect();
   }, [connect]);
 
+  const stopGeneration = useCallback(() => {
+    debugLog('stopGeneration');
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'stop' }));
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
     debugLog('mount');
@@ -441,6 +449,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sidebarOpen,
     setSidebarOpen,
     sendMessage,
+    stopGeneration,
     retryMessage,
     createSession,
     selectSession,

@@ -8,10 +8,11 @@ interface ChatInputProps {
 export const ChatInput = memo(function ChatInput({
   placeholder = 'Type your message...',
 }: ChatInputProps) {
-  const { sendMessage, isConnected, isStreaming } = useChat();
+  const { sendMessage, isConnected, isStreaming, stopGeneration } = useChat();
   const [input, setInput] = useState('');
 
-  const disabled = isStreaming || !isConnected;
+  const disabled = !isConnected;
+  const placeholderText = isStreaming ? 'Generating...' : placeholder;
 
   const handleSend = () => {
     const trimmed = input.trim();
@@ -42,13 +43,24 @@ export const ChatInput = memo(function ChatInput({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
+          placeholder={placeholderText}
+          disabled={disabled || isStreaming}
           rows={1}
         />
-        <button type="submit" className="send-button" disabled={disabled || !input.trim()}>
-          <span>Send</span>
-        </button>
+        {isStreaming ? (
+          <button
+            type="button"
+            className="stop-button"
+            onClick={stopGeneration}
+            title="Stop generation"
+          >
+            <span>⏹</span>
+          </button>
+        ) : (
+          <button type="submit" className="send-button" disabled={disabled || !input.trim()}>
+            <span>Send</span>
+          </button>
+        )}
       </div>
     </form>
   );

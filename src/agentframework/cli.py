@@ -6,7 +6,7 @@ import sys
 from rich.console import Console
 from rich.markdown import Markdown
 
-from .core import Agent
+from . import __version__
 from .bootstrap import setup_agent
 from .client import (
     EchoClient,
@@ -15,6 +15,7 @@ from .client import (
     CommandResultEvent,
     ErrorEvent,
 )
+from .core import Agent
 
 console = Console(color_system="256")
 
@@ -154,7 +155,7 @@ def main():
     agent = setup_agent()
 
     if len(args) == 1 and args[0].lower() == "--version":
-        console.print("[bold]Echo AI[/bold] version 0.1.0")
+        console.print(f"[bold]Echo AI[/bold] version {__version__}")
         return
 
     task = " ".join(args)

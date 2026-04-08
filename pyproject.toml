@@ -103,3 +103,4 @@ timeout_method = "thread"
 [tool.pyright]
 include = ["src/agentframework"]
 exclude = ["src/agentframework/ui_deprecated"]
+reportMissingModuleSource = false

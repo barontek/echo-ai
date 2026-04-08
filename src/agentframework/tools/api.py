@@ -84,7 +84,7 @@ class RESTAPITool(Tool):
             try:
                 json_resp = response.json()
                 content += json.dumps(json_resp, indent=2)
-            except Exception:
+            except (json.JSONDecodeError, ValueError):
                 text_resp = response.text
                 if len(text_resp) > 20000:
                     text_resp = text_resp[:20000] + "\n... (truncated)"

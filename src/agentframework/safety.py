@@ -168,7 +168,7 @@ class SecurityValidator:
         try:
             resolved = (self.workspace_path / path).resolve()
             return resolved.is_relative_to(self.workspace_path)
-        except Exception:
+        except (OSError, ValueError):
             return False
 
     def is_blocked_extension(self, path: str) -> bool:

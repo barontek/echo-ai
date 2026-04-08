@@ -1,4 +1,10 @@
-"""Shared command registry and helpers for chat interfaces."""
+"""Shared command registry and helpers for chat interfaces.
+
+This module defines the chat command system including:
+- Command definitions with usage, descriptions, and aliases
+- Command execution logic
+- Autocomplete and help generation
+"""
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -10,6 +16,15 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ChatCommand:
+    """A chat command definition.
+
+    Attributes:
+        name: The canonical command name (e.g., "/help").
+        usage: Usage pattern (e.g., "/save <name>").
+        description: Human-readable description.
+        aliases: Alternative command names.
+    """
+
     name: str
     usage: str
     description: str
@@ -33,7 +48,11 @@ CHAT_COMMANDS: tuple[ChatCommand, ...] = (
 
 
 def all_slash_commands() -> list[str]:
-    """Return slash commands and aliases for autocomplete."""
+    """Return slash commands and aliases for autocomplete.
+
+    Returns:
+        List of all command names and their aliases.
+    """
     commands: list[str] = []
     for command in CHAT_COMMANDS:
         commands.append(command.name)
@@ -42,7 +61,14 @@ def all_slash_commands() -> list[str]:
 
 
 def normalize_command(command: str) -> str:
-    """Normalize command aliases to canonical command names."""
+    """Normalize command aliases to canonical command names.
+
+    Args:
+        command: Command string to normalize.
+
+    Returns:
+        The canonical command name.
+    """
     for command_def in CHAT_COMMANDS:
         if command == command_def.name or command in command_def.aliases:
             return command_def.name
@@ -50,7 +76,11 @@ def normalize_command(command: str) -> str:
 
 
 def help_lines() -> list[str]:
-    """Build formatted help lines from command registry."""
+    """Build formatted help lines from command registry.
+
+    Returns:
+        Formatted help lines for all commands.
+    """
     lines = []
     for command in CHAT_COMMANDS:
         lines.append(f"  [bold]{command.usage}[/bold] - {command.description}")

@@ -32,6 +32,7 @@ from .tools.web import WebFetchTool, WebSearchTool
 from .tools.git import GitTool
 
 __all__ = [
+    "__version__",
     "Agent",
     "AgentConfig",
     "SubAgentConfig",

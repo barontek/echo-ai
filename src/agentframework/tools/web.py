@@ -78,7 +78,6 @@ def html_to_markdown(html: str, max_length: int = 10000) -> str:
     try:
         soup = BeautifulSoup(html, "html.parser")
 
-        # Remove script, style, nav, header, footer elements
         for tag in soup(
             [
                 "script",
@@ -93,39 +92,22 @@ def html_to_markdown(html: str, max_length: int = 10000) -> str:
         ):
             tag.decompose()
 
-        # Get the main content area if available, otherwise body
         main = soup.find("main") or soup.find("article") or soup.find("body") or soup
 
-        # Convert to Markdown
         md = markdownify.markdownify(
             str(main),
             heading_style="ATX",
             strip=["script", "style"],
         )
 
-        # Clean up whitespace
-        lines = [line.strip() for line in md.split("\n")]
-        cleaned_lines = []
-        consecutive_empty = 0
-        for line in lines:
-            if not line:
-                consecutive_empty += 1
-                if consecutive_empty <= 1:
-                    cleaned_lines.append("")
-            else:
-                consecutive_empty = 0
-                cleaned_lines.append(line)
+        text = md or ""
 
-        text = "\n".join(cleaned_lines).strip()
-
-        # Truncate to max length
         if len(text) > max_length:
             text = text[:max_length] + "\n... (truncated)"
 
         return text if text else "No readable content found"
 
-    except Exception:
-        # Fallback to raw text if parsing fails
+    except (TypeError, ValueError, AttributeError):
         return html[:max_length]
 
 

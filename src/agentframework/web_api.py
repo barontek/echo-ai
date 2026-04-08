@@ -6,7 +6,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import re
 import time
 import uuid
 from collections import defaultdict
@@ -31,9 +30,11 @@ from pydantic import BaseModel, Field
 
 from src.agentframework.core import Agent, AgentConfig, create_agent
 from src.agentframework.config import get_safety_config, get_tools, load_config
+from src.agentframework.web_utils import filter_messages_for_ui
 from src.agentframework.constants import THINKING_END, THINKING_START
+from src.agentframework import __version__
 from src.agentframework.logging_utils import set_correlation_id
-from src.agentframework.router import SemanticRouter
+from src.agentframework.core.router import SemanticRouter
 from src.agentframework.session import DBSessionModel
 from src.workflows import get_workflow, list_workflows
 
@@ -44,17 +45,8 @@ DEFAULT_PROVIDER = "ollama"
 DEFAULT_MODEL = "qwen3:4b-instruct"
 FALLBACK_MODELS = [DEFAULT_MODEL, "llama3.2:latest", "phi3.5:latest"]
 
-# Pre-compiled patterns for message filtering (performance optimization)
-_INTERNAL_PATTERNS = [
-    re.compile(r"System Note: Tools executed"),
-    re.compile(r"Tool '.*' returned:"),
-    re.compile(r"^FAILED: .*"),
-    re.compile(r"\[Persistent Memory\]"),
-]
-
-# Simple in-memory cache for expensive operations
-_models_cache: dict[str, tuple[float, dict]] = {}  # key -> (timestamp, data)
-_MODELS_CACHE_TTL = 60.0  # Cache models list for 60 seconds
+_models_cache: dict[str, tuple[float, dict]] = {}
+_MODELS_CACHE_TTL = 60.0
 
 
 @dataclass
@@ -299,20 +291,46 @@ async def request_logging_middleware(request: Request, call_next):
 
 def _get_cors_config() -> dict:
     """Get CORS configuration from config.yaml."""
+    import os
+
     config = load_config()
     web_config = config.get("web", {})
     cors_config = web_config.get("cors", {})
+
+    if os.environ.get("ALLOW_ALL_ORIGINS", "").lower() in ("1", "true", "yes"):
+        return {
+            "origins": ["*"],
+            "credentials": cors_config.get("allow_credentials", True),
+            "methods": cors_config.get("allow_methods", ["*"]),
+            "headers": cors_config.get("allow_headers", ["*"]),
+        }
+
+    local_network_origins = []
+    try:
+        import socket
+
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        local_network_origins = [
+            f"http://{local_ip}:3000",
+            f"http://{local_ip}:8080",
+            f"http://{local_ip}:3001",
+        ]
+    except Exception:
+        pass
+
+    default_origins = [
+        "http://localhost:3000",
+        f"http://localhost:{DEFAULT_WEB_PORT}",
+        f"http://127.0.0.1:{DEFAULT_WEB_PORT}",
+        "http://localhost:8501",
+        "http://127.0.0.1:8501",
+    ]
+
+    all_origins = cors_config.get("origins", default_origins + local_network_origins)
+
     return {
-        "origins": cors_config.get(
-            "origins",
-            [
-                "http://localhost:3000",
-                f"http://localhost:{DEFAULT_WEB_PORT}",
-                f"http://127.0.0.1:{DEFAULT_WEB_PORT}",
-                "http://localhost:8501",
-                "http://127.0.0.1:8501",
-            ],
-        ),
+        "origins": all_origins,
         "credentials": cors_config.get("allow_credentials", True),
         "methods": cors_config.get("allow_methods", ["*"]),
         "headers": cors_config.get("allow_headers", ["*"]),
@@ -483,144 +501,6 @@ def delete_session_data(session_id: str, state: AppState) -> dict[str, Any]:
     return {"status": "ok"}
 
 
-def filter_messages_for_ui(
-    messages: list[Any], session_created_at: datetime | None = None
-) -> list[dict[str, Any]]:
-    """Filter messages for UI rendering, removing raw tool/system noise."""
-    filtered = []
-
-    # Default timestamp fallback based on session creation time
-    default_timestamp = (
-        session_created_at.strftime("%H:%M") if session_created_at else None
-    )
-
-    for msg in messages:
-        role = getattr(msg, "role", msg.get("role") if isinstance(msg, dict) else "")
-        content = (
-            getattr(msg, "content", msg.get("content") if isinstance(msg, dict) else "")
-            or ""
-        )
-
-        # Extract metadata if available
-        metadata = getattr(
-            msg, "metadata", msg.get("metadata") if isinstance(msg, dict) else None
-        )
-        timestamp = getattr(
-            msg, "timestamp", msg.get("timestamp") if isinstance(msg, dict) else ""
-        )
-        thinking = getattr(
-            msg, "thinking", msg.get("thinking") if isinstance(msg, dict) else ""
-        )
-
-        if metadata and isinstance(metadata, dict):
-            timestamp = timestamp or metadata.get("timestamp", "")
-            thinking = thinking or metadata.get("thinking", "")
-
-        # Handle tool calls
-        tool_calls = getattr(
-            msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None
-        )
-        has_tools = bool(tool_calls)
-
-        # Skip system and tool messages
-        if role == "tool":
-            continue
-        if role == "system":
-            continue
-
-        # Assistant messages with tool_calls should always be included
-        # Otherwise, check skip conditions:
-        if not has_tools:
-            # Drop if it's truly empty assistant message
-            if role == "assistant" and not content.strip():
-                continue
-
-            # Ignore internal framework strings (using pre-compiled patterns)
-            is_internal = any(pattern.search(content) for pattern in _INTERNAL_PATTERNS)
-            if is_internal:
-                continue
-
-        # 3. Extract thinking content if present (stored with markers)
-        display_content = content
-        if not thinking and THINKING_START in content and THINKING_END in content:
-            parts = content.split(THINKING_END, 1)
-            thinking = parts[0].replace(THINKING_START, "").strip()
-            display_content = parts[1].strip()
-
-        # Fallback timestamp if not present - use session creation time or current time
-        if not timestamp:
-            timestamp = (
-                default_timestamp
-                if default_timestamp
-                else datetime.now().strftime("%H:%M")
-            )
-
-        msg_dict = {
-            "role": role,
-            "content": display_content,
-            "timestamp": timestamp,
-            "has_tools": has_tools,
-        }
-        if thinking:
-            msg_dict["thinking"] = thinking
-        if tool_calls:
-            # Normalize tool_calls structure for frontend
-            normalized = []
-            for tc in tool_calls:
-                name = "unknown"
-                args = {}
-                result = None
-                if isinstance(tc, dict):
-                    if "function" in tc:
-                        name = tc["function"].get("name", "unknown")
-                        raw_args = tc["function"].get("arguments", {})
-                    else:
-                        name = tc.get("name", "unknown")
-                        raw_args = tc.get("arguments", {})
-                    # Get result if attached
-                    if "result" in tc:
-                        result = tc["result"]
-                else:
-                    name = getattr(tc, "name", "unknown")
-                    raw_args = getattr(tc, "arguments", {})
-
-                # Handle arguments - could be string, dict, or already parsed
-                if isinstance(raw_args, str):
-                    try:
-                        # First unescape unicode
-                        unescaped = raw_args.encode().decode("unicode_escape")
-                        args = json.loads(unescaped)
-                    except (json.JSONDecodeError, UnicodeDecodeError):
-                        try:
-                            args = json.loads(raw_args)
-                        except json.JSONDecodeError:
-                            args = {"raw": raw_args}
-                elif isinstance(raw_args, dict):
-                    args = raw_args
-                else:
-                    args = {"raw": str(raw_args)}
-
-                tc_normalized = {"name": name, "arguments": args}
-                if result:
-                    tc_normalized["result"] = result
-                normalized.append(tc_normalized)
-            msg_dict["tool_calls"] = normalized
-
-        # Remove separate tool_results field (now attached to tool_calls)
-        # Legacy: still handle if exists
-        tool_results = getattr(
-            msg,
-            "tool_results",
-            msg.get("tool_results") if isinstance(msg, dict) else None,
-        )
-        if tool_results and not msg_dict.get("tool_calls"):
-            msg_dict["tool_results"] = tool_results
-
-        filtered.append(msg_dict)
-
-    return filtered
-
-
 def _create_runtime_agent(
     provider: str,
     model: str,
@@ -720,7 +600,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "echo-ai",
-        "version": "0.1.0",
+        "version": __version__,
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -767,7 +647,7 @@ async def detailed_health_check():
     return {
         "status": "healthy" if all_healthy else "degraded",
         "service": "echo-ai",
-        "version": "0.1.0",
+        "version": __version__,
         "components": components,
         "timestamp": datetime.now().isoformat(),
     }
@@ -1662,9 +1542,9 @@ async def stream_chat(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-def run_server(host: str = "127.0.0.1", port: int = DEFAULT_WEB_PORT):
+def run_server(host: str = "0.0.0.0", port: int = DEFAULT_WEB_PORT):
     """Run the FastAPI server."""
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, reload=False)
 
 
 if __name__ == "__main__":

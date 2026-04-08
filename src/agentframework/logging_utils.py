@@ -1,4 +1,10 @@
-"""Logging utilities for plain and structured debug output."""
+"""Logging utilities for plain and structured debug output.
+
+This module provides utilities for:
+- Correlation ID tracking across requests
+- Structured JSON logging with OpenTelemetry support
+- Debug and plain text logging configuration
+"""
 
 from __future__ import annotations
 
@@ -28,7 +34,11 @@ def set_correlation_id(cid: str | None) -> None:
 
 
 class CorrelationIdFilter(logging.Filter):
-    """Filter that adds correlation_id to log records."""
+    """Logging filter that adds correlation_id to log records.
+
+    This filter is used to track requests across logs by automatically
+    injecting a correlation ID into each log record.
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.correlation_id = get_correlation_id()
@@ -36,7 +46,14 @@ class CorrelationIdFilter(logging.Filter):
 
 
 class JsonFormatter(logging.Formatter):
-    """Simple JSON formatter for structured debug logs."""
+    """JSON formatter for structured debug logs.
+
+    Formats log records as JSON payloads that include:
+    - Log level, logger name, message, timestamp
+    - OpenTelemetry trace ID if available
+    - Exception information if present
+    - Any custom attributes added to the record
+    """
 
     RESERVED = {
         "name",

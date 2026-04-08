@@ -1,4 +1,13 @@
-"""Simple metrics collection for observability."""
+"""Simple metrics collection for observability.
+
+This module provides basic metrics primitives for tracking:
+- Counters: Increment-only metrics
+- Histograms: Value distributions
+- Gauges: Point-in-time values
+- Timers: Context managers for duration tracking
+
+Supports Prometheus export format.
+"""
 
 import time
 from dataclasses import dataclass, field

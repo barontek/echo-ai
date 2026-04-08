@@ -1,4 +1,8 @@
-"""Runtime helpers for chat loop operations."""
+"""Runtime helpers for chat loop operations.
+
+This module provides async input handling, URL extraction from responses,
+and title fetching for link preview functionality.
+"""
 
 import asyncio
 import re
@@ -18,7 +22,14 @@ prompt_session = PromptSession(completer=command_completer)
 
 
 async def get_input(prompt_text: str = "\n> ") -> str:
-    """Get user input with autocomplete support (async)."""
+    """Get user input with autocomplete support (async).
+
+    Args:
+        prompt_text: The prompt to display to the user.
+
+    Returns:
+        The user's input string.
+    """
     try:
         return await prompt_session.prompt_async(prompt_text)
     except Exception:
@@ -28,7 +39,15 @@ async def get_input(prompt_text: str = "\n> ") -> str:
 def current_query_tool_messages(
     messages: list, tool_names: set[str] | None = None
 ) -> list:
-    """Return tool messages associated with the current user query."""
+    """Return tool messages associated with the current user query.
+
+    Args:
+        messages: List of conversation messages.
+        tool_names: Optional set of tool names to filter by.
+
+    Returns:
+        List of tool messages for the current query.
+    """
     user_indexes = [i for i, message in enumerate(messages) if message.role == "user"]
 
     if len(user_indexes) >= 2:

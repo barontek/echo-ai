@@ -18,6 +18,8 @@ import logging
 import os
 from typing import Any
 
+from . import __version__
+
 logger = logging.getLogger(__name__)
 
 _sentry_initialized = False
@@ -50,7 +52,7 @@ def init_sentry() -> bool:
             send_default_pii=True,
             traces_sample_rate=1.0,
             environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
-            release=f"echo-ai@{os.environ.get('SENTRY_RELEASE', '0.1.0')}",
+            release=f"echo-ai@{os.environ.get('SENTRY_RELEASE', __version__)}",
         )
 
         _sentry_initialized = True

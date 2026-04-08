@@ -303,7 +303,7 @@ class MemoryTool(Tool):
 
             lines = [f"[{category}] {content}" for content, category in results]
             return "\n".join(lines)
-        except Exception:
+        except (sqlite3.OperationalError, sqlite3.Error):
             return ""
 
     async def _delete_fact(self, content: str) -> ToolResult:

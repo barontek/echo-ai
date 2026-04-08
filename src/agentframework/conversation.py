@@ -195,37 +195,44 @@ async def apply_context_window(
     max_context_messages: int,
     max_context_chars: int,
     summarize_fn: Any = None,
-) -> list[Message]:
-    """Apply sliding window to messages with summarization."""
+) -> tuple[list[Message], list[Message]]:
+    """Apply sliding window to messages with lazy summarization.
+
+    Returns a tuple of (filtered_messages, dropped_messages).
+    The dropped messages can be summarized in a background task.
+    """
     if not messages:
-        return []
+        return [], []
 
     if max_context_messages <= 0 and max_context_chars <= 0:
-        return messages
+        return messages, []
 
     if max_context_messages > 0 and max_context_chars <= 0:
-        return messages[-max_context_messages:]
+        dropped = (
+            messages[:-max_context_messages]
+            if len(messages) > max_context_messages
+            else []
+        )
+        return messages[-max_context_messages:], list(dropped)
 
     keep_recent_tokens = int(max_context_chars * 0.7)
     recent = trim_messages_by_tokens(messages, keep_recent_tokens)
 
     if len(recent) == len(messages):
-        return recent[-max_context_messages:] if max_context_messages > 0 else recent
+        return recent[
+            -max_context_messages:
+        ] if max_context_messages > 0 else recent, []
 
-    trimmed_count = len(messages) - len(recent)
-    if trimmed_count <= 2:
-        return recent[-max_context_messages:] if max_context_messages > 0 else recent
-
-    old_messages = messages[: -len(recent)] if recent else messages[:-1]
-
-    if summarize_fn:
-        summary = await summarize_fn(old_messages)
-        summary_msg = Message(role="system", content=summary)
-        result = [summary_msg] + recent
+    # Hard FIFO truncation - no summarization
+    if recent:
+        dropped = messages[: -len(recent)]
     else:
-        result = recent
+        dropped = messages[:-1] if messages else []
 
-    return result[-max_context_messages:] if max_context_messages > 0 else result
+    result = recent
+    return result[-max_context_messages:] if max_context_messages > 0 else result, list(
+        dropped
+    )
 
 
 async def summarize_old_messages(messages_to_summarize: list[Message], llm: Any) -> str:

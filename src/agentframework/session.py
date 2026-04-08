@@ -1,6 +1,7 @@
 """Session management for the agent framework using SQLite."""
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -502,11 +503,44 @@ class SessionManager:
 
 
 class ChangeTracker:
-    """Track file changes for undo functionality."""
+    """Track file changes for undo functionality with memory-safe large file handling."""
 
-    def __init__(self):
+    LARGE_FILE_THRESHOLD = 50000
+
+    def __init__(self, backup_dir: str = ".agent_sessions/.backups"):
         self.changes: list[dict] = []
         self.redo_stack: list[dict] = []
+        self.backup_dir = Path(backup_dir)
+        if self.backup_dir.exists():
+            for f in self.backup_dir.iterdir():
+                try:
+                    f.unlink()
+                except Exception as e:
+                    logger.debug("Failed to delete backup file %s: %s", f, e)
+        else:
+            self.backup_dir.mkdir(parents=True)
+
+    def _store_large_content(self, content: str | None) -> str | None:
+        """Store content > 50K to temp file, return filepath instead of raw content."""
+        if content and len(content) > self.LARGE_FILE_THRESHOLD:
+            filepath = self.backup_dir / f"{uuid.uuid4().hex}.txt"
+            try:
+                filepath.write_text(content)
+                return str(filepath)
+            except Exception as e:
+                logger.warning("Failed to write large content to backup: %s", e)
+                return content
+        return content
+
+    def _read_content(self, content: str | None) -> str | None:
+        """Read content from memory or from backup file if filepath detected."""
+        if content and Path(content).exists():
+            try:
+                return Path(content).read_text()
+            except Exception as e:
+                logger.warning("Failed to read backup file %s: %s", content, e)
+                return None
+        return content
 
     def record_change(
         self,
@@ -521,8 +555,8 @@ class ChangeTracker:
             {
                 "operation": operation,
                 "path": path,
-                "old_content": old_content,
-                "new_content": new_content,
+                "old_content": self._store_large_content(old_content),
+                "new_content": self._store_large_content(new_content),
                 "tool_call_id": tool_call_id,
                 "timestamp": datetime.now().isoformat(),
             }
@@ -545,6 +579,9 @@ class ChangeTracker:
                 remaining.append(change)
 
         self.changes = remaining
+        for change in reverted:
+            change["old_content"] = self._read_content(change.get("old_content"))
+            change["new_content"] = self._read_content(change.get("new_content"))
         return reverted
 
     def undo(self) -> dict | None:
@@ -553,6 +590,8 @@ class ChangeTracker:
             return None
 
         change = self.changes.pop()
+        change["old_content"] = self._read_content(change.get("old_content"))
+        change["new_content"] = self._read_content(change.get("new_content"))
         self.redo_stack.append(change)
         return change
 
@@ -562,6 +601,8 @@ class ChangeTracker:
             return None
 
         change = self.redo_stack.pop()
+        change["old_content"] = self._read_content(change.get("old_content"))
+        change["new_content"] = self._read_content(change.get("new_content"))
         self.changes.append(change)
         return change
 

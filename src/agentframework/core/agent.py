@@ -93,6 +93,7 @@ class Agent:
         self.memory_manager: MemoryManager | None = None
         self.callback_manager = CallbackManager()
         self.sub_agents: dict[str, SubAgentConfig] = {}
+        self._pending_summary: list[Message] | None = None
 
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
@@ -198,6 +199,9 @@ class Agent:
         )
 
         self.messages = updated_messages
+
+        if self._pending_summary:
+            asyncio.create_task(self._background_summarize())
 
         if self.session_manager:
             self.session_manager.add_message(
@@ -345,6 +349,10 @@ class Agent:
                     final_content, response.thinking or thinking_process
                 )
                 current_messages.append(assistant_msg)
+
+                if self._pending_summary:
+                    asyncio.create_task(self._background_summarize())
+
                 return final_content, current_messages
 
             if iteration == 0 and response.thinking:
@@ -506,19 +514,24 @@ class Agent:
         return sanitize_json(json_str)
 
     async def _prepare_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Prepare messages for the LLM with sliding window to prevent context overflow."""
+        """Prepare messages for the LLM with lazy summarization to prevent context overflow."""
         before_count = len(messages)
-        filtered_messages = await apply_context_window(
+        filtered_messages, dropped = await apply_context_window(
             messages,
             self.config.max_context_messages,
             self.config.max_context_chars,
-            summarize_fn=lambda msgs: summarize_old_messages(msgs, self.llm),
+            summarize_fn=None,  # Lazy - no summarization during generation
         )
+
+        if dropped:
+            self._pending_summary = dropped
+
         logger.debug(
             "context_window",
             extra={
                 "context_before": before_count,
                 "context_after": len(filtered_messages),
+                "dropped_count": len(dropped),
                 "max_messages": self.config.max_context_messages,
                 "max_chars": self.config.max_context_chars,
             },
@@ -559,6 +572,28 @@ class Agent:
             "Use them to personalize your responses:\n\n" + memories_str
         )
         self.messages.insert(0, Message(role="system", content=system_msg))
+
+    async def _background_summarize(self) -> None:
+        """Background task to summarize dropped messages after streaming completes."""
+        if not self._pending_summary:
+            return
+
+        try:
+            summary = await summarize_old_messages(self._pending_summary, self.llm)
+            if summary:
+                summary_msg = Message(role="system", content=summary)
+                self.messages.insert(1, summary_msg)
+                logger.info(
+                    "Background summarization completed",
+                    extra={
+                        "summary_length": len(summary),
+                        "dropped_count": len(self._pending_summary),
+                    },
+                )
+        except Exception as e:
+            logger.error("Background summarization failed: %s", e)
+        finally:
+            self._pending_summary = None
 
     def redo(self) -> str:
         """Redo the last undone change."""

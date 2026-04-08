@@ -65,14 +65,16 @@ def test_trim_messages_pull_user_context():
 @pytest.mark.asyncio
 async def test_apply_context_window_no_limits():
     msgs = [Message(role="user", content="hi")]
-    assert await apply_context_window(msgs, 0, 0) == msgs
-    assert await apply_context_window([], 10, 100) == []
+    result, dropped = await apply_context_window(msgs, 0, 0)
+    assert result == msgs
+    result, dropped = await apply_context_window([], 10, 100)
+    assert result == []
 
 
 @pytest.mark.asyncio
 async def test_apply_context_window_message_count_only():
     msgs = [Message(role="user", content=str(i)) for i in range(10)]
-    result = await apply_context_window(msgs, 5, 0)
+    result, dropped = await apply_context_window(msgs, 5, 0)
     assert len(result) == 5
     assert result[-1].content == "9"
 

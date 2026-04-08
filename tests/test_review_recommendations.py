@@ -109,10 +109,14 @@ def test_context_summarization_content_included():
         agent.messages.append(Message(role="user", content=f"long message {i} " * 20))
 
     prepared = asyncio.run(agent._prepare_messages(agent.messages))
-    assert any(
-        m["role"] == "system" and "summary: important context" in m["content"]
-        for m in prepared
-    )
+
+    # With lazy summarization, messages are truncated but no summary is added yet
+    # The dropped messages are stored in _pending_summary for background processing
+    assert len(prepared) <= 12  # Truncated to max_context_messages
+    assert (
+        agent._pending_summary is not None
+    )  # Dropped messages captured for background summarization
+
     agent.close()
 
 

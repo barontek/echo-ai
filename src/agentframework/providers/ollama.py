@@ -206,10 +206,10 @@ class OllamaProvider(LLMProvider):
             # FIX: Translate inline <think> tags for models that put thoughts in content
             if "<think>" in content:
                 content = content.replace("<think>", THINKING_START + "\n").replace(
-                    "</think>", "\n" + THINKING_END
+                    "", "\n" + THINKING_END
                 )
 
-            if thinking:
+            if thinking and THINKING_START not in content:
                 content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
             tool_calls = []
 

@@ -3,11 +3,13 @@
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable
 from uuid import uuid4
 
+from ..constants import THINKING_END, THINKING_START
 from ..providers import LLMProvider, get_provider, LLMToolCall, LLMResponse
 from ..tools import Tool, ToolResult
 from ..session import SessionManager, ChangeTracker
@@ -236,7 +238,17 @@ class Agent:
                     ),
                     timeout=30.0,  # Increased timeout for slower reasoning models
                 )
-                return title_response.content.strip().strip('"').strip("'")
+                raw = title_response.thinking or title_response.content
+                if THINKING_START in title_response.content:
+                    after_thinking = title_response.content.split(THINKING_END, 1)[1]
+                    raw = after_thinking.strip()
+                raw = re.sub(
+                    rf"{re.escape(THINKING_START)}.*?{re.escape(THINKING_END)}",
+                    "",
+                    raw,
+                    flags=re.DOTALL,
+                ).strip()
+                return raw.strip().strip('"').strip("'")
             except (asyncio.TimeoutError, Exception) as e:
                 logger.debug(f"Title generation failed or timed out: {e}")
                 return simple_title  # Use first words of user message, not the prompt

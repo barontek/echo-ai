@@ -514,18 +514,38 @@ class ChangeTracker:
         path: str,
         old_content: str | None = None,
         new_content: str | None = None,
+        tool_call_id: str | None = None,
     ):
-        """Record a file change."""
+        """Record a file change with optional tool_call_id for per-tool tracking."""
         self.changes.append(
             {
                 "operation": operation,
                 "path": path,
                 "old_content": old_content,
                 "new_content": new_content,
+                "tool_call_id": tool_call_id,
                 "timestamp": datetime.now().isoformat(),
             }
         )
         self.redo_stack.clear()
+
+    def revert_change_for_tool(self, tool_call_id: str) -> list[dict]:
+        """Revert all changes associated with a specific tool_call_id.
+
+        Returns list of reverted changes for logging purposes.
+        """
+        reverted: list[dict] = []
+        remaining: list[dict] = []
+
+        for change in self.changes:
+            if change.get("tool_call_id") == tool_call_id:
+                reverted.append(change)
+                self.redo_stack.append(change)
+            else:
+                remaining.append(change)
+
+        self.changes = remaining
+        return reverted
 
     def undo(self) -> dict | None:
         """Undo the last change."""

@@ -140,6 +140,7 @@ async def execute_single_tool(
                     change.get("path"),
                     change.get("old_content"),
                     change.get("new_content"),
+                    tool_call_id=tool_call.id,
                 )
             except Exception as e:
                 logger.debug("Failed to record change: %s", e)
@@ -200,6 +201,17 @@ async def execute_single_tool(
         if callback_manager:
             callback_manager.on_tool_error(run_id, tool_call.name, str(e))
         record_tool_execution(tool_call.name, perf_counter() - started, False)
+
+        if change_tracker:
+            reverted = change_tracker.revert_change_for_tool(tool_call.id)
+            if reverted:
+                logger.warning(
+                    "Reverted %d changes for failed tool %s",
+                    len(reverted),
+                    tool_call.name,
+                    extra={"tool_call_id": tool_call.id, "reverted_changes": reverted},
+                )
+
         return (
             Message(
                 role="tool",

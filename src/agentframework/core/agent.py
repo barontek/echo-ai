@@ -426,6 +426,28 @@ class Agent:
             run_id=request_id or "",
         )
 
+        critical_errors = [
+            msg
+            for msg in tool_messages
+            if msg.error_category in ("execution_error", "timeout")
+        ]
+        if critical_errors:
+            logger.warning(
+                "Critical tool execution failure(s) detected",
+                extra={
+                    "request_id": request_id,
+                    "iteration": iteration,
+                    "failed_tools": [
+                        {
+                            "name": msg.tool_name,
+                            "error": msg.content[:100],
+                            "category": msg.error_category,
+                        }
+                        for msg in critical_errors
+                    ],
+                },
+            )
+
         if timings:
             total_latency = sum(timings.values())
             logger.debug(

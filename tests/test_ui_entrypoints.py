@@ -1,14 +1,17 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
-pytest.importorskip("textual", reason="textual not installed")
-from src.agentframework.tui import TuiCallback, AgentDashboard
+textual = pytest.importorskip("textual")  # noqa: E402
+
+from src.agentframework.tui import TuiCallback, AgentDashboard  # noqa: E402
+
 
 @pytest.fixture
 def mock_agent():
     m = MagicMock()
     m.add_callback = MagicMock()
     return m
+
 
 def test_tui_callback_methods():
     mock_app = MagicMock()
@@ -32,11 +35,13 @@ def test_tui_callback_methods():
     callback.on_tool_error("run1", "tool", "err")
     assert mock_app.tools_panel.write_line.called or mock_app.call_from_thread.called
 
+
 def test_agent_dashboard_init():
     mock_agent = MagicMock()
     app = AgentDashboard(mock_agent)
     assert app.agent == mock_agent
     assert mock_agent.add_callback.called
+
 
 @pytest.mark.asyncio
 async def test_agent_dashboard_full_flow():
@@ -72,6 +77,7 @@ async def test_agent_dashboard_full_flow():
         assert mock_agent.run_streaming.called
         assert mock_agent.run_streaming.call_args[0][0] == "Hello"
 
+
 def test_tui_callback_extended(mock_agent):
     app = MagicMock()
     callback = TuiCallback(app)
@@ -84,13 +90,16 @@ def test_tui_callback_extended(mock_agent):
     callback.on_tool_error("run-1", "test_tool", "error")
     assert app.call_from_thread.call_count > 0
 
+
 @patch("src.agentframework.tui.AgentDashboard.run")
 @patch("src.agentframework.tui.create_agent")
 def test_dashboard_run_entrypoint(mock_create_agent, mock_run):
     from src.agentframework.tui import run_dashboard
+
     run_dashboard()
     assert mock_create_agent.called
     assert mock_run.called
+
 
 def test_agent_dashboard_initial_state():
     mock_agent = MagicMock()

@@ -148,7 +148,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 if (last?.role === 'assistant') {
                   return [...prev.slice(0, -1), { ...last, content: data.content || '' }];
                 }
-                return [...prev, { role: 'assistant', content: data.content || '', has_tools: false }];
+                return [
+                  ...prev,
+                  { role: 'assistant', content: data.content || '', has_tools: false },
+                ];
               });
               break;
 
@@ -164,7 +167,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   return [...prev.slice(0, -1), { ...last, thinking: data.content }];
                 }
                 // Create new assistant message with thinking
-                return [...prev, { role: 'assistant', content: '', thinking: data.content, has_tools: false }];
+                return [
+                  ...prev,
+                  { role: 'assistant', content: '', thinking: data.content, has_tools: false },
+                ];
               });
               break;
 
@@ -192,9 +198,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                       content: data.content || last.content,
                       thinking: data.thinking,
                       has_tools: data.has_tools ?? last.has_tools,
-                      tool_calls: (data.tool_calls && data.tool_calls.length > 0)
-                        ? data.tool_calls
-                        : last.tool_calls,
+                      tool_calls:
+                        data.tool_calls && data.tool_calls.length > 0
+                          ? data.tool_calls
+                          : last.tool_calls,
                       timestamp: data.timestamp || last.timestamp,
                     },
                   ];

@@ -1,17 +1,22 @@
 import pytest
 from unittest.mock import MagicMock, patch, ANY
 
-pytest.importorskip("opentelemetry", reason="opentelemetry not installed")
-from src.agentframework.otel import OpenTelemetryCallback
+opentelemetry = pytest.importorskip("opentelemetry")  # noqa: E402
+
+from src.agentframework.otel import OpenTelemetryCallback  # noqa: E402
+
 
 @pytest.fixture
 def mock_tracer():
-    with patch("opentelemetry.trace.get_tracer") as mock, \
-         patch("opentelemetry.context.attach"), \
-         patch("opentelemetry.context.detach"):
+    with (
+        patch("opentelemetry.trace.get_tracer") as mock,
+        patch("opentelemetry.context.attach"),
+        patch("opentelemetry.context.detach"),
+    ):
         tracer = MagicMock()
         mock.return_value = tracer
         yield tracer
+
 
 def test_otel_run_lifecycle(mock_tracer):
     cb = OpenTelemetryCallback()
@@ -27,6 +32,7 @@ def test_otel_run_lifecycle(mock_tracer):
     assert "run1" not in cb.run_spans
     span.end.assert_called()
 
+
 def test_otel_run_error(mock_tracer):
     cb = OpenTelemetryCallback()
     cb.on_run_start("run2", "hi")
@@ -36,6 +42,7 @@ def test_otel_run_error(mock_tracer):
     span = mock_tracer.start_span.return_value
     span.record_exception.assert_called_with(err)
     span.end.assert_called()
+
 
 def test_otel_llm_lifecycle(mock_tracer):
     cb = OpenTelemetryCallback()
@@ -52,6 +59,7 @@ def test_otel_llm_lifecycle(mock_tracer):
     span.set_attribute.assert_any_call("llm.response_length", len("response content"))
     span.set_attribute.assert_any_call("llm.tool_calls_count", 2)
 
+
 def test_otel_tool_lifecycle(mock_tracer):
     cb = OpenTelemetryCallback()
     kwargs = {"a": 1}
@@ -62,6 +70,7 @@ def test_otel_tool_lifecycle(mock_tracer):
     cb.on_tool_end("run1", "search", "result string")
     span = mock_tracer.start_span.return_value
     span.set_attribute.assert_any_call("tool.result_length", len("result string"))
+
 
 def test_otel_tool_error(mock_tracer):
     cb = OpenTelemetryCallback()

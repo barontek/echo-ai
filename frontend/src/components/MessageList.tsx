@@ -53,7 +53,9 @@ export const MessageList = memo(function MessageList() {
                         {tc.result && (
                           <div className="tool-result">
                             <div className="tool-result-label">Result:</div>
-                            <pre className="tool-result-content">{tc.result.content || tc.result.error || '(empty)'}</pre>
+                            <pre className="tool-result-content">
+                              {tc.result.content || tc.result.error || '(empty)'}
+                            </pre>
                           </div>
                         )}
                       </details>

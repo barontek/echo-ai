@@ -1,9 +1,9 @@
 import pytest
 
-pytest.importorskip("chromadb")
+chromadb = pytest.importorskip("chromadb")  # noqa: E402
 
-from src.agentframework.tools.rag import SemanticSearchTool, DocumentIngestionTool
-from src.agentframework.vector import VectorStore
+from src.agentframework.tools.rag import SemanticSearchTool, DocumentIngestionTool  # noqa: E402
+from src.agentframework.vector import VectorStore  # noqa: E402
 
 
 @pytest.fixture

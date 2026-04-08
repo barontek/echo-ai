@@ -471,9 +471,6 @@ class TestWebSocket:
             mock_agent = MagicMock()
             mock_agent.session_manager = None
 
-            # Track the messages for partial content
-            partial_messages = []
-
             async def mock_run_streaming(prompt, on_chunk=None):
                 # Simulate LLM calling on_chunk with partial content
                 if on_chunk:

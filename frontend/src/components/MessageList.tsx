@@ -1,11 +1,15 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Pencil, Copy, Check } from 'lucide-react';
 import { useChat } from '../context';
 
 export const MessageList = memo(function MessageList() {
-  const { messages, isStreaming } = useChat();
+  const { messages, isStreaming, editMessage } = useChat();
   const containerRef = useRef<HTMLDivElement>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (containerRef.current) {
@@ -76,14 +80,50 @@ export const MessageList = memo(function MessageList() {
               {msg.timestamp && <div className="message-time">{msg.timestamp}</div>}
               {msg.role === 'assistant' && msg.content && (
                 <button
-                  className="copy-button"
-                  onClick={() => navigator.clipboard.writeText(msg.content)}
+                  className="icon-button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(msg.content);
+                    setCopiedIndex(idx);
+                    setTimeout(() => setCopiedIndex(null), 2000);
+                  }}
                   title="Copy"
                 >
-                  Copy
+                  {copiedIndex === idx ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              )}
+              {msg.role === 'user' && !isStreaming && (
+                <button
+                  className="icon-button"
+                  onClick={() => { setEditingIndex(idx); setEditText(msg.content); }}
+                  title="Edit"
+                >
+                  <Pencil size={16} />
                 </button>
               )}
             </div>
+            {editingIndex === idx && (
+              <div className="edit-overlay">
+                <textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  autoFocus
+                  rows={3}
+                />
+                <div className="edit-actions">
+                  <button 
+                    onClick={() => {
+                      editMessage(idx, editText);
+                      setEditingIndex(null);
+                    }}
+                  >
+                    Regenerate
+                  </button>
+                  <button onClick={() => setEditingIndex(null)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ))}

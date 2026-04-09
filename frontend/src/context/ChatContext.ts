@@ -24,6 +24,7 @@ export interface ChatContextValue {
   setSidebarOpen: (open: boolean) => void;
   sendMessage: (content: string) => void;
   stopGeneration: () => void;
+  editMessage: (index: number, newText: string) => void;
   retryMessage: (index: number) => void;
   createSession: () => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;

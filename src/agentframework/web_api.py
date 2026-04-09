@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.agentframework.core import Agent, AgentConfig, create_agent
+from src.agentframework.core.session_runtime import deserialize_messages
 from src.agentframework.config import get_safety_config, get_tools, load_config
 from src.agentframework.web_utils import filter_messages_for_ui
 from src.agentframework.constants import THINKING_END, THINKING_START
@@ -568,6 +569,7 @@ class WsMessagePayload(BaseModel):
     type: str | None = None
     content: str | None = None
     session_id: str | None = None
+    index: int | None = None
 
 
 class WorkflowRunPayload(BaseModel):
@@ -1392,6 +1394,119 @@ async def websocket_chat(websocket: WebSocket):
                 stop_requested = True
                 if streaming_task and not streaming_task.done():
                     streaming_task.cancel()
+                continue
+
+            if message.type == "edit":
+                edit_index = message.index
+                edit_content = message.content
+
+                logger.debug(
+                    "ws:edit",
+                    extra={
+                        "index": edit_index,
+                        "content": edit_content[:30] if edit_content else None,
+                        "session_id": message.session_id,
+                    },
+                )
+
+                if edit_index is None:
+                    await websocket.send_json(
+                        {"type": "error", "content": "Missing edit index"}
+                    )
+                    continue
+
+                if not active_agent.session_manager or not message.session_id:
+                    await websocket.send_json(
+                        {"type": "error", "content": "No active session"}
+                    )
+                    continue
+
+                session = active_agent.session_manager.load_session(message.session_id)
+                if not session:
+                    await websocket.send_json(
+                        {"type": "error", "content": "Session not found"}
+                    )
+                    continue
+                logger.debug(
+                    "ws:edit:session_loaded",
+                    extra={
+                        "session_id": session.id if session else None,
+                        "messages_count": len(session.messages) if session else 0,
+                        "all_roles": [m.get("role") for m in session.messages]
+                        if session
+                        else [],
+                    },
+                )
+                if (
+                    not session
+                    or edit_index < 0
+                    or edit_index >= len(session.messages) - 1
+                ):
+                    await websocket.send_json(
+                        {"type": "error", "content": "Invalid edit index"}
+                    )
+                    continue
+
+                target_msg = session.messages[edit_index]
+                logger.debug(
+                    "ws:edit:target_msg",
+                    extra={
+                        "target_msg": target_msg,
+                        "role": target_msg.get("role"),
+                        "edit_index": edit_index,
+                        "session_messages": session.messages,
+                    },
+                )
+
+                # Frontend excludes system message from its array, but session includes it
+                # So frontend index 0 = session index 1, frontend index N = session index N+1
+                target_index = edit_index + 1
+                target_msg = session.messages[target_index]
+
+                if not edit_content:
+                    await websocket.send_json(
+                        {"type": "error", "content": "Missing edit content"}
+                    )
+                    continue
+
+                logger.debug(
+                    "ws:edit:processing",
+                    extra={
+                        "edit_index": edit_index,
+                        "target_index": target_index,
+                        "session_messages_before": len(session.messages),
+                        "edit_content": edit_content[:50],
+                    },
+                )
+
+                # Load session and update the target message with new content
+                active_agent.session_manager.current_session = session
+                session.messages[target_index] = {
+                    "role": "user",
+                    "content": edit_content,
+                    "timestamp": session.messages[target_index].get(
+                        "timestamp", datetime.now().strftime("%H:%M")
+                    ),
+                }
+                # Truncate everything after the target index (exclusive)
+                active_agent.session_manager.truncate_history(target_index + 1)
+                active_agent.messages = deserialize_messages(session.messages)
+
+                logger.debug(
+                    "ws:edit:after_truncate",
+                    extra={
+                        "agent_messages_count": len(active_agent.messages),
+                        "session_messages_after_truncate": len(session.messages),
+                    },
+                )
+
+                # Truncate any existing streaming task and run agent with new prompt
+                if streaming_task and not streaming_task.done():
+                    streaming_task.cancel()
+                    await asyncio.sleep(0.1)
+
+                stop_requested = False
+                streaming_task = asyncio.create_task(run_agent(edit_content))
                 continue
 
             if message.type == "message" or not message.type:

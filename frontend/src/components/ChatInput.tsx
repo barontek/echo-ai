@@ -1,4 +1,5 @@
 import { memo, useState, type KeyboardEvent, type FormEvent } from 'react';
+import { Square, ArrowUp } from 'lucide-react';
 import { useChat } from '../context';
 
 interface ChatInputProps {
@@ -50,15 +51,15 @@ export const ChatInput = memo(function ChatInput({
         {isStreaming ? (
           <button
             type="button"
-            className="stop-button"
+            className="icon-button"
             onClick={stopGeneration}
             title="Stop generation"
           >
-            <span>⏹</span>
+            <Square size={18} fill="currentColor" />
           </button>
         ) : (
-          <button type="submit" className="send-button" disabled={disabled || !input.trim()}>
-            <span>Send</span>
+          <button type="submit" className="icon-button send-button-icon" disabled={disabled || !input.trim()}>
+            <ArrowUp size={20} />
           </button>
         )}
       </div>

@@ -274,6 +274,21 @@ class SessionManager:
                 )
             db.commit()
 
+    def truncate_history(self, index: int) -> None:
+        """Truncate session history to the given index (exclusive), dropping all subsequent messages."""
+        if not self.current_session:
+            return
+
+        if index < 0:
+            index = 0
+
+        if index >= len(self.current_session.messages):
+            return
+
+        self.current_session.messages = self.current_session.messages[:index]
+        self.save_session()
+        self.log_event("history_truncated", {"index": index})
+
     def list_sessions(
         self,
         limit: int = 50,

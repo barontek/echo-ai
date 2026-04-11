@@ -165,6 +165,8 @@ class SecurityValidator:
 
     def check_path_traversal(self, path: str) -> bool:
         """Check for path traversal attempts."""
+        if not path:
+            return False
         try:
             resolved = (self.workspace_path / path).resolve()
             return resolved.is_relative_to(self.workspace_path)
@@ -173,6 +175,8 @@ class SecurityValidator:
 
     def is_blocked_extension(self, path: str) -> bool:
         """Check if file has blocked extension."""
+        if not path:
+            return False
         filename = os.path.basename(path)
         for pattern in self._blocked_extensions:
             if pattern.match(filename):
@@ -181,6 +185,8 @@ class SecurityValidator:
 
     def is_blocked_path(self, path: str) -> bool:
         """Check if path is in blocked list."""
+        if not path:
+            return False
         for pattern in self._blocked_path_patterns:
             if pattern.match(path):
                 return True
@@ -317,6 +323,8 @@ class SecurityValidator:
         self, tool_name: str, path: str | None = None, content: str | None = None
     ) -> bool:
         """Check if tool requires user approval."""
+        if self.config.require_approval_for is None:
+            return False
         if tool_name in self.config.require_approval_for:
             return True
 

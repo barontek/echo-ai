@@ -1481,6 +1481,7 @@ async def websocket_chat(websocket: WebSocket):
 
                 # Load session and update the target message with new content
                 active_agent.session_manager.current_session = session
+
                 session.messages[target_index] = {
                     "role": "user",
                     "content": edit_content,
@@ -1488,17 +1489,16 @@ async def websocket_chat(websocket: WebSocket):
                         "timestamp", datetime.now().strftime("%H:%M")
                     ),
                 }
-                # Truncate everything after the target index (exclusive)
-                active_agent.session_manager.truncate_history(target_index + 1)
+
+                # Truncate everything at and after target_index
+                # This removes the old user message so run_agent can add it fresh
+                active_agent.session_manager.truncate_history(target_index)
+
+                # Deserialize session messages to agent messages
                 active_agent.messages = deserialize_messages(session.messages)
 
-                logger.debug(
-                    "ws:edit:after_truncate",
-                    extra={
-                        "agent_messages_count": len(active_agent.messages),
-                        "session_messages_after_truncate": len(session.messages),
-                    },
-                )
+                # Also update state.message_history to match the truncated session
+                state.message_history = state.message_history[:target_index]
 
                 # Truncate any existing streaming task and run agent with new prompt
                 if streaming_task and not streaming_task.done():

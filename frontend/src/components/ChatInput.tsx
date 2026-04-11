@@ -1,4 +1,4 @@
-import { memo, useState, type KeyboardEvent, type FormEvent } from 'react';
+import { memo, useState, useRef, useEffect, type KeyboardEvent, type FormEvent } from 'react';
 import { Square, ArrowUp } from 'lucide-react';
 import { useChat } from '../context';
 
@@ -11,6 +11,14 @@ export const ChatInput = memo(function ChatInput({
 }: ChatInputProps) {
   const { sendMessage, isConnected, isStreaming, stopGeneration } = useChat();
   const [input, setInput] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+    }
+  }, [input]);
 
   const disabled = !isConnected;
   const placeholderText = isStreaming ? 'Generating...' : placeholder;
@@ -20,6 +28,9 @@ export const ChatInput = memo(function ChatInput({
     if (trimmed && !disabled) {
       sendMessage(trimmed);
       setInput('');
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
     }
   };
 
@@ -39,6 +50,7 @@ export const ChatInput = memo(function ChatInput({
     <form className="chat-input-container" onSubmit={handleSubmit}>
       <div className="input-wrapper">
         <textarea
+          ref={textareaRef}
           id="chat-input"
           className="chat-input"
           value={input}
@@ -58,7 +70,11 @@ export const ChatInput = memo(function ChatInput({
             <Square size={18} fill="currentColor" />
           </button>
         ) : (
-          <button type="submit" className="icon-button send-button-icon" disabled={disabled || !input.trim()}>
+          <button
+            type="submit"
+            className="icon-button send-button-icon"
+            disabled={disabled || !input.trim()}
+          >
             <ArrowUp size={20} />
           </button>
         )}

@@ -342,31 +342,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const editMessage = useCallback((index: number, newText: string) => {
-    const msg = messages[index];
-    if (!msg) {
-      return;
-    }
-    
-    // Update local state with new content
-    setMessages(prev => {
-      const newMsgs = prev.slice(0, index + 1);
-      newMsgs[index] = { ...newMsgs[index], content: newText };
-      return newMsgs;
-    });
-    setIsStreaming(true);
-    
-    // Send edit over WebSocket
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'edit',
-        index: index,
-        content: newText,
-        session_id: activeSessionId
-      }));
-    }
-  }, [activeSessionId, messages]);
+  const editMessage = useCallback(
+    (index: number, newText: string) => {
+      const msg = messages[index];
+      if (!msg) {
+        return;
+      }
+
+      // Update local state with new content
+      setMessages((prev) => {
+        const newMsgs = prev.slice(0, index + 1);
+        newMsgs[index] = { ...newMsgs[index], content: newText };
+        return newMsgs;
+      });
+      setIsStreaming(true);
+
+      // Send edit over WebSocket
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: 'edit',
+            index: index,
+            content: newText,
+            session_id: activeSessionId,
+          })
+        );
+      }
+    },
+    [activeSessionId, messages]
+  );
 
   // Load initial data
   useEffect(() => {

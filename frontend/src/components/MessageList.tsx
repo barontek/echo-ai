@@ -44,15 +44,14 @@ export const MessageList = memo(function MessageList() {
             <div className="message-bubble">
               {isEditing && (
                 <div className="message-content">
-                  <div
+                  <textarea
                     className="edit-input"
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={(e) => setEditText(e.currentTarget.textContent || '')}
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    autoFocus
+                    spellCheck={false}
                     onKeyDown={(e) => handleEditKeyDown(e, idx)}
-                  >
-                    {editText}
-                  </div>
+                  />
                 </div>
               )}
 

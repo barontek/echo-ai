@@ -455,7 +455,7 @@ describe('Session History Bug Tests', () => {
 
       // Simulate 'done' message from server
       if (onmessageHandler) {
-        onmessageHandler({
+        (onmessageHandler as (event: { data: string }) => void)({
           data: JSON.stringify({
             type: 'done',
             content: 'response',

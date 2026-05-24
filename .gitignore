@@ -59,6 +59,10 @@ uv.lock
 # FastHTML session key
 .sesskey
 
+# Nix
+result
+result-*
+
 # Environment variables (secrets)
 .env
 .opencode/

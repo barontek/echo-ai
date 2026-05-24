@@ -1,4 +1,5 @@
 import { createContext, type Context } from 'react';
+import type { ToolCall } from '../types';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -13,7 +14,7 @@ export interface ChatContextValue {
     timestamp?: string;
     thinking?: string;
     has_tools?: boolean;
-    tool_calls?: Array<{ name: string; arguments: Record<string, unknown> }>;
+    tool_calls?: ToolCall[];
     error?: string;
   }>;
   connectionStatus: ConnectionStatus;

@@ -2,7 +2,7 @@
 
 > **Disclaimer**: This project is entirely vibecoded. Don't use for anything important.
 
-A standalone AI agent framework built from scratch, similar to OpenCode but simpler.
+A standalone AI agent framework built from scratch.
 
 ## Features
 
@@ -23,10 +23,10 @@ cd echo-ai
 make install
 
 # Run in chat mode (continuous conversation)
-./chat
+make chat
 
 # Or run single command
-./agent "your task"
+make run ARGS="your task"
 ```
 
 ## Environment Variables
@@ -183,10 +183,6 @@ Chat mode:
 - Python 3.11+
 - Ollama (for local models) or API keys for Anthropic/OpenAI
 
-## Changelog
-
-- See [`CHANGELOG.md`](./CHANGELOG.md) for release notes and the unreleased change log.
-
 ## Benchmarks
 
 ```bash
@@ -198,7 +194,7 @@ python scripts/benchmarks/basic_benchmark.py --iterations 50
 
 ```bash
 # Install in development mode
-pip install -e .
+make install
 
 # Run all tests
 make test

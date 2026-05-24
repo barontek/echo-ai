@@ -9,11 +9,11 @@ WORKDIR /app
 # Install uv package manager
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copy the lockfile and pyproject
-COPY pyproject.toml uv.lock ./
+# Copy pyproject only (no lockfile - generate during build)
+COPY pyproject.toml ./
 
 # Install dependencies into .venv
-RUN uv sync --frozen --no-dev
+RUN uv pip install . --system
 
 # Copy project files
 COPY --chown=appuser:appgroup . .
@@ -21,12 +21,12 @@ COPY --chown=appuser:appgroup . .
 # Switch to non-root user
 USER appuser
 
-# Expose Streamlit (8501) and FastAPI (8000)
-EXPOSE 8501 8000
+# Expose FastAPI web backend
+EXPOSE 8080
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1

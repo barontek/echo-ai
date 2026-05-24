@@ -31,6 +31,9 @@ install:
 	python3 -m venv .venv
 	.venv/bin/pip install -e . --ignore-requires-python
 
+bench:
+	python scripts/benchmarks/basic_benchmark.py --iterations 50
+
 
 chat:
 	.venv/bin/python -m agentframework.chat $(filter-out $@,$(MAKECMDGOALS))
@@ -55,8 +58,6 @@ verify:
 security:
 	uv run pip-audit || true
 	uv run bandit -r src/ || true
-
-	python scripts/benchmarks/basic_benchmark.py --iterations 50
 
 serve-docs:
 	NO_MKDOCS_2_WARNING=1 .venv/bin/mkdocs serve

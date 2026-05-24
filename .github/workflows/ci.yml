@@ -85,3 +85,23 @@ jobs:
 
       - name: Run bandit
         run: bandit -r src/ -f json || true
+
+  nix-flake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Check flake
+        run: nix flake check --no-build
+
+      - name: Build backend
+        run: nix build .#backend
+
+      - name: Build frontend
+        run: nix build .#frontend
+
+      - name: Build fullstack
+        run: nix build .

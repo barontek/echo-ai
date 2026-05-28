@@ -78,6 +78,7 @@
             charset-normalizer
             chardet
             markdownify
+            urllib3
           ] ++ [
             tavily
           ] ++ [
@@ -161,8 +162,6 @@
 
             cp -r ${frontend}/share/frontend/* $out/share/agentframework/frontend/
 
-            site_paths=$(grep -oE "'/nix/store/[^']+/lib/python3\.12/site-packages'" ${agentframework}/bin/.agent-wrapped | tr -d "'" | tr '\n' ':')
-
             mkdir -p $out/libexec
             cat > $out/libexec/serve-wrapper.sh << 'WRAPEOF'
             #!/bin/bash
@@ -190,7 +189,7 @@
 
             sed -i $out/libexec/serve-wrapper.sh \
               -e "s|__FRONTEND_DIR__|$out/share/agentframework/frontend|g" \
-              -e "s|__PYTHONPATH__|$site_paths|g" \
+              -e "s|__PYTHONPATH__|${python.pkgs.makePythonPath (agentframework.propagatedBuildInputs ++ [ agentframework ])}|g" \
               -e "s|__PYTHON__|${python.interpreter}|g" \
               -e "s|__SERVER_SCRIPT__|${server-script}|g"
 
@@ -206,6 +205,10 @@
             python.pkgs.uv
             pkgs.nodejs_22
             pkgs.pre-commit
+            pkgs.nixpkgs-fmt
+            pkgs.gnumake
+            pkgs.sqlite
+            pkgs.git
           ];
 
           shellHook = ''
@@ -216,10 +219,19 @@
                 source "$HOME/.config/agentframework/.env"
                 set +a
             fi
+
+            echo "Syncing backend dependencies..."
+            uv sync --extra dev
+
+            echo ""
             echo "Agent Framework dev environment ready"
-            echo "  Backend:  uv sync --extra dev"
+            echo "  Backend:  uv sync --extra dev (synced automatically on entry)"
             echo "  Frontend: cd frontend && npm install"
             echo "  Config:   ~/.config/agentframework/.env"
+            echo "  Nix Ops:"
+            echo "    Format code:      nix fmt"
+            echo "    Build fullstack:  nix build"
+            echo "    Run fullstack:    nix run ."
           '';
         };
 
@@ -232,6 +244,8 @@
           fullstack = combined;
         };
 
+        formatter = pkgs.nixpkgs-fmt;
+
         devShells.default = devShell;
 
         apps.default = {
@@ -242,6 +256,7 @@
         checks = {
           backend = agentframework;
           frontend-pkg = frontend;
+          fullstack = combined;
         };
       }
     );

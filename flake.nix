@@ -98,6 +98,17 @@
               -e '/textual>=8/d' \
               -e '/chromadb>=0/d' \
               -e '/nicegui>=3/d'
+
+            # Rewrite absolute imports from src.* to standard package imports
+            find src -name "*.py" -exec sed -i {} \
+              -e 's/from src\.agentframework/from agentframework/g' \
+              -e 's/import src\.agentframework/import agentframework/g' \
+              -e 's/from src\.workflows/from workflows/g' \
+              -e 's/import src\.workflows/import workflows/g' \;
+          '';
+
+          postInstall = ''
+            cp -r src/workflows $out/${python.sitePackages}/
           '';
         };
 

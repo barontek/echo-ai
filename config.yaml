@@ -1,7 +1,7 @@
 model:
   # provider options: anthropic, openai, ollama
   provider: ollama
-  name: qwen3:4b-instruct  # Default model - best for following instructions and tool calling
+  name: gemma4:4b  # Default model - best for following instructions and tool calling
   # For ollama, optionally specify base_url (default: http://localhost:11434)
   base_url: http://localhost:11434
   temperature: 0.1  # Low temperature for strict JSON tool calling

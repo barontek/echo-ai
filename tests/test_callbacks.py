@@ -1,6 +1,7 @@
 import time
 
-from src.agentframework.callbacks import CallbackManager, AgentCallback, BasicTracerCallback
+from src.agentframework.core import CallbackManager, AgentCallback
+from src.agentframework.core.callbacks import BasicTracerCallback
 
 
 class RecordingCallback(AgentCallback):

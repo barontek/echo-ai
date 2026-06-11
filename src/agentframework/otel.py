@@ -4,7 +4,7 @@ import json
 from typing import Any
 from opentelemetry import trace, context
 from opentelemetry.trace.status import Status, StatusCode
-from .callbacks import AgentCallback
+from .core.callbacks import AgentCallback
 
 
 class OpenTelemetryCallback(AgentCallback):

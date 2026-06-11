@@ -6,7 +6,7 @@ from textual.widgets import Header, Footer, Log, Static, Input
 from textual.reactive import reactive
 
 from typing import Any
-from .callbacks import AgentCallback
+from .core.callbacks import AgentCallback
 from .core import Agent, AgentConfig, create_agent
 
 

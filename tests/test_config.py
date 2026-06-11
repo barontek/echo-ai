@@ -52,52 +52,62 @@ def test_get_safety_config_defaults():
     assert "bash" in safety.require_approval_for
 
 
-@patch("src.agentframework.config.Prompt.ask")
-@patch("src.agentframework.config.console.print")
-def test_approval_callback_denied(mock_print, mock_ask):
-    config = {"safety": {"require_approval_for": ["bash"]}}
-    safety = get_safety_config(config)
-
-    mock_ask.return_value = "n"
-    assert safety.approval_callback("bash", "rm -rf /") is False  # type: ignore[operator]
-    assert mock_print.called
-
-
-@patch("src.agentframework.config.Prompt.ask")
-@patch("src.agentframework.config.console.print")
-def test_approval_callback_approved(mock_print, mock_ask):
-    config = {"safety": {"require_approval_for": ["bash"]}}
-    safety = get_safety_config(config)
-
-    mock_ask.return_value = "y"
-    assert safety.approval_callback("bash", "ls") is True  # type: ignore[operator]
-
-
-@patch("src.agentframework.config.Prompt.ask")
-def test_approval_callback_write_file_warning(mock_ask):
-    config = {"safety": {"require_approval_for": ["write_file"]}}
-    safety = get_safety_config(config)
-
-    mock_ask.return_value = "y"
-    with patch("pathlib.Path.exists", return_value=True):
-        assert safety.approval_callback("write_file", "write: test.txt") is True  # type: ignore[operator]
-
-
-@patch("src.agentframework.config.Prompt.ask")
-def test_approval_callback_read_file_warning(mock_ask):
-    config = {
-        "safety": {"require_approval_for": ["read_file"], "read_size_threshold": 100}
-    }
-    safety = get_safety_config(config)
-
-    mock_ask.return_value = "y"
-    mock_stat = MagicMock()
-    mock_stat.st_size = 500
+def test_approval_callback_denied():
     with (
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.stat", return_value=mock_stat),
+        patch("src.agentframework.config.console.print") as mock_print,
+        patch("builtins.print"),
+        patch("select.select", return_value=(["ready"], [], [])),
+        patch("sys.stdin.readline", return_value="n"),
     ):
-        assert safety.approval_callback("read_file", "read: large.txt") is True  # type: ignore[operator]
+        config = {"safety": {"require_approval_for": ["bash"]}}
+        safety = get_safety_config(config)
+        assert safety.approval_callback("bash", "rm -rf /") is False  # type: ignore[operator]
+        assert mock_print.called
+
+
+def test_approval_callback_approved():
+    with (
+        patch("src.agentframework.config.console.print"),
+        patch("builtins.print"),
+        patch("select.select", return_value=(["ready"], [], [])),
+        patch("sys.stdin.readline", return_value="y"),
+    ):
+        config = {"safety": {"require_approval_for": ["bash"]}}
+        safety = get_safety_config(config)
+        assert safety.approval_callback("bash", "ls") is True  # type: ignore[operator]
+
+
+def test_approval_callback_write_file_warning():
+    with (
+        patch("src.agentframework.config.console.print"),
+        patch("builtins.print"),
+        patch("select.select", return_value=(["ready"], [], [])),
+        patch("sys.stdin.readline", return_value="y"),
+    ):
+        config = {"safety": {"require_approval_for": ["write_file"]}}
+        safety = get_safety_config(config)
+        with patch("pathlib.Path.exists", return_value=True):
+            assert safety.approval_callback("write_file", "write: test.txt") is True  # type: ignore[operator]
+
+
+def test_approval_callback_read_file_warning():
+    with (
+        patch("src.agentframework.config.console.print"),
+        patch("builtins.print"),
+        patch("select.select", return_value=(["ready"], [], [])),
+        patch("sys.stdin.readline", return_value="y"),
+    ):
+        config = {
+            "safety": {"require_approval_for": ["read_file"], "read_size_threshold": 100}
+        }
+        safety = get_safety_config(config)
+        mock_stat = MagicMock()
+        mock_stat.st_size = 500
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.stat", return_value=mock_stat),
+        ):
+            assert safety.approval_callback("read_file", "read: large.txt") is True  # type: ignore[operator]
 
 
 def test_get_tools_instantiation():

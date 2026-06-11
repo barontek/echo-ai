@@ -56,6 +56,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const messageQueueRef = useRef<string[]>([]);
   const lastSentMessageRef = useRef<string>('');
   const connectRef = useRef<() => void>(() => {});
+  const reconnectDelayRef = useRef(500);
+  const MAX_RECONNECT_DELAY = 30_000;
 
   const connect = useCallback(() => {
     debugLog('connect', { model: currentModel });
@@ -78,6 +80,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       ws.onopen = () => {
         debugLog('ws:open');
+        reconnectDelayRef.current = 500;
         setIsConnected(true);
         setConnectionStatus('connected');
         // Send config to initialize
@@ -250,25 +253,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         // Auto-reconnect unless cleanly closed
         if (e.code !== 1000) {
           setConnectionStatus('reconnecting');
-          debugLog('ws:reconnect:scheduled');
+          const delay = reconnectDelayRef.current;
+          reconnectDelayRef.current = Math.min(
+            Math.round(delay * (1.5 + Math.random())), // 1.5-2.5x jitter
+            MAX_RECONNECT_DELAY
+          );
+          debugLog('ws:reconnect:scheduled', { delay });
           setTimeout(() => {
             if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
               connectRef.current();
             }
-          }, 2000);
+          }, delay);
         } else {
+          reconnectDelayRef.current = 500;
           setConnectionStatus('disconnected');
         }
       };
 
       ws.onerror = (error) => {
         console.error('[Chat] WebSocket error:', error);
-        // Schedule reconnect on error
+        // Schedule reconnect with exponential backoff
+        const delay = reconnectDelayRef.current;
+        reconnectDelayRef.current = Math.min(
+          Math.round(delay * (1.5 + Math.random())), // 1.5-2.5x jitter
+          MAX_RECONNECT_DELAY
+        );
         setTimeout(() => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
             connectRef.current();
           }
-        }, 2000);
+        }, delay);
       };
     } catch (err) {
       console.error('[Chat] Failed to connect:', err);

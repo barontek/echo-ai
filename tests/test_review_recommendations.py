@@ -8,7 +8,7 @@ from src.agentframework.core import Agent, AgentConfig
 from src.agentframework.providers import get_provider
 from src.agentframework.conversation import Message
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
-from src.agentframework.tool_runtime import execute_single_tool
+from src.agentframework.core import execute_single_tool
 from src.agentframework.tools import Tool, ToolResult
 
 

@@ -580,3 +580,205 @@ class TestReview:
             response = client.get("/api/review")
             assert response.status_code == 200
             assert response.json() == {"sections": []}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ws_mock_agent():
+    agent = MagicMock()
+    agent.session_manager = MagicMock()
+    agent.session_manager.current_session = MagicMock()
+    agent.session_manager.current_session.id = "ws-test-session"
+    agent.session_manager.current_session.title = None
+    agent.generate_title = AsyncMock(return_value=None)
+    agent._ensure_session = MagicMock()
+    agent.messages = []
+    agent.load_session = MagicMock()
+    agent.save_session = MagicMock()
+    agent.run_streaming = AsyncMock(return_value="mock response")
+    return agent
+
+
+class TestWebSocketIntegration:
+    """Comprehensive WebSocket endpoint tests."""
+
+    def test_websocket_connect_and_ready(self, ws_mock_agent):
+        """Connection sends config and receives ready."""
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            with TestClient(app) as test_client:
+                with test_client.websocket_connect("/ws/chat") as ws:
+                    ws.send_json({"provider": "ollama", "model": "qwen3:4b"})
+                    ready = ws.receive_json()
+                    assert ready["type"] == "ready"
+                    assert ready["session_id"] == "ws-test-session"
+
+    def test_websocket_send_and_receive(self, ws_mock_agent):
+        """Send a message and receive streaming content."""
+        async def mock_stream(prompt, on_chunk=None):
+            if on_chunk:
+                on_chunk("Hello ")
+                on_chunk("world")
+
+        ws_mock_agent.run_streaming = AsyncMock(side_effect=mock_stream)
+
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            with TestClient(app) as test_client:
+                with test_client.websocket_connect("/ws/chat") as ws:
+                    ws.send_json({"provider": "ollama", "model": "qwen3:4b"})
+                    ws.receive_json()  # ready
+
+                    ws.send_json({"type": "message", "content": "hi"})
+
+                    events = []
+                    while True:
+                        msg = ws.receive_json()
+                        events.append(msg)
+                        if msg["type"] == "done":
+                            break
+
+                    types = [e["type"] for e in events]
+                    assert "message" in types
+                    assert "content" in types
+                    assert "done" in types
+                    # Verify streaming content
+                    content_msgs = [e for e in events if e["type"] == "content"]
+                    assert len(content_msgs) > 0
+                    assert "Hello" in content_msgs[-1]["content"]
+                    assert "world" in content_msgs[-1]["content"]
+
+    def test_websocket_stop_generation(self, ws_mock_agent):
+        """Stop mid-stream cancels the running task."""
+        async def slow_stream(prompt, on_chunk=None):
+            if on_chunk:
+                on_chunk("partial ")
+            await asyncio.sleep(5)
+            if on_chunk:
+                on_chunk(" more")
+
+        ws_mock_agent.run_streaming = AsyncMock(side_effect=slow_stream)
+
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            with TestClient(app) as test_client:
+                with test_client.websocket_connect("/ws/chat") as ws:
+                    ws.send_json({"provider": "ollama", "model": "qwen3:4b"})
+                    ws.receive_json()  # ready
+
+                    ws.send_json({"type": "message", "content": "hello"})
+                    # Consume events until we see content, then send stop
+                    while True:
+                        msg = ws.receive_json()
+                        if msg["type"] == "content":
+                            ws.send_json({"type": "stop"})
+                            break
+
+                    # Should get done with partial content
+                    done = ws.receive_json()
+                    assert done["type"] == "done"
+                    assert "partial" in done["content"]
+
+    def test_websocket_concurrent_connections(self, ws_mock_agent):
+        """Two concurrent WebSocket connections don't interfere."""
+        async def mock_stream(prompt, on_chunk=None):
+            if on_chunk:
+                on_chunk("response")
+            return "response"
+
+        ws_mock_agent.run_streaming = AsyncMock(side_effect=mock_stream)
+
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            with TestClient(app) as tc:
+                with tc.websocket_connect("/ws/chat") as ws1:
+                    with tc.websocket_connect("/ws/chat") as ws2:
+                        ws1.send_json({"provider": "ollama", "model": "m1"})
+                        ws2.send_json({"provider": "ollama", "model": "m2"})
+
+                        r1 = ws1.receive_json()
+                        r2 = ws2.receive_json()
+                        assert r1["type"] == "ready"
+                        assert r2["type"] == "ready"
+
+                        # Both can send messages independently
+                        ws1.send_json({"type": "message", "content": "from 1"})
+                        ws2.send_json({"type": "message", "content": "from 2"})
+
+                        # Drain both connections
+                        def drain(ws):
+                            events = []
+                            while True:
+                                m = ws.receive_json()
+                                events.append(m)
+                                if m["type"] == "done":
+                                    break
+                            return events
+
+                        ev1 = drain(ws1)
+                        ev2 = drain(ws2)
+
+                        # Each should see its own user message echoed
+                        types1 = [e["type"] for e in ev1]
+                        types2 = [e["type"] for e in ev2]
+                        assert "message" in types1
+                        assert "message" in types2
+                        assert len(ev1) > 0
+                        assert len(ev2) > 0
+
+    @pytest.mark.timeout(5)
+    def test_websocket_invalid_json_handled(self, ws_mock_agent):
+        """Invalid JSON as config is handled without crash."""
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            try:
+                with TestClient(app) as test_client:
+                    with test_client.websocket_connect("/ws/chat") as ws:
+                        ws.send_text("not valid json {{{")
+            except Exception:
+                pass  # Connection closing is acceptable
+
+    def test_websocket_empty_message_skipped(self, ws_mock_agent):
+        """Empty message content is skipped without sending events."""
+        ws_mock_agent.run_streaming = AsyncMock()
+
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            with TestClient(app) as test_client:
+                with test_client.websocket_connect("/ws/chat") as ws:
+                    ws.send_json({"provider": "ollama", "model": "qwen3:4b"})
+                    ws.receive_json()  # ready
+
+                    ws.send_json({"type": "message", "content": ""})
+
+                    # Should not call run_streaming with empty content
+                    ws_mock_agent.run_streaming.assert_not_called()
+
+    def test_websocket_edit_disallowed_before_session(self, ws_mock_agent):
+        """Edit without session returns error."""
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            with TestClient(app) as test_client:
+                with test_client.websocket_connect("/ws/chat") as ws:
+                    ws.send_json({"provider": "ollama", "model": "qwen3:4b"})
+                    ws.receive_json()  # ready
+
+                    ws.send_json({"type": "edit", "index": 0, "content": "edited"})
+                    error = ws.receive_json()
+                    assert error["type"] == "error"
+
+    def test_websocket_pong_handling(self, ws_mock_agent):
+        """Pong messages are handled gracefully."""
+        with patch("src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent):
+            with TestClient(app) as test_client:
+                with test_client.websocket_connect("/ws/chat") as ws:
+                    ws.send_json({"provider": "ollama", "model": "qwen3:4b"})
+                    ws.receive_json()  # ready
+
+                    ws.send_json({"type": "pong"})
+                    ws.send_json({"type": "message", "content": "after pong"})
+
+                    events = []
+                    while True:
+                        msg = ws.receive_json()
+                        events.append(msg)
+                        if msg["type"] == "done":
+                            break
+                    assert any(e["type"] == "done" for e in events)

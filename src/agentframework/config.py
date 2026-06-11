@@ -9,7 +9,6 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator
 from rich.console import Console
-from rich.prompt import Prompt
 
 from .safety import SafetyConfig, SecurityValidator
 from .tools import TOOL_CONFIG_KEYS, TOOL_REGISTRY
@@ -292,12 +291,9 @@ def get_safety_config(config: dict) -> SafetyConfig:
         )
     )
 
-    def approval_callback(tool: str, details: str) -> bool:
-        """Request user approval for potentially dangerous operations."""
-        import threading
-
+    def _tool_warning(tool: str, details: str) -> str:
+        """Get warning message for tool approval. Pure function, testable."""
         warning_msg = ""
-
         if tool == "bash":
             destructive = validator.check_destructive_keywords(details)
             if destructive:
@@ -306,8 +302,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
                     + ", ".join(destructive)
                     + "[/red]"
                 )
-
-        if tool == "write_file":
+        elif tool == "write_file":
             try:
                 path_str = details.replace("write: ", "")
                 file_path = Path(path_str)
@@ -315,8 +310,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
                     warning_msg = " [red]WARNING File exists - will overwrite![/red]"
             except OSError:
                 pass
-
-        if tool == "read_file":
+        elif tool == "read_file":
             try:
                 path_str = details.replace("read: ", "")
                 file_path = Path(path_str)
@@ -329,39 +323,37 @@ def get_safety_config(config: dict) -> SafetyConfig:
                         )
             except OSError:
                 pass
-
-        if tool == "memory":
+        elif tool == "memory":
             warning_msg = (
                 " [red]WARNING This will permanently delete stored memories![/red]"
             )
+        return warning_msg
 
+    approval_timeout = safety.get("approval_timeout", 30)
+
+    def approval_callback(tool: str, details: str) -> bool:
+        """Request user approval for potentially dangerous operations.
+
+        Uses select.select() for timeout on stdin instead of threading.
+        """
+        import select
+        import sys
+
+        warning_msg = _tool_warning(tool, details)
         console.print(
             f"[yellow]Approval required for {tool}:[/yellow] {details}{warning_msg}"
         )
 
-        approval_timeout = safety.get("approval_timeout", 30)
-        result: dict[str, str | None] = {"response": None}
-
-        def get_input_sync():
-            try:
-                result["response"] = Prompt.ask(
-                    "[bold]Allow? (y/N)[/bold]", default="n"
-                )
-            except EOFError:
-                result["response"] = "n"
-
-        thread = threading.Thread(target=get_input_sync, daemon=True)
-        thread.start()
-        thread.join(timeout=approval_timeout)
-
-        if thread.is_alive():
+        print("Allow? (y/N): ", end="", flush=True)
+        ready, _, _ = select.select([sys.stdin], [], [], approval_timeout)
+        if not ready:
             console.print(
-                f"[red]Approval timed out after {approval_timeout} seconds. Denying.[/red]"
+                f"[red]Approval timed out after {approval_timeout}s. Denying.[/red]"
             )
             return False
 
-        response = result["response"] or "n"
-        return response.lower() in ("y", "yes")
+        response = sys.stdin.readline().strip().lower()
+        return response in ("y", "yes")
 
     return SafetyConfig(
         workspace=safety.get("workspace", "."),

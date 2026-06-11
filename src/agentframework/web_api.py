@@ -77,26 +77,6 @@ def get_state() -> AppState:
     return _state
 
 
-def __getattr__(name: str) -> Any:
-    """Module-level attribute access for backward compatibility."""
-    if name == "agent":
-        return _state.agent if _state else None
-    if name == "current_session_id":
-        return _state.current_session_id if _state else None
-    if name == "message_history":
-        return _state.message_history if _state else []
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-def __setattr__(name: str, value: Any) -> None:
-    """Module-level attribute setting for backward compatibility."""
-    if name in ("agent", "current_session_id", "message_history"):
-        if _state is not None:
-            object.__setattr__(_state, name, value)
-    else:
-        raise AttributeError(f"cannot set attribute {name!r}")
-
-
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
@@ -1123,14 +1103,13 @@ async def websocket_chat(websocket: WebSocket):
 
     await websocket.accept()
 
-    # Get state from app state (accessed via module-level _state for WebSocket)
-    state = _state
-    if state is None:
+    if _state is None:
         await websocket.send_json(
             {"type": "error", "content": "Server not initialized"}
         )
         return
 
+    _ws_message_history: list[dict[str, Any]] = []
     active_agent: Agent | None = None
     streaming_task: asyncio.Task | None = None
     stop_requested = False
@@ -1167,7 +1146,7 @@ async def websocket_chat(websocket: WebSocket):
                     return
 
         timestamp = datetime.now().strftime("%H:%M")
-        state.message_history.append(
+        _ws_message_history.append(
             {"role": "user", "content": prompt, "timestamp": timestamp}
         )
         try:
@@ -1306,7 +1285,7 @@ async def websocket_chat(websocket: WebSocket):
 
         timestamp = datetime.now().strftime("%H:%M")
 
-        state.message_history.append(
+        _ws_message_history.append(
             {
                 "role": "assistant",
                 "content": accumulated_content,
@@ -1497,8 +1476,8 @@ async def websocket_chat(websocket: WebSocket):
                 # Deserialize session messages to agent messages
                 active_agent.messages = deserialize_messages(session.messages)
 
-                # Also update state.message_history to match the truncated session
-                state.message_history = state.message_history[:target_index]
+                # Also update local message_history to match the truncated session
+                _ws_message_history[:] = _ws_message_history[:target_index]
 
                 # Truncate any existing streaming task and run agent with new prompt
                 if streaming_task and not streaming_task.done():

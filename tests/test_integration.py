@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from src.agentframework.core import Agent, AgentConfig
 from src.agentframework.providers import LLMResponse, LLMToolCall
 from src.agentframework.tools import Tool, ToolResult
-from src.agentframework.callbacks import AgentCallback
+from src.agentframework.core import AgentCallback
 
 
 class MockTool(Tool):

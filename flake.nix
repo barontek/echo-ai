@@ -220,6 +220,20 @@
             pkgs.gnumake
             pkgs.sqlite
             pkgs.git
+            pkgs.stdenv.cc.cc.lib
+            pkgs.zlib
+            pkgs.libgcc
+            pkgs.glibc
+            pkgs.lz4
+            pkgs.openssl
+          ];
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.stdenv.cc.cc.lib
+            pkgs.zlib
+            pkgs.libgcc
+            pkgs.glibc
+            pkgs.lz4
+            pkgs.openssl
           ];
 
           shellHook = ''
@@ -232,11 +246,11 @@
             fi
 
             echo "Syncing backend dependencies..."
-            uv sync --extra dev
+            uv sync --extra dev --extra otel --extra ui --extra vector-db
 
             echo ""
             echo "Agent Framework dev environment ready"
-            echo "  Backend:  uv sync --extra dev (synced automatically on entry)"
+            echo "  Backend:  uv sync --extra dev --extra otel --extra ui --extra vector-db (synced automatically on entry)"
             echo "  Frontend: cd frontend && npm install"
             echo "  Config:   ~/.config/agentframework/.env"
             echo "  Nix Ops:"

@@ -506,6 +506,7 @@ def _create_runtime_agent(
         base_url=config.get("model", {}).get("base_url"),
         session_enabled=config.get("agent", {}).get("session_enabled", True),
         session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
+        num_ctx=config.get("model", {}).get("num_ctx"),
     )
 
     env_info = (

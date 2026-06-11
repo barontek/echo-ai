@@ -54,6 +54,7 @@ class AgentConfig:
     session_enabled: bool = True
     session_dir: str = ".agent_sessions"
     parallel_tool_execution: bool = False
+    num_ctx: int | None = None
 
 
 @dataclass
@@ -732,5 +733,6 @@ def create_agent(
         api_key=api_key,
         base_url=config.base_url,
         timeout=config.timeout,
+        num_ctx=config.num_ctx,
     )
     return Agent(config, provider, session_id=session_id)

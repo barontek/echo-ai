@@ -28,6 +28,9 @@ class ModelConfig(BaseModel):
     timeout: int = Field(
         default=60, ge=10, le=600, description="HTTP timeout in seconds"
     )
+    num_ctx: int | None = Field(
+        default=None, ge=256, le=262144, description="Ollama context window size"
+    )
 
 
 class ToolsBashConfig(BaseModel):

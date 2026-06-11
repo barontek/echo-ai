@@ -100,6 +100,7 @@ def get_provider(
     api_key: str | None = None,
     base_url: str | None = None,
     timeout: int = 60,
+    num_ctx: int | None = None,
 ) -> LLMProvider:
     """Get an LLM provider by name."""
     import os
@@ -128,6 +129,7 @@ def get_provider(
             base_url=base_url or "http://localhost:11434",
             api_key=api_key,
             timeout=timeout,
+            num_ctx=num_ctx,
         )
     else:
         raise ValueError(f"Unknown provider: {name}")

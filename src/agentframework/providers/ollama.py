@@ -76,12 +76,14 @@ class OllamaProvider(LLMProvider):
         base_url: str = "http://localhost:11434",
         api_key: str | None = None,
         timeout: int = 60,
+        num_ctx: int | None = None,
     ):
         import httpx
 
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.num_ctx = num_ctx
         self.timeout = httpx.Timeout(timeout, connect=30.0)
         self.stream_timeout = httpx.Timeout(timeout * 5, connect=30.0)
         self.client = httpx.AsyncClient(timeout=self.stream_timeout)
@@ -167,12 +169,18 @@ class OllamaProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> LLMResponse:
         """Send a chat request to Ollama."""
+        options = {}
+        if self.num_ctx is not None:
+            options["num_ctx"] = self.num_ctx
+
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "stream": False,
         }
+        if options:
+            payload["options"] = options
 
         if tools:
             payload["tools"] = tools
@@ -270,12 +278,18 @@ class OllamaProvider(LLMProvider):
         on_chunk: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
         """Actual streaming implementation."""
+        options = {}
+        if self.num_ctx is not None:
+            options["num_ctx"] = self.num_ctx
+
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "stream": True,
         }
+        if options:
+            payload["options"] = options
 
         if tools:
             payload["tools"] = tools

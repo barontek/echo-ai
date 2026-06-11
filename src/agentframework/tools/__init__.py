@@ -81,6 +81,7 @@ from .api import RESTAPITool
 from .db import SQLiteQueryTool, SQLiteSchemaTool
 from .human import AskUserTool
 from .rag import SemanticSearchTool, DocumentIngestionTool
+from .humanizer import HumanizerTool
 
 
 TOOL_REGISTRY: dict[str, Type[Tool]] = {
@@ -102,6 +103,7 @@ TOOL_REGISTRY: dict[str, Type[Tool]] = {
     "ask_user": AskUserTool,
     "semantic_search": SemanticSearchTool,
     "ingest_document": DocumentIngestionTool,
+    "humanizer": HumanizerTool,
 }
 
 TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {

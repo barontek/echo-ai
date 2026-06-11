@@ -52,6 +52,7 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
         base_url=config.get("model", {}).get("base_url"),
         session_enabled=session_enabled,
         session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
+        num_ctx=config.get("model", {}).get("num_ctx"),
     )
 
     workspace = safety_config.workspace or "."

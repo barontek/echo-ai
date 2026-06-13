@@ -246,11 +246,11 @@
             fi
 
             echo "Syncing backend dependencies..."
-            uv sync --extra dev --extra otel --extra ui --extra vector-db
+            uv sync --extra dev --extra otel --extra ui --extra vector-db --extra web-scraping
 
             echo ""
             echo "Agent Framework dev environment ready"
-            echo "  Backend:  uv sync --extra dev --extra otel --extra ui --extra vector-db (synced automatically on entry)"
+            echo "  Backend:  uv sync --extra dev --extra otel --extra ui --extra vector-db --extra web-scraping (synced automatically on entry)"
             echo "  Frontend: cd frontend && npm install"
             echo "  Config:   ~/.echo-ai/config.yaml"
             echo "  Nix Ops:"

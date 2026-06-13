@@ -40,7 +40,7 @@ class TavilyProvider(BaseSearchProvider):
                 {
                     "title": r.get("title", ""),
                     "url": r.get("url", ""),
-                    "snippet": r.get("raw_content") or r.get("content", ""),
+                    "snippet": (r.get("raw_content") or r.get("content", ""))[:2000],
                 }
                 for r in results
             ]

@@ -31,7 +31,9 @@ export const MessageList = memo(function MessageList() {
     <div className="message-list" ref={containerRef}>
       {messages.length === 0 && !isStreaming && (
         <div className="empty-state">
-          <p>Start a conversation...</p>
+          <div className="empty-logo">✦</div>
+          <h2 className="empty-title">Echo AI</h2>
+          <p className="empty-subtitle">Ask me anything. I'm running locally.</p>
         </div>
       )}
 
@@ -40,7 +42,6 @@ export const MessageList = memo(function MessageList() {
 
         return (
           <div key={`${msg.timestamp}-${idx}`} className={`message message-${msg.role}`}>
-            <div className="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
             <div className="message-bubble">
               {isEditing && (
                 <div className="message-content">
@@ -104,6 +105,57 @@ export const MessageList = memo(function MessageList() {
                       </div>
                     )}
                   </div>
+                  <div className="message-footer">
+                    {msg.timestamp && <div className="message-time">{msg.timestamp}</div>}
+                    {msg.role === 'assistant' && msg.content && (
+                      <button
+                        className="icon-button"
+                        onClick={() => {
+                          if (navigator.clipboard) {
+                            navigator.clipboard
+                              .writeText(msg.content)
+                              .then(() => {
+                                setCopiedIndex(idx);
+                                setTimeout(() => setCopiedIndex(null), 2000);
+                              })
+                              .catch((err) => {
+                                console.error('Copy failed:', err);
+                              });
+                          } else {
+                            const textarea = document.createElement('textarea');
+                            textarea.value = msg.content;
+                            textarea.style.position = 'fixed';
+                            textarea.style.opacity = '0';
+                            document.body.appendChild(textarea);
+                            textarea.select();
+                            try {
+                              document.execCommand('copy');
+                              setCopiedIndex(idx);
+                              setTimeout(() => setCopiedIndex(null), 2000);
+                            } catch (err) {
+                              console.error('Copy failed:', err);
+                            }
+                            document.body.removeChild(textarea);
+                          }
+                        }}
+                        title="Copy"
+                      >
+                        {copiedIndex === idx ? <Check size={16} /> : <Copy size={16} />}
+                      </button>
+                    )}
+                    {msg.role === 'user' && !isStreaming && (
+                      <button
+                        className="icon-button"
+                        onClick={() => {
+                          setEditingIndex(idx);
+                          setEditText(msg.content);
+                        }}
+                        title="Edit"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                  </div>
                 </>
               )}
 
@@ -124,60 +176,6 @@ export const MessageList = memo(function MessageList() {
                 </div>
               )}
             </div>
-
-            {!isEditing && (
-              <div className="message-footer">
-                {msg.timestamp && <div className="message-time">{msg.timestamp}</div>}
-                {msg.role === 'assistant' && msg.content && (
-                  <button
-                    className="icon-button"
-                    onClick={() => {
-                      if (navigator.clipboard) {
-                        navigator.clipboard
-                          .writeText(msg.content)
-                          .then(() => {
-                            setCopiedIndex(idx);
-                            setTimeout(() => setCopiedIndex(null), 2000);
-                          })
-                          .catch((err) => {
-                            console.error('Copy failed:', err);
-                          });
-                      } else {
-                        const textarea = document.createElement('textarea');
-                        textarea.value = msg.content;
-                        textarea.style.position = 'fixed';
-                        textarea.style.opacity = '0';
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        try {
-                          document.execCommand('copy');
-                          setCopiedIndex(idx);
-                          setTimeout(() => setCopiedIndex(null), 2000);
-                        } catch (err) {
-                          console.error('Copy failed:', err);
-                        }
-                        document.body.removeChild(textarea);
-                      }
-                    }}
-                    title="Copy"
-                  >
-                    {copiedIndex === idx ? <Check size={16} /> : <Copy size={16} />}
-                  </button>
-                )}
-                {msg.role === 'user' && !isStreaming && (
-                  <button
-                    className="icon-button"
-                    onClick={() => {
-                      setEditingIndex(idx);
-                      setEditText(msg.content);
-                    }}
-                    title="Edit"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         );
       })}

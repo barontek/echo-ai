@@ -3,7 +3,10 @@ import { useChat } from '../context';
 
 function getInitialTheme(): 'dark' | 'light' {
   const saved = localStorage.getItem('theme');
-  if (saved === 'light' || saved === 'dark') return saved;
+  if (saved === 'light' || saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', saved);
+    return saved;
+  }
   return 'dark';
 }
 
@@ -36,43 +39,26 @@ export const Header = memo(function Header() {
           <span className="model-badge">{chat.currentModel}</span>
         </div>
         <div className="header-right">
-          <button
-            onClick={toggleTheme}
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
-              padding: '6px 10px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '12px',
-            }}
-          >
-            {theme === 'dark' ? 'Dark' : 'Light'}
-          </button>
-          <button
-            onClick={() => setShowDebug(!showDebug)}
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
-              padding: '6px 10px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '12px',
-            }}
-          >
-            Debug
-          </button>
           <div className="connection-status">
             <span
               className={`status-dot ${chat.connectionStatus === 'connected' ? '' : 'disconnected'}`}
             ></span>
             <span>{statusText}</span>
           </div>
-          <span className="message-count">
-            {chat.messages.length > 0 ? `${chat.messages.length} messages` : 'New chat'}
-          </span>
+          <button
+            className="header-icon-btn"
+            onClick={toggleTheme}
+            title="Toggle theme"
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
+          <button
+            className="header-icon-btn"
+            onClick={() => setShowDebug(!showDebug)}
+            title="Debug"
+          >
+            ⚙
+          </button>
         </div>
       </div>
       {showDebug && (

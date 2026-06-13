@@ -56,7 +56,9 @@ async def test_agent_with_mock_provider():
         ]
     )
 
-    config = AgentConfig(provider="mock", model="test-model", tools=[])
+    config = AgentConfig(
+        provider="mock", model="test-model", tools=[], session_enabled=False
+    )
     agent = Agent(config, mock_provider)
 
     result = await agent.run("Hello")
@@ -88,6 +90,7 @@ async def test_agent_with_tool_call():
         provider="mock",
         model="test-model",
         tools=[MockTool(name="bash")],
+        session_enabled=False,
     )
     agent = Agent(config, mock_provider)
 
@@ -153,6 +156,7 @@ async def test_agent_max_iterations():
         model="test-model",
         max_iterations=3,
         tools=[MockTool()],
+        session_enabled=False,
     )
     agent = Agent(config, mock_provider)
 
@@ -173,6 +177,7 @@ async def test_agent_context_management():
         model="test-model",
         max_context_messages=5,
         tools=[],
+        session_enabled=False,
     )
     agent = Agent(config, mock_provider)
 
@@ -198,6 +203,7 @@ class TestAgentWithTools:
             provider="mock",
             model="test-model",
             tools=[MockTool("tool1"), MockTool("tool2")],
+            session_enabled=False,
         )
         agent = Agent(config, mock_provider)
 
@@ -235,6 +241,7 @@ class TestAgentErrorHandling:
             provider="mock",
             model="test-model",
             tools=[ErrorTool()],
+            session_enabled=False,
         )
         agent = Agent(config, mock_provider)
 
@@ -247,7 +254,7 @@ class TestAgentErrorHandling:
         """Test agent handles empty LLM responses."""
         mock_provider = MockProvider(responses=[LLMResponse(content="")])
 
-        config = AgentConfig(provider="mock", model="test-model", tools=[])
+        config = AgentConfig(provider="mock", model="test-model", tools=[], session_enabled=False)
         agent = Agent(config, mock_provider)
 
         result = await agent.run("Hello")
@@ -274,7 +281,7 @@ class TestAgentCallbacks:
 
         mock_provider = MockProvider(responses=[LLMResponse(content="Done")])
 
-        config = AgentConfig(provider="mock", model="test-model", tools=[])
+        config = AgentConfig(provider="mock", model="test-model", tools=[], session_enabled=False)
         agent = Agent(config, mock_provider)
 
         callback = TestCallback()

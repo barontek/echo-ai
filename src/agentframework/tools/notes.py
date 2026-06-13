@@ -29,7 +29,7 @@ class PersonalNotesTool(Tool):
         )
 
         if notes_dir is None:
-            self.notes_dir = Path.home() / "personal_notes"
+            self.notes_dir = Path.home() / ".echo-ai" / "notes"
         else:
             self.notes_dir = Path(notes_dir)
 

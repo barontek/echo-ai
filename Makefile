@@ -66,10 +66,10 @@ build-docs:
 	NO_MKDOCS_2_WARNING=1 .venv/bin/mkdocs build --strict
 
 chats:
-	@ls -la .agent_sessions/ 2>/dev/null || echo "No saved chats"
+	@ls -la ~/.echo-ai/sessions/ 2>/dev/null || echo "No saved chats"
 
 clean:
-	rm -rf .agent_sessions/*.json
+	rm -rf ~/.echo-ai/sessions/*.db
 	rm -rf __pycache__ src/**/__pycache__
 	rm -rf site/
 	find . -name "*.pyc" -delete

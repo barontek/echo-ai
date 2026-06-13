@@ -40,7 +40,7 @@ Override config.yaml settings with environment variables:
 | `ECHO_BASE_URL` | Ollama base URL | `http://localhost:11434` |
 | `ECHO_TEMPERATURE` | Model temperature | `0.1` |
 | `ECHO_WORKSPACE` | Workspace directory | `/home/user/workspace` |
-| `ECHO_SESSION_DIR` | Session storage directory | `.agent_sessions` |
+| `ECHO_SESSION_DIR` | Session storage directory | `~/.echo-ai/sessions` |
 | `ECHO_MAX_ITERATIONS` | Max agent iterations | `50` |
 | `ECHO_ALLOW_NETWORK` | Enable network access | `true`, `false` |
 | `ANTHROPIC_API_KEY` | Anthropic API key | `sk-ant-...` |

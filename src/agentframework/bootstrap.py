@@ -7,6 +7,7 @@ from rich.console import Console
 
 from .core import Agent, AgentConfig, create_agent
 from .config import (
+    DEFAULT_SESSION_DIR,
     find_config_path,
     get_safety_config,
     get_tools,
@@ -51,7 +52,7 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
         tools=get_tools(config, safety_config),
         base_url=config.get("model", {}).get("base_url"),
         session_enabled=session_enabled,
-        session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
+        session_dir=config.get("agent", {}).get("session_dir", DEFAULT_SESSION_DIR),
         num_ctx=config.get("model", {}).get("num_ctx"),
     )
 

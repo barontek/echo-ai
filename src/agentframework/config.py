@@ -13,6 +13,9 @@ from rich.console import Console
 from .safety import SafetyConfig, SecurityValidator
 from .tools import TOOL_CONFIG_KEYS, TOOL_REGISTRY
 
+DEFAULT_SESSION_DIR = str(Path.home() / ".echo-ai" / "sessions")
+DEFAULT_CONFIG_PATH = str(Path.home() / ".echo-ai" / "config.yaml")
+
 
 class ModelConfig(BaseModel):
     """Model configuration schema."""
@@ -69,7 +72,7 @@ class AgentConfigSchema(BaseModel):
     max_context_messages: int = Field(default=50, ge=0)
     max_context_chars: int = Field(default=100000, ge=0)
     token_reserve_ratio: float = Field(default=0.7, ge=0.1, le=0.9)
-    session_dir: str = Field(default=".agent_sessions")
+    session_dir: str = Field(default=DEFAULT_SESSION_DIR)
     session_enabled: bool = Field(default=True)
 
 
@@ -241,7 +244,7 @@ def find_config_path(path: str | None = None) -> Path | None:
     search_paths = [
         Path.cwd() / "config.yaml",
         script_dir / "config.yaml",
-        Path.home() / "echo-ai" / "config.yaml",
+        Path(DEFAULT_CONFIG_PATH),
     ]
     for config_path in search_paths:
         if config_path.exists():

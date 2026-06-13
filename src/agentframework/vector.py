@@ -3,6 +3,7 @@
 import os
 import uuid
 import logging
+from pathlib import Path
 from typing import Any
 try:
     import chromadb
@@ -15,7 +16,9 @@ logger = logging.getLogger(__name__)
 class VectorStore:
     """A wrapper for chromadb to handle persistent document storage and semantic search."""
 
-    def __init__(self, persist_directory: str = ".agent_vector_db", collection_name: str = "agent_memory"):
+    def __init__(self, persist_directory: str | None = None, collection_name: str = "agent_memory"):
+        if persist_directory is None:
+            persist_directory = str(Path.home() / ".echo-ai" / "vector")
         """Initialize the persistent Chroma client."""
         # Ensure the directory exists
         os.makedirs(persist_directory, exist_ok=True)

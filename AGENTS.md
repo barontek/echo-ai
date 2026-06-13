@@ -25,7 +25,7 @@ cd frontend && npm run check        # lint + typecheck + test + build
 - **Python package source**: `src/agentframework/` (pyproject.toml defines this)
 - **Entry points**: `agent` (CLI), `agentframework.chat` (interactive), `agentframework.web_api` (FastAPI)
 - **Frontend entry**: `frontend/src/main.tsx`
-- **Session storage**: SQLite in `.agent_sessions/`
+- **Session storage**: SQLite in `~/.echo-ai/sessions/`
 - **State management**: `router.py` (semantic sub-agent routing), `session.py`/`memory.py` (context retention)
 - **Providers**: `src/agentframework/providers/` (Anthropic, OpenAI, Ollama) - must align with standardized interface
 - **Tools**: `src/agentframework/tools/` - new tools must be modular, self-contained, registered in config.yaml

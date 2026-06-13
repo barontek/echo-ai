@@ -31,7 +31,7 @@ class TavilyProvider(BaseSearchProvider):
                 query=query,
                 max_results=max_results,
                 include_answer=False,
-                include_raw_content=False,
+                include_raw_content=True,
                 include_images=False,
             )
 
@@ -40,7 +40,7 @@ class TavilyProvider(BaseSearchProvider):
                 {
                     "title": r.get("title", ""),
                     "url": r.get("url", ""),
-                    "snippet": r.get("content", ""),
+                    "snippet": r.get("raw_content") or r.get("content", ""),
                 }
                 for r in results
             ]

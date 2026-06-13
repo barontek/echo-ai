@@ -6,6 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -52,7 +53,7 @@ class AgentConfig:
     tools: list[Tool] = field(default_factory=list)
     base_url: str | None = None
     session_enabled: bool = True
-    session_dir: str = ".agent_sessions"
+    session_dir: str = str(Path.home() / ".echo-ai" / "sessions")
     parallel_tool_execution: bool = False
     num_ctx: int | None = None
 
@@ -71,6 +72,15 @@ class SubAgentConfig:
 def get_tool_schemas(tools: list[Tool]) -> list[dict[str, Any]]:
     """Get tool schemas for the LLM."""
     return [tool.schema for tool in tools]
+
+
+def _extract_thinking(messages: list[Message]) -> str | None:
+    """Extract thinking from the last assistant message in the message list."""
+    for msg in reversed(messages):
+        if msg.role == "assistant" and THINKING_START in msg.content:
+            parts = msg.content.split(THINKING_END, 1)
+            return parts[0].replace(THINKING_START, "").strip()
+    return None
 
 
 class Agent:
@@ -95,6 +105,7 @@ class Agent:
         self.callback_manager = CallbackManager()
         self.sub_agents: dict[str, SubAgentConfig] = {}
         self._pending_summary: list[Message] | None = None
+        self._session_gen = 0
 
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
@@ -173,9 +184,10 @@ class Agent:
 
         self.messages = updated_messages
 
+        thinking = _extract_thinking(self.messages)
         if self.session_manager:
             self.session_manager.add_message(
-                "assistant", response, timestamp=datetime.now().strftime("%H:%M")
+                "assistant", response, timestamp=datetime.now().strftime("%H:%M"), thinking=thinking
             )
 
         return response
@@ -184,6 +196,15 @@ class Agent:
         self, user_input: str, on_chunk: Callable[[str], None] | None = None
     ) -> str:
         """Run the agent with streaming output."""
+        logger.warning(
+            "agent:trace run_streaming input=%s msgs_before=%d session=%s",
+            user_input[:30],
+            len(self.messages),
+            self.session_manager.current_session.id
+            if self.session_manager and self.session_manager.current_session
+            else None,
+        )
+
         if not self.messages:
             await self.load_persistent_memory()
 
@@ -204,9 +225,10 @@ class Agent:
         if self._pending_summary:
             asyncio.create_task(self._background_summarize())
 
+        thinking = _extract_thinking(self.messages)
         if self.session_manager:
             self.session_manager.add_message(
-                "assistant", response, timestamp=datetime.now().strftime("%H:%M")
+                "assistant", response, timestamp=datetime.now().strftime("%H:%M"), thinking=thinking
             )
 
         return response
@@ -438,6 +460,7 @@ class Agent:
                             "error": None,
                         }
                     )
+                self.messages = list(current_messages)
                 self.session_manager.add_tool_results_to_last_assistant(tool_results)
                 self.save_session()
 
@@ -612,16 +635,22 @@ class Agent:
         if not self._pending_summary:
             return
 
+        # Snapshot both gen and the dropped messages. A subsequent load_session
+        # (session switch) could clear self.messages and bump _session_gen while
+        # this async LLM call is in-flight. If gen doesn't match after the await,
+        # skip the insert to avoid leaking old summaries into the new session.
+        gen = self._session_gen
+        dropped = list(self._pending_summary)
         try:
-            summary = await summarize_old_messages(self._pending_summary, self.llm)
-            if summary:
+            summary = await summarize_old_messages(dropped, self.llm)
+            if summary and gen == self._session_gen:
                 summary_msg = Message(role="system", content=summary)
                 self.messages.insert(1, summary_msg)
                 logger.info(
                     "Background summarization completed",
                     extra={
                         "summary_length": len(summary),
-                        "dropped_count": len(self._pending_summary),
+                        "dropped_count": len(dropped),
                     },
                 )
         except Exception as e:
@@ -658,6 +687,13 @@ class Agent:
             return f"Session not found: {session_id}"
 
         self.messages = deserialize_messages(session.messages)
+        # Stale _pending_summary from a previous session's context-window drop
+        # must be cleared — otherwise _background_summarize may insert old
+        # summaries into self.messages after this load_session replaces them.
+        self._pending_summary = None
+        # Bump generation so any in-flight _background_summarize task from the
+        # prior session detects the mismatch and skips its insert.
+        self._session_gen += 1
         return f"Session loaded: {session_id}"
 
     def list_sessions(

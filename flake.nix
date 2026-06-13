@@ -179,11 +179,11 @@
             set -e
 
             export AGENT_FRONTEND_DIR="__FRONTEND_DIR__"
-            export ECHO_SESSION_DIR="''${HOME}/.agent_sessions"
-            mkdir -p "''${HOME}/.agent_sessions"
+            export ECHO_SESSION_DIR="''${HOME}/.echo-ai/sessions"
+            mkdir -p "''${HOME}/.echo-ai/sessions"
 
-            # Load env from ~/.config/agentframework/.env if it exists
-            ENV_FILE="''${HOME}/.config/agentframework/.env"
+            # Load env from ~/.echo-ai/.env if it exists
+            ENV_FILE="''${HOME}/.echo-ai/.env"
             if [ -f "$ENV_FILE" ]; then
                 while IFS='=' read -r key value; do
                     case "$key" in
@@ -238,10 +238,10 @@
 
           shellHook = ''
             export PYTHONPATH=$PWD/src
-            # Load env from ~/.config/agentframework/.env if it exists
-            if [ -f "$HOME/.config/agentframework/.env" ]; then
+            # Load env from ~/.echo-ai/.env if it exists
+            if [ -f "$HOME/.echo-ai/.env" ]; then
                 set -a
-                source "$HOME/.config/agentframework/.env"
+                source "$HOME/.echo-ai/.env"
                 set +a
             fi
 
@@ -252,7 +252,7 @@
             echo "Agent Framework dev environment ready"
             echo "  Backend:  uv sync --extra dev --extra otel --extra ui --extra vector-db (synced automatically on entry)"
             echo "  Frontend: cd frontend && npm install"
-            echo "  Config:   ~/.config/agentframework/.env"
+            echo "  Config:   ~/.echo-ai/config.yaml"
             echo "  Nix Ops:"
             echo "    Format code:      nix fmt"
             echo "    Build fullstack:  nix build"

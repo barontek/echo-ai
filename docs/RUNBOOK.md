@@ -32,7 +32,7 @@ docker build -t echo-ai .
 docker run -p 8000:8000 \
   --memory=512m \
   --cpus=1.0 \
-  -v $(pwd)/sessions:/app/.agent_sessions \
+  -v $(pwd)/sessions:/app/.echo-ai/sessions \
   -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
   echo-ai
 ```
@@ -185,10 +185,10 @@ sudo systemctl restart echo-ai
 
 ```bash
 # Backup the SQLite database
-cp .agent_sessions/agent_sessions.db /backup/sessions-$(date +%Y%m%d).db
+cp ~/.echo-ai/sessions/agent_sessions.db /backup/sessions-$(date +%Y%m%d).db
 
 # Or use sqlite3
-sqlite3 .agent_sessions/agent_sessions.db ".backup /backup/sessions.db"
+sqlite3 ~/.echo-ai/sessions/agent_sessions.db ".backup /backup/sessions.db"
 ```
 
 ### Restore Sessions
@@ -198,7 +198,7 @@ sqlite3 .agent_sessions/agent_sessions.db ".backup /backup/sessions.db"
 sudo systemctl stop echo-ai
 
 # Restore from backup
-cp /backup/sessions.db .agent_sessions/agent_sessions.db
+cp /backup/sessions.db ~/.echo-ai/sessions/agent_sessions.db
 
 # Restart
 sudo systemctl start echo-ai
@@ -211,7 +211,7 @@ python3 -c "
 import sqlite3
 import json
 
-conn = sqlite3.connect('.agent_sessions/agent_sessions.db')
+conn = sqlite3.connect('~/.echo-ai/sessions/agent_sessions.db')
 cursor = conn.execute('SELECT id, title, messages FROM agent_sessions')
 sessions = []
 for row in cursor:
@@ -226,8 +226,8 @@ print(json.dumps(sessions, indent=2))
 
 ```bash
 # Make session directory readable only by app user
-chmod 700 .agent_sessions
-chmod 600 .agent_sessions/agent_sessions.db
+chmod 700 ~/.echo-ai/sessions
+chmod 600 ~/.echo-ai/sessions/agent_sessions.db
 ```
 
 ### Enable HTTPS

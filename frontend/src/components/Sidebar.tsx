@@ -18,9 +18,11 @@ export const Sidebar = memo(function Sidebar() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const filteredSessions = sessions.filter((s) =>
-    s.title?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredSessions = !searchTerm
+    ? sessions
+    : sessions.filter((s) =>
+        s.title?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
 
   const handleDelete = (sessionId: string) => {
     deleteSession(sessionId);

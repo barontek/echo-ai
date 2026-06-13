@@ -50,8 +50,7 @@ class MemoryTool(Tool):
             self.validator = SecurityValidator(SafetyConfig())
 
         if db_path is None:
-            home = str(Path.home())
-            self.db_path = Path(home) / ".agent_memory" / "memory.db"
+            self.db_path = Path.home() / ".echo-ai" / "memory" / "memory.db"
         else:
             self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

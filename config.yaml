@@ -6,7 +6,7 @@ model:
   base_url: http://localhost:11434
   temperature: 0.1  # Low temperature for strict JSON tool calling
   timeout: 60  # HTTP timeout in seconds (default: 60)
-  num_ctx: 8192  # Context window size for Ollama (default: 2048, model max: 262144)
+  num_ctx: 32768  # Context window size for Ollama
 
 tools:
   enabled:

@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./sessions:/app/.agent_sessions
+      - ./sessions:/app/.echo-ai/sessions
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
     deploy:

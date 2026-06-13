@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from src.agentframework.core import Agent, AgentConfig, create_agent
 from src.agentframework.core.session_runtime import deserialize_messages
-from src.agentframework.config import get_safety_config, get_tools, load_config
+from src.agentframework.config import DEFAULT_SESSION_DIR, get_safety_config, get_tools, load_config
 from src.agentframework.web_utils import filter_messages_for_ui
 from src.agentframework.constants import THINKING_END, THINKING_START
 from src.agentframework import __version__
@@ -424,6 +424,11 @@ def create_session_data(state: AppState) -> dict[str, Any]:
             state.current_session_id = active_agent.session_manager.current_session.id
             active_agent.messages = []
             state.message_history = []
+            logger.warning(
+                "ws:trace create_session session=%s db_path=%s",
+                state.current_session_id,
+                str(active_agent.session_manager.db_path),
+            )
             return {"session_id": state.current_session_id}
     state.message_history = []
     return {
@@ -505,7 +510,7 @@ def _create_runtime_agent(
         tools=tools,
         base_url=config.get("model", {}).get("base_url"),
         session_enabled=config.get("agent", {}).get("session_enabled", True),
-        session_dir=config.get("agent", {}).get("session_dir", ".agent_sessions"),
+        session_dir=config.get("agent", {}).get("session_dir", DEFAULT_SESSION_DIR),
         num_ctx=config.get("model", {}).get("num_ctx"),
     )
 
@@ -1136,11 +1141,17 @@ async def websocket_chat(websocket: WebSocket):
         if active_agent.session_manager:
             active_agent._ensure_session()
             if active_agent.session_manager.current_session:
+                sid = active_agent.session_manager.current_session.id
+                logger.warning(
+                    "ws:trace run_agent session_start=%s messages=%d",
+                    sid,
+                    len(active_agent.messages),
+                )
                 try:
                     await websocket.send_json(
                         {
                             "type": "session_start",
-                            "session_id": active_agent.session_manager.current_session.id,
+                            "session_id": sid,
                         }
                     )
                 except WebSocketDisconnect:
@@ -1496,7 +1507,44 @@ async def websocket_chat(websocket: WebSocket):
 
                 # Load the session if session_id is provided
                 if message.session_id and active_agent.session_manager:
-                    active_agent.load_session(message.session_id)
+                    active_agent.messages = []
+                    active_agent._pending_summary = None
+                    prev_session_id = (
+                        active_agent.session_manager.current_session.id
+                        if active_agent.session_manager.current_session
+                        else None
+                    )
+                    prev_msg_count = len(active_agent.messages)
+                    load_result = active_agent.load_session(message.session_id)
+                    if load_result.startswith("Session not found"):
+                        logger.warning(
+                            "ws:session not visible, creating directly: %s",
+                            message.session_id,
+                        )
+                        active_agent.session_manager.create_session(
+                            session_id=message.session_id
+                        )
+                        active_agent.messages = []
+                        load_result = active_agent.load_session(message.session_id)
+                    logger.warning(
+                        "ws:trace load_session"
+                        " requested=%s prev_session=%s prev_msgs=%d"
+                        " result=%s"
+                        " now_session=%s now_msgs=%d"
+                        " db_path=%s"
+                        " messages=%s",
+                        message.session_id,
+                        prev_session_id,
+                        prev_msg_count,
+                        load_result,
+                        active_agent.session_manager.current_session.id
+                        if active_agent.session_manager.current_session
+                        else None,
+                        len(active_agent.messages),
+                        str(active_agent.session_manager.db_path),
+                        [m.get("role") if isinstance(m, dict) else getattr(m, "role", "?")
+                         for m in active_agent.messages[:3]],
+                    )
 
                 if streaming_task and not streaming_task.done():
                     streaming_task.cancel()

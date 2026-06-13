@@ -34,6 +34,7 @@ env/
 
 # Agent sessions
 .agent_sessions/
+.echo-ai/
 *.session.json
 *.db
 *.db-shm

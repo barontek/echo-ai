@@ -12,6 +12,9 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SESSION_DIR = str(Path.home() / ".echo-ai" / "sessions")
+DEFAULT_BACKUP_DIR = str(Path.home() / ".echo-ai" / "sessions" / ".backups")
+
 Base = declarative_base()
 
 
@@ -100,9 +103,11 @@ class Session:
 class SessionManager:
     """Manages agent sessions using SQLite backends."""
 
-    def __init__(self, session_dir: str = ".agent_sessions"):
+    def __init__(self, session_dir: str | None = None):
+        if session_dir is None:
+            session_dir = DEFAULT_SESSION_DIR
         self.session_dir = Path(session_dir)
-        self.session_dir.mkdir(exist_ok=True)
+        self.session_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize SQLite database connection with pooling
         self.db_path = self.session_dir / "agent_sessions.db"
@@ -522,7 +527,9 @@ class ChangeTracker:
 
     LARGE_FILE_THRESHOLD = 50000
 
-    def __init__(self, backup_dir: str = ".agent_sessions/.backups"):
+    def __init__(self, backup_dir: str | None = None):
+        if backup_dir is None:
+            backup_dir = DEFAULT_BACKUP_DIR
         self.changes: list[dict] = []
         self.redo_stack: list[dict] = []
         self.backup_dir = Path(backup_dir)

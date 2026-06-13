@@ -1,9 +1,11 @@
 """Tests for session management.
 
-Merged from test_session.py and test_session_integration.py.
+Merged from test_session.py, test_session_integration.py, and
+test_session_visibility_race.py.
 Integration tests run against a real temporary SQLite database.
 """
 
+import threading
 import pytest
 import sqlite3
 import time
@@ -466,3 +468,157 @@ class TestChangeTracker:
         assert tracker.redo()["path"] == "file2.txt"
         assert tracker.redo()["path"] == "file3.txt"
         assert tracker.redo() is None
+
+
+# ---------------------------------------------------------------------------
+# Cross-manager / cross-thread session visibility
+# ---------------------------------------------------------------------------
+
+
+class TestSessionVisibility:
+    """Session visibility across independent SessionManagers.
+
+    Reproduces the production scenario where:
+    - REST API creates a session via state.agent.session_manager
+    - WS handler reads via active_agent.session_manager
+    Both use separate SessionManager instances sharing the same SQLite file.
+    """
+
+    @pytest.fixture
+    def session_dir(self, tmp_path):
+        d = tmp_path / "test_sessions"
+        d.mkdir()
+        mgr = SessionManager(str(d))
+        mgr.close()
+        return str(d)
+
+    def test_cross_thread_visibility(self, session_dir):
+        """Thread B creates session → Thread A loads it."""
+        results: dict[str, object] = {}
+        barrier = threading.Barrier(2, timeout=10)
+
+        def reader():
+            mgr_a = SessionManager(session_dir)
+            try:
+                barrier.wait()
+                barrier.wait()
+                sid = results.get("session_id")
+                if sid:
+                    loaded = mgr_a.load_session(str(sid))
+                    results["found"] = loaded is not None
+                    if loaded:
+                        results["msgs"] = len(loaded.messages)
+            finally:
+                mgr_a.close()
+
+        def writer():
+            mgr_b = SessionManager(session_dir)
+            try:
+                barrier.wait()
+                session = mgr_b.create_session(title="cross-thread")
+                mgr_b.add_message("user", "hello from B")
+                mgr_b.add_message("assistant", "reply from B")
+                results["session_id"] = session.id
+                barrier.wait()
+            finally:
+                mgr_b.close()
+
+        t_a = threading.Thread(target=reader, daemon=True)
+        t_b = threading.Thread(target=writer, daemon=True)
+        t_a.start()
+        t_b.start()
+        t_a.join(timeout=10)
+        t_b.join(timeout=10)
+
+        assert results.get("found")
+        assert results.get("msgs") == 2
+
+    def test_pool_reuse_visibility(self, session_dir):
+        """Reader has a pre-warmed pool (simulates established WS connection)."""
+        results: dict[str, object] = {}
+        barrier = threading.Barrier(2, timeout=10)
+
+        def reader():
+            mgr_a = SessionManager(session_dir)
+            try:
+                mgr_a.load_session("nonexistent")
+                barrier.wait()
+                barrier.wait()
+                sid = results.get("session_id")
+                if sid:
+                    loaded = mgr_a.load_session(str(sid))
+                    results["found"] = loaded is not None
+            finally:
+                mgr_a.close()
+
+        def writer():
+            mgr_b = SessionManager(session_dir)
+            try:
+                barrier.wait()
+                session = mgr_b.create_session(title="warmup")
+                results["session_id"] = session.id
+                barrier.wait()
+            finally:
+                mgr_b.close()
+
+        t_a = threading.Thread(target=reader, daemon=True)
+        t_b = threading.Thread(target=writer, daemon=True)
+        t_a.start()
+        t_b.start()
+        t_a.join(timeout=10)
+        t_b.join(timeout=10)
+
+        assert results.get("found")
+
+    @pytest.mark.parametrize("scenario", ["sequential", "reverse", "interleaved"])
+    def test_create_then_load_scenarios(self, session_dir, scenario):
+        """Various create/load scenarios across managers."""
+        rest = SessionManager(session_dir)
+        ws = SessionManager(session_dir)
+        try:
+            if scenario == "sequential":
+                rest.create_session(session_id="seq_001")
+                assert ws.load_session("seq_001") is not None
+            elif scenario == "reverse":
+                ws.create_session(session_id="rev_001")
+                assert rest.load_session("rev_001") is not None
+            elif scenario == "interleaved":
+                rest.create_session(session_id="inter_a")
+                ws.create_session(session_id="inter_b")
+                assert ws.load_session("inter_a") is not None
+                assert rest.load_session("inter_b") is not None
+        finally:
+            rest.close()
+            ws.close()
+
+    def test_fallback_create_on_load_failure(self, session_dir):
+        """If cross-manager load fails, create_session with same id recovers."""
+        rest = SessionManager(session_dir)
+        ws = SessionManager(session_dir)
+        try:
+            rest.create_session(session_id="fallback_test")
+
+            loaded = ws.load_session("fallback_test")
+            if loaded is None:
+                ws.create_session(session_id="fallback_test")
+                loaded = ws.load_session("fallback_test")
+
+            assert loaded is not None
+            assert loaded.id == "fallback_test"
+        finally:
+            rest.close()
+            ws.close()
+
+    def test_high_frequency_sequential(self, session_dir):
+        """Stress sequential create/load across managers."""
+        rest = SessionManager(session_dir)
+        ws = SessionManager(session_dir)
+        try:
+            for i in range(50):
+                sid = f"hf_{i:03d}"
+                rest.create_session(session_id=sid)
+                loaded = ws.load_session(sid)
+                assert loaded is not None, f"Session {sid} not found at iter {i}"
+        finally:
+            rest.close()
+            ws.close()

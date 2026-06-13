@@ -57,6 +57,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const lastSentMessageRef = useRef<string>('');
   const connectRef = useRef<() => void>(() => {});
   const reconnectDelayRef = useRef(500);
+  const activeSessionIdRef = useRef(activeSessionId);
   const MAX_RECONNECT_DELAY = 30_000;
 
   const connect = useCallback(() => {
@@ -185,6 +186,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 has_tools: data.has_tools,
                 tool_calls: data.tool_calls,
               });
+              // Ignore done events for sessions that are no longer active.
+              // This prevents stale responses from a previous chat overwriting
+              // the cleared state after the user clicked New Chat.
+              if (
+                data.session_id
+                && activeSessionIdRef.current != null
+                && data.session_id !== activeSessionIdRef.current
+              ) {
+                debugLog('done:ignored', { event: data.session_id, current: activeSessionIdRef.current });
+                setIsStreaming(false);
+                break;
+              }
               setIsStreaming(false);
               setCurrentThinking('');
               isReadyRef.current = true;
@@ -292,6 +305,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     connectRef.current = connect;
   }, [connect]);
+
+  // Keep a ref in sync with activeSessionId so WebSocket message handlers
+  // (which live inside the connect closure) can detect stale events.
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   const sendMessage = useCallback(
     (content: string) => {
@@ -418,6 +437,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const createSession = useCallback(async () => {
     debugLog('createSession:start');
+    // Stop any active generation first — stale streaming events from the old
+    // session would otherwise overwrite the cleared state and switch the active
+    // session_id back to the old conversation after New Chat is clicked.
+    stopGeneration();
     try {
       const { session_id } = await api.createSession();
       debugLog('createSession:done', session_id);
@@ -428,7 +451,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('[Chat] Failed to create session:', err);
     }
-  }, []);
+  }, [stopGeneration]);
 
   const selectSession = useCallback(async (sessionId: string) => {
     debugLog('selectSession:start', sessionId);

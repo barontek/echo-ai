@@ -6,7 +6,7 @@ from src.agentframework.core.router import SemanticRouter, RouteSelection
 
 @pytest.mark.asyncio
 async def test_semantic_router_selection():
-    config = AgentConfig(provider="openai", model="gpt-4o")
+    config = AgentConfig(provider="openai", model="gpt-4o", session_enabled=False)
     agent = create_agent(config, api_key="dummy_key")
 
     agent.register_sub_agent(

@@ -108,6 +108,7 @@ class TestParallelExecution:
         config = AgentConfig(
             tools=[MockTool()],
             parallel_tool_execution=False,
+            session_enabled=False,
         )
         provider = MockProvider()
         agent = Agent(llm_provider=provider, config=config)
@@ -142,6 +143,7 @@ class TestParallelExecution:
         config = AgentConfig(
             tools=[MockTool()],
             parallel_tool_execution=True,
+            session_enabled=False,
         )
         provider = MockProvider()
         agent = Agent(llm_provider=provider, config=config)
@@ -169,7 +171,7 @@ class TestPydanticValidation:
 
     @pytest.fixture
     def agent_with_mock_tool(self):
-        config = AgentConfig(tools=[MockTool()])
+        config = AgentConfig(tools=[MockTool()], session_enabled=False)
         provider = MockProvider()
         agent = Agent(llm_provider=provider, config=config)
         yield agent
@@ -251,7 +253,7 @@ class TestSanitizeJsonIntegration:
     @pytest.mark.asyncio
     async def test_execute_tool_with_markdown_json(self):
         """Tool should execute even if LLM returns markdown-wrapped JSON."""
-        config = AgentConfig(tools=[MockTool()])
+        config = AgentConfig(tools=[MockTool()], session_enabled=False)
         provider = MockProvider()
         agent = Agent(llm_provider=provider, config=config)
 

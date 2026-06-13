@@ -12,7 +12,7 @@ class UserProfile(BaseModel):
 
 @pytest.mark.asyncio
 async def test_agent_extract_data():
-    config = AgentConfig(provider="openai", model="gpt-4o")
+    config = AgentConfig(provider="openai", model="gpt-4o", session_enabled=False)
     agent = create_agent(config, api_key="dummy_key")
 
     # Mock the underlying provider's extract_structured method

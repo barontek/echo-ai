@@ -1,6 +1,7 @@
 """Session management for the agent framework using SQLite."""
 
 import logging
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -339,6 +340,13 @@ class SessionManager:
 
     def add_message(self, role: str, content: str, **kwargs) -> None:
         """Add a message to the current session and persist to DB."""
+        if content == "Test":
+            logger.warning(
+                "add_message called with content='Test' role=%s session=%s\n%s",
+                role,
+                self.current_session.id if self.current_session else None,
+                "".join(traceback.format_stack()),
+            )
         if self.current_session:
             msg = {"role": role, "content": content, **kwargs}
             self.current_session.messages.append(msg)

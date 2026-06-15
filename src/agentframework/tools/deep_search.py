@@ -81,7 +81,7 @@ class DeepSearchTool(Tool):
         results = results[:5]
         fetch_tool = None
 
-        async def fetch(r: dict[str, Any]) -> str:
+        async def fetch(r: dict[str, Any]) -> tuple[str, str, str]:
             nonlocal fetch_tool
             if fetch_tool is None:
                 from .web import WebFetchTool
@@ -90,11 +90,10 @@ class DeepSearchTool(Tool):
                     limits=self._limits,
                 )
             result = await fetch_tool.execute(r.get("url", ""))
-            if result.error:
-                return r.get("snippet", "")
-            return result.content
+            content = result.content if not result.error else r.get("snippet", "")
+            return r.get("title", ""), r.get("url", ""), content
 
-        contents: list[Any] = []
+        contents: list[tuple[str, str, str]] = []
         for r in results:
             contents.append(await fetch(r))
 
@@ -104,9 +103,7 @@ class DeepSearchTool(Tool):
                 return parts[1].strip()
             return text.strip()
 
-        async def summarize(content: str) -> str:
-            if isinstance(content, Exception):
-                return "DISCARD"
+        async def summarize(title: str, url: str, content: str) -> str | None:
             try:
                 response = await provider.chat(
                     messages=[
@@ -123,27 +120,26 @@ class DeepSearchTool(Tool):
                         {
                             "role": "user",
                             "content": (
-                                f"Query: {query}\n\nContent:\n{content[:8000]}"
+                                f"Query: {query}\n\nTitle: {title}\n\nContent:\n{content[:8000]}"
                             ),
                         },
                     ],
                     temperature=0.0,
                 )
-                return _strip_thinking(response.content)
+                summary = _strip_thinking(response.content)
+                if summary == "DISCARD":
+                    return None
+                return f"{title}: {url}\n{summary}"
             except Exception:
-                return "DISCARD"
+                return None
 
-        summaries: list[Any] = []
-        for c in contents:
-            summaries.append(await summarize(c))
+        formatted_parts: list[str] = []
+        for title, url, content in contents:
+            result = await summarize(title, url, content)
+            if result:
+                formatted_parts.append(result)
 
-        relevant = [
-            s for s in summaries
-            if isinstance(s, str) and s.strip() != "DISCARD"
-        ]
-
-        if not relevant:
+        if not formatted_parts:
             return ToolResult(content="No relevant results found.")
 
-        formatted = "\n".join(f"{i+1}. {s}" for i, s in enumerate(relevant))
-        return ToolResult(content=formatted)
+        return ToolResult(content="\n".join(formatted_parts))

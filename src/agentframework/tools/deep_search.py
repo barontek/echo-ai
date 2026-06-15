@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 class DeepSearchParams(BaseModel):
     query: str
-    max_results: int = 5
 
 
 class DeepSearchTool(Tool):
@@ -62,14 +61,14 @@ class DeepSearchTool(Tool):
         return self.provider
 
     async def execute(
-        self, query: str, max_results: int = 5, **kwargs: Any
+        self, query: str, **kwargs: Any
     ) -> ToolResult:
         provider = self._get_provider()
 
         try:
             search_provider = self._get_search_provider()
             results = await asyncio.wait_for(
-                search_provider.search(query, max_results=max_results),
+                search_provider.search(query, max_results=5),
                 timeout=30.0,
             )
         except Exception as e:
@@ -79,7 +78,7 @@ class DeepSearchTool(Tool):
         if not results:
             return ToolResult(content="No results found.")
 
-        results = results[:max_results]
+        results = results[:5]
         fetch_tool = None
 
         async def fetch(r: dict[str, Any]) -> str:
@@ -95,10 +94,9 @@ class DeepSearchTool(Tool):
                 return r.get("snippet", "")
             return result.content
 
-        contents: list[Any] = await asyncio.gather(
-            *(fetch(r) for r in results),
-            return_exceptions=True,
-        )
+        contents: list[Any] = []
+        for r in results:
+            contents.append(await fetch(r))
 
         def _strip_thinking(text: str) -> str:
             if THINKING_START in text and THINKING_END in text:
@@ -116,16 +114,16 @@ class DeepSearchTool(Tool):
                             "role": "system",
                             "content": (
                                 "You are a relevance filter. Given a search query "
-                                "and page content, write a 2-3 sentence summary of "
-                                "the information relevant to the query. If the page "
-                                "has no relevant information, respond with exactly: "
-                                "DISCARD"
+                                "and page content, extract all key details and "
+                                "provide a comprehensive summary of the information "
+                                "relevant to the query. If the page has no relevant "
+                                "information, respond with exactly: DISCARD"
                             ),
                         },
                         {
                             "role": "user",
                             "content": (
-                                f"Query: {query}\n\nContent:\n{content[:4000]}"
+                                f"Query: {query}\n\nContent:\n{content[:8000]}"
                             ),
                         },
                     ],
@@ -135,10 +133,9 @@ class DeepSearchTool(Tool):
             except Exception:
                 return "DISCARD"
 
-        summaries: list[Any] = await asyncio.gather(
-            *(summarize(c) for c in contents),
-            return_exceptions=True,
-        )
+        summaries: list[Any] = []
+        for c in contents:
+            summaries.append(await summarize(c))
 
         relevant = [
             s for s in summaries

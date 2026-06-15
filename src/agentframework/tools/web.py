@@ -268,7 +268,7 @@ class WebSearchTool(Tool):
             self.search_provider = None
 
     async def _fetch_search_result(
-        self, crawler: Any, url: str, title: str, snippet: str
+        self, crawler: Any, index: int, url: str, title: str, snippet: str
     ) -> str:
         content = ""
         try:
@@ -329,7 +329,7 @@ class WebSearchTool(Tool):
                 snippet[:snippet_limit] if snippet else "[Content could not be fetched]"
             )
 
-        return f"- {title}: {url}\n  {content}"
+        return f"{index}. {title}: {url}\n  {content}"
 
     async def execute(self, query: str, **kwargs) -> ToolResult:
         """Search the web with safety checks."""
@@ -357,20 +357,21 @@ class WebSearchTool(Tool):
 
             formatted = []
             if AsyncWebCrawler is None:
-                for r in results:
+                for idx, r in enumerate(results, 1):
                     title = r.get("title", "")
                     url = r.get("url", "")
                     snippet = r.get("snippet", "")
                     snippet_limit = self.limits.get("max_search_result_snippet", 500)
-                    formatted.append(f"- {title}: {url}\n  {snippet[:snippet_limit]}")
+                    formatted.append(f"{idx}. {title}: {url}\n  {snippet[:snippet_limit]}")
                 return ToolResult(content="\n\n".join(formatted))
 
             async with AsyncWebCrawler(verbose=False) as crawler:
                 tasks = []
-                for r in results:
+                for idx, r in enumerate(results, 1):
                     tasks.append(
                         self._fetch_search_result(
                             crawler,
+                            idx,
                             r.get("url", ""),
                             r.get("title", ""),
                             r.get("snippet", ""),
@@ -388,7 +389,7 @@ class WebSearchTool(Tool):
                         title = results[i].get("title", "")
                         url = results[i].get("url", "")
                         snippet_limit = self.limits.get("max_search_result_snippet", 500)
-                        formatted.append(f"- {title}: {url}\n  {snippet[:snippet_limit]}")
+                        formatted.append(f"{i+1}. {title}: {url}\n  {snippet[:snippet_limit]}")
                     else:
                         formatted.append(r)
 

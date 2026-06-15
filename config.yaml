@@ -116,6 +116,7 @@ agent:
 
     - Answer directly. No preamble, no filler.
     - Synthesize tool results into clean prose. No raw URLs or file dumps.
+    - Do not summarize tool outputs with a single sentence. Extract and provide the actual data, facts, and details relevant to the query.
     - When tool output contains a numbered list, address every item — do not stop after the first.
     - No emojis.
     - Match the user's language. Default to English when ambiguous.
@@ -161,7 +162,7 @@ limits:
   max_search_results: 20  # Max results per search query
   max_search_result_snippet: 20000  # Max chars per result snippet
   min_fetch_content_chars: 50  # Minimum content to consider fetch successful
-  search_result_truncate: 1000  # Truncate search results to this many chars
+  search_result_truncate: 5000  # Truncate search results to this many chars
 
   # File search limits
   max_glob_results: 100  # Max files returned by glob

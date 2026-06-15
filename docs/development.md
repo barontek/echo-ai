@@ -1,36 +1,34 @@
 # Development
 
-## Installation
+## Setup
 
 ```bash
-# Install in development mode
-make install-dev
+# NixOS
+nix develop    # Enter dev shell (auto-runs uv sync)
 
-# Run tests
-make test
+# Non-NixOS
+uv sync
 ```
 
-## Benchmarks
+## Commands
 
-- Basic benchmark harness: `python scripts/benchmarks/basic_benchmark.py --iterations 50`
+```bash
+make test      # Run pytest with coverage
+make verify    # Quality gate: pytest → ruff → pyright
+make lint      # ruff check
+make typecheck # pyright src/
+```
 
 ## Architecture
 
 ```
 src/agentframework/
-├── agent.py          # Main agent logic
-├── chat.py          # Interactive chat interface
-├── cli.py           # CLI for single commands
-├── providers/      # LLM provider implementations
-│   └── ollama.py    # Ollama provider
-├── safety.py        # Security validation
-├── session.py      # Chat session management
-└── tools/          # Tool implementations
-    ├── bash.py
-    ├── file.py
-    ├── web.py
-    ├── git.py
-    ├── search.py
-    ├── memory.py
-    └── notes.py
+├── core/               # Agent loop, tool runtime, callbacks
+├── providers/          # Ollama, Anthropic, OpenAI
+├── tools/              # bash, file, web, deep_search, ...
+│   └── search_providers/  # Brave, DuckDuckGo, Tavily
+├── conversation.py     # Message formatting + token trimming
+├── session.py          # SQLite session manager
+├── web_api.py          # FastAPI backend
+└── safety.py           # Security validation
 ```

@@ -3,13 +3,12 @@
 ## Commands
 
 ```bash
-# Backend (Python)
-make install          # Create venv and install package
+# Backend (Python) — requires `nix develop` or `uv sync`
 make test             # Run pytest with coverage
 make verify           # Quality gate: pytest → ruff → pyright
 make lint             # ruff check
 make typecheck        # pyright src/
-make security         # pip-audit + bandit
+make security         # pip-audit + bandit (blocked on NixOS)
 
 # Frontend (React)
 cd frontend && npm install
@@ -29,6 +28,8 @@ cd frontend && npm run check        # lint + typecheck + test + build
 - **State management**: `router.py` (semantic sub-agent routing), `session.py`/`memory.py` (context retention)
 - **Providers**: `src/agentframework/providers/` (Anthropic, OpenAI, Ollama) - must align with standardized interface
 - **Tools**: `src/agentframework/tools/` - new tools must be modular, self-contained, registered in config.yaml
+- **Deep search**: `src/agentframework/tools/deep_search.py` - multi-stage web fetch + LLM relevance filter
+- **Search providers**: `src/agentframework/tools/search_providers/` - Brave, DuckDuckGo, Tavily adapters
 
 ## Frontend Communication
 
@@ -42,7 +43,7 @@ cd frontend && npm run check        # lint + typecheck + test + build
 - **Package manager**: Use `uv` for ALL Python operations (installs, running tools, pytest, etc.)
 - **Never use pip directly**
 - **PYTHONPATH**: Must be set to `src` when running tests (`PYTHONPATH=src pytest ...`)
-- **Pre-commit**: Local hooks run `uv run pyright`, so uv must be available
+- **Pre-commit**: Local hooks run `pyright`, so pyright must be available
 
 ## Quality Gates
 

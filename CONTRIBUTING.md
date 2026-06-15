@@ -9,13 +9,12 @@ Thank you for your interest in contributing!
 git clone https://github.com/barontek/echo-ai.git
 cd echo-ai
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# or: .venv\Scripts\activate  # Windows
+# NixOS
+nix develop    # Enter dev shell
 
-# Install dependencies
-pip install -e .
+# Non-NixOS
+uv sync                          # Install dependencies
+PYTHONPATH=src .venv/bin/agent   # Run the CLI
 
 # Run tests
 make test
@@ -45,23 +44,19 @@ ruff check --fix src/
 ```
 echo-ai/
 ├── src/agentframework/     # Core agent framework
-│   ├── agent.py            # Main Agent class
+│   ├── core/              # Agent loop, tool runtime, callbacks
+│   ├── providers/         # Ollama, OpenAI, Anthropic
+│   ├── tools/             # Tool implementations
+│   │   └── search_providers/  # Brave, DuckDuckGo, Tavily
 │   ├── web_api.py         # FastAPI endpoints
 │   ├── session.py         # Session management
 │   ├── safety.py          # Security validation
-│   ├── providers/         # LLM providers
-│   │   └── ollama.py      # Ollama implementation
-│   └── tools/             # Agent tools
-│       ├── bash.py
-│       ├── file.py
-│       ├── web.py
-│       └── search.py
-├── static/                 # Frontend
-│   ├── js/               # JavaScript modules
-│   └── css/              # Stylesheets
-├── tests/                 # Test suite
-├── config.yaml           # Configuration
-└── docs/                # Documentation
+│   └── ...
+├── frontend/               # React + Vite + TypeScript
+├── tests/                  # Test suite
+├── config.yaml             # Configuration
+├── flake.nix               # Nix flake
+└── docs/                   # Documentation
 ```
 
 ## Adding a New Tool
@@ -74,40 +69,42 @@ echo-ai/
 import logging
 from typing import Any
 
-from ..safety import SafetyValidator
-from .base import BaseTool, ToolResult
+from pydantic import BaseModel
+
+from . import Tool, ToolResult
 
 logger = logging.getLogger(__name__)
 
+class MyToolParams(BaseModel):
+    query: str
 
-class MyTool(BaseTool):
+class MyTool(Tool):
     """Description of what this tool does."""
 
-    def __init__(self, validator: SafetyValidator):
-        super().__init__("my_tool", validator)
+    parameters_model = MyToolParams
 
-    def execute(self, **kwargs: Any) -> ToolResult:
-        """Execute the tool with the given arguments."""
+    def __init__(self, provider=None, safety_config=None, limits=None):
+        super().__init__(
+            name="my_tool",
+            description="Fetches information based on a query.",
+        )
+        self._safety_config = safety_config
+        self._limits = limits
+
+    async def execute(self, query: str, **kwargs) -> ToolResult:
         try:
-            # Your implementation here
-            result = do_something(**kwargs)
-            return ToolResult(success=True, output=result)
+            result = await do_something(query)
+            return ToolResult(content=str(result))
         except Exception as e:
             logger.error(f"Tool execution failed: {e}")
-            return ToolResult(success=False, error=str(e))
+            return ToolResult(error=str(e))
 ```
 
-2. Register it in `src/agentframework/tools/__init__.py`
-
-```python
-from .my_tool import MyTool
-
-__all__ = ["MyTool", ...]
-```
+2. Register it in `src/agentframework/tools/__init__.py` (`TOOL_REGISTRY` dict)
 
 3. Add tests in `tests/test_my_tool.py`
 
-4. Update tools configuration in `config.yaml`
+4. Update tools configuration in `config.yaml` (add to `tools.enabled`)
 
 ## Adding a New LLM Provider
 

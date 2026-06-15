@@ -6,10 +6,11 @@ Edit `config.yaml`:
 
 ```yaml
 model:
-  provider: ollama      # anthropic, openai, or ollama
-  name: qwen3:4b-instruct  # default model
+  provider: ollama
+  name: gemma4:e4b
   base_url: http://localhost:11434
   temperature: 0.1
+  num_ctx: 32768
 
 tools:
   enabled:
@@ -24,17 +25,18 @@ tools:
     - web_search
     - memory
     - notes
+    - humanizer
+    - deep_search
 ```
 
 ### Recommended Models
 
 | Model | Description |
 |-------|-------------|
-| `qwen3:4b-instruct` | Best for following instructions (default) |
-| `qwen2.5-coder:3b` | Best for strict tool calling and coding |
-| `qwen3:4b` | General purpose with strong reasoning |
+| `gemma4:e4b` | Best for following instructions and tool calling (default) |
+| `qwen3:4b-instruct` | Strong instruction following |
+| `qwen3:4b` | General purpose with reasoning |
 | `llama3.2` | Meta's lightweight model |
-| `phi3.5` | Microsoft's highly stable model |
 
 ## Requirements
 

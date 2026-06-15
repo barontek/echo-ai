@@ -14,16 +14,15 @@ A standalone AI agent framework built from scratch, similar to OpenCode but simp
 ## Quick Start
 
 ```bash
-# Clone and setup
-git clone https://github.com/barontek/echo-ai.git
-cd echo-ai
-make install
+# NixOS (primary)
+nix develop      # Enter dev shell
+make test        # Run tests
+nix build        # Build fullstack binary
+nix run .        # Run web server
 
-# Run in chat mode (continuous conversation)
-./chat
-
-# Or run single command
-./agent "your task"
+# Non-NixOS
+uv sync
+PYTHONPATH=src uv run python -m agentframework.chat
 ```
 
 ## Project Status

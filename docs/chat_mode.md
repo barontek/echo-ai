@@ -18,10 +18,11 @@ The web interface is the primary way to interact with Chat Mode. It supports rea
 ## How to Start
 
 1. Ensure the backend server is running:
-   ```bash
-   python -m src.agentframework.web_api
-   ```
-2. Open your browser and navigate to the server address (default is `http://127.0.0.1:8501`).
+```bash
+nix run .                        # NixOS (fullstack)
+uv run uvicorn agentframework.web_api:app --host 0.0.0.0 --port 8080  # Non-NixOS
+```
+2. Open your browser and navigate to the server address (default is `http://127.0.0.1:8080`).
 
 ## Session Management
 

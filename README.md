@@ -7,7 +7,7 @@ A standalone AI agent framework built from scratch.
 ## Features
 
 - **Multiple LLM Providers**: Anthropic, OpenAI, Ollama
-- **Tool Calling**: bash, read/write files, list directories, glob, grep, web fetch, web search, git, memory, notes
+- **Tool Calling**: bash, file I/O, glob, grep, web search, web fetch, deep search (LLM-filtered), git, memory, notes, humanizer
 - **Modern Web UI**: React + Vite frontend with WebSocket streaming, markdown rendering, tool call display, dark/light theme
 - **Safety**: Workspace confinement, command allowlisting, path traversal prevention, and dangerous pattern blocking
 - **Sessions**: Save/load conversations, session renaming, and automatic titling
@@ -17,16 +17,15 @@ A standalone AI agent framework built from scratch.
 ## Quick Start
 
 ```bash
-# Clone and setup
-git clone https://github.com/barontek/echo-ai.git
-cd echo-ai
-make install
+# NixOS (primary)
+nix develop    # Enter dev shell (auto-runs uv sync)
+make test      # Run tests
+nix build      # Build fullstack binary
+nix run .      # Run the web server
 
-# Run in chat mode (continuous conversation)
-make chat
-
-# Or run single command
-make run ARGS="your task"
+# Non-NixOS
+uv sync                          # Install Python deps
+PYTHONPATH=src .venv/bin/agent   # Run CLI agent
 ```
 
 ## Environment Variables
@@ -59,10 +58,11 @@ Edit `config.yaml`:
 
 ```yaml
 model:
-  provider: ollama      # anthropic, openai, or ollama
-  name: qwen3:4b-instruct  # default model
+  provider: ollama
+  name: gemma4:e4b
   base_url: http://localhost:11434
   temperature: 0.1
+  num_ctx: 32768
 
 tools:
   enabled:
@@ -77,17 +77,18 @@ tools:
     - web_search
     - memory
     - notes
+    - humanizer
+    - deep_search
 ```
 
 ### Recommended Models
 
 | Model | Description |
 |-------|-------------|
-| `qwen3:4b-instruct` | Best for following instructions (default) |
-| `qwen2.5-coder:3b` | Best for strict tool calling and coding |
-| `qwen3:4b` | General purpose with strong reasoning |
+| `gemma4:e4b` | Best for following instructions and tool calling (default) |
+| `qwen3:4b-instruct` | Strong instruction following |
+| `qwen3:4b` | General purpose with reasoning |
 | `llama3.2` | Meta's lightweight model |
-| `phi3.5` | Microsoft's highly stable model |
 
 ## API Endpoints
 
@@ -193,8 +194,8 @@ python scripts/benchmarks/basic_benchmark.py --iterations 50
 ## Development
 
 ```bash
-# Install in development mode
-make install
+# Enter dev environment
+nix develop
 
 # Run all tests
 make test
@@ -210,29 +211,32 @@ make security
 
 ```
 src/agentframework/
-├── agent.py           # Main agent logic
-├── chat.py           # Interactive chat interface
-├── cli.py            # CLI for single commands
-├── web_api.py        # FastAPI backend with WebSocket
-├── providers/        # LLM provider implementations
+├── core/               # Core agent loop, tool runtime, callbacks
+│   ├── agent.py
+│   ├── tool_runtime.py
+│   └── callback_manager.py
+├── providers/          # LLM provider implementations
+│   ├── ollama.py       # Default provider
 │   ├── anthropic.py
-│   ├── openai.py
-│   └── ollama.py
-├── safety.py         # Security validation
-├── session.py        # Chat session management (SQLite)
-├── memory.py         # Memory management
-├── router.py         # Semantic routing for sub-agents
-├── metrics.py        # Prometheus metrics
-├── config.py         # Configuration management
-├── dependencies.py  # Dependency injection
-├── tools/           # Tool implementations
+│   └── openai.py
+├── tools/              # Tool implementations
+│   ├── web.py          # WebSearchTool, WebFetchTool
+│   ├── deep_search.py  # Multi-stage LLM-filtered search
+│   ├── search_providers/  # Brave, DuckDuckGo, Tavily
 │   ├── bash.py
 │   ├── file.py
-│   ├── web.py
 │   ├── git.py
-│   ├── search.py
 │   ├── memory.py
-│   └── notes.py
+│   ├── notes.py
+│   └── humanizer.py
+├── conversation.py     # Message formatting + token trimming
+├── config.py           # Configuration loading
+├── session.py          # SQLite session manager
+├── memory.py           # Memory persistence
+├── safety.py           # Security validation
+├── web_api.py          # FastAPI backend
+├── web_utils.py        # Web utilities
+└── constants.py        # Shared constants
 
 frontend/            # React + Vite + TypeScript frontend
 ├── src/

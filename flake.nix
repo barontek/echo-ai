@@ -176,6 +176,7 @@
             pkgs.nixpkgs-fmt
             pkgs.gnumake
             pkgs.sqlite
+            pkgs.mkdocs
             pkgs.git
             pkgs.stdenv.cc.cc.lib
             pkgs.zlib

@@ -105,45 +105,49 @@ class DeepSearchTool(Tool):
                 return parts[1].strip()
             return text.strip()
 
-        async def summarize(title: str, url: str, content: str) -> str | None:
+        async def summarize_batch(batch: list[tuple[str, str, str]]) -> list[str]:
             try:
+                sources = "\n\n".join(
+                    f"--- Source {j+1} ---\nTitle: {t}\nURL: {u}\nContent:\n{c[:8000]}"
+                    for j, (t, u, c) in enumerate(batch)
+                )
                 response = await provider.chat(
                     messages=[
                         {
                             "role": "system",
                             "content": (
                                 "You are a relevance filter. Given a search query "
-                                "and page content, extract all key details and "
-                                "provide a comprehensive summary of the information "
-                                "relevant to the query. If the page has no relevant "
-                                "information, respond with exactly: DISCARD"
+                                "and multiple source pages, extract all key details "
+                                "from each source and provide a comprehensive summary "
+                                "for each. If a source has no relevant information, "
+                                "respond with DISCARD for that source. "
+                                "Format:\nSource 1: <summary or DISCARD>\nSource 2: ..."
                             ),
                         },
                         {
                             "role": "user",
-                            "content": (
-                                f"Query: {query}\n\nTitle: {title}\n\nContent:\n{content[:8000]}"
-                            ),
+                            "content": f"Query: {query}\n\n{sources}",
                         },
                     ],
                     temperature=0.0,
                 )
-                summary = _strip_thinking(response.content)
-                if summary == "DISCARD":
-                    return None
-                return f"{title}: {url}\n{summary}"
+                result = _strip_thinking(response.content)
+                parts: list[str] = []
+                for j, (t, u, _) in enumerate(batch):
+                    for line in result.split("\n"):
+                        if line.strip().startswith(f"Source {j+1}:"):
+                            summary = line.split(":", 1)[1].strip()
+                            if summary != "DISCARD":
+                                parts.append(f"{t}: {u}\n{summary}")
+                            break
+                return parts
             except Exception:
-                return None
+                return []
 
         formatted_parts: list[str] = []
         for i in range(0, len(contents), 2):
             batch = contents[i:i+2]
-            batch_results = await asyncio.gather(
-                *(summarize(t, u, c) for t, u, c in batch)
-            )
-            for r in batch_results:
-                if r:
-                    formatted_parts.append(r)
+            formatted_parts.extend(await summarize_batch(batch))
 
         if not formatted_parts:
             return ToolResult(content="No relevant results found.")

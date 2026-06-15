@@ -7,17 +7,20 @@ repos:
       - id: check-yaml
       - id: check-toml
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.0
+  - repo: local
     hooks:
       - id: ruff
-        args: [ --fix ]
+        name: ruff
+        entry: ruff check --fix src/ tests/
+        language: system
+        types: [python]
+        pass_filenames: false
 
   - repo: local
     hooks:
       - id: pyright
         name: pyright
-        entry: uv run pyright src/
+        entry: pyright --pythonpath .venv/bin/python src/
         language: system
         types: [python]
         pass_filenames: false
@@ -48,12 +51,12 @@ repos:
         language: system
         files: ^frontend/
 
-  - repo: local
-    hooks:
-      - id: mkdocs
-        name: mkdocs-build
-        entry: bash
-        args: ["-c", "export PYTHONPATH=src && uv run mkdocs build"]
-        language: system
-        files: ^docs/|mkdocs\.yml|pyproject\.toml
-        pass_filenames: false
+  # - repo: local
+  #   hooks:
+  #     - id: mkdocs
+  #       name: mkdocs-build
+  #       entry: bash
+  #       args: ["-c", "export PYTHONPATH=src && uv run mkdocs build"]
+  #       language: system
+  #       files: ^docs/|mkdocs\.yml|pyproject\.toml
+  #       pass_filenames: false

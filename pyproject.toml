@@ -63,6 +63,7 @@ dev = [
     "bandit>=1.7.0",
     "pip-audit>=2.7.0",
     "pre-commit>=4.0.0",
+    "httpx2>=0.2.0",
 ]
 otel = [
     "opentelemetry-api>=1.30.0",

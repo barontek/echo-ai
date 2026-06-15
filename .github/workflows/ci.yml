@@ -31,7 +31,7 @@ jobs:
         run: |
           uv pip install --system -e ".[dev]"
           uv pip install --system ruff pyright
-          mkdir -p .venv
+          mkdir -p .venv/bin
           ln -sf $(which python3) .venv/bin/python
 
       - name: Run verify

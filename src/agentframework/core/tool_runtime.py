@@ -264,7 +264,7 @@ def create_tool_result_notice(tool_messages: list[Message]) -> Message | None:
 
     tool_results = "\n".join(
         # Tool notice truncation limit — increase if models need more context
-        f"Tool '{msg.tool_name}' returned: {msg.content[:4000]}"
+        f"Tool '{msg.tool_name}' returned: {msg.content[:8000]}"
         for msg in tool_messages
         if msg.content
     )

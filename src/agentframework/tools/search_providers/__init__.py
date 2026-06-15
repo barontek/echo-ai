@@ -1,11 +1,13 @@
 from typing import Any
 
 from .base import BaseSearchProvider
+from .brave import BraveSearchProvider
 from .duckduckgo import DuckDuckGoProvider
 from .tavily import TavilyProvider
 
 
 PROVIDERS: dict[str, type[BaseSearchProvider]] = {
+    "brave": BraveSearchProvider,
     "duckduckgo": DuckDuckGoProvider,
     "tavily": TavilyProvider,
 }
@@ -18,7 +20,7 @@ def get_search_provider(
     Factory to get a search provider by name.
 
     Args:
-        provider_type: Provider name ("duckduckgo" or "tavily")
+        provider_type: Provider name ("brave", "duckduckgo", or "tavily")
         **kwargs: Additional provider-specific config
 
     Returns:

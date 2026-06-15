@@ -4,113 +4,70 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, pyproject-nix, uv2nix, pyproject-build-systems }:
+    let
+      inherit (nixpkgs) lib;
+    in
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
+        pkgs = nixpkgs.legacyPackages.${system};
+
+        # Load uv workspace from uv.lock
+        workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+
+        # Create an overlay that provides all Python dependencies from uv.lock
+        overlay = workspace.mkPyprojectOverlay {
+          sourcePreference = "wheel";
         };
 
-        python = pkgs.python312;
+        # Python package set with pyproject-nix build infrastructure + uv2nix deps
+        basePython = pkgs.python312;
+        pythonSetBase = (pkgs.callPackage pyproject-nix.build.packages {
+          python = basePython;
+        }).overrideScope (lib.composeManyExtensions [
+          pyproject-build-systems.overlays.wheel
+          overlay
+        ]);
 
-        tavily = python.pkgs.buildPythonPackage rec {
-          pname = "tavily";
-          version = "0.3.3";
+        # Override agentframework with custom postPatch/postInstall
+        pythonSet = pythonSetBase.overrideScope (final: prev: {
+          agentframework = prev.agentframework.overrideAttrs (old: {
+            postPatch = (old.postPatch or "") + ''
+              find src -name "*.py" -exec sed -i {} \
+                -e 's/from src\.agentframework/from agentframework/g' \
+                -e 's/import src\.agentframework/import agentframework/g' \
+                -e 's/from src\.workflows/from workflows/g' \
+                -e 's/import src\.workflows/import workflows/g' \;
+            '';
 
-          # The actual PyPI package is named tavily-python but imports as tavily
-          src = python.pkgs.fetchPypi {
-            pname = "tavily-python";
-            inherit version;
-            sha256 = "sha256-FKw9DLXSzgVIfn6AIEYM17iNg8mRb0bjRLzyVXes00Y=";
-          };
+            postInstall = (old.postInstall or "") + ''
+              cp -r src/workflows $out/${prev.python.sitePackages}/
+            '';
+          });
+        });
 
-          format = "setuptools";
-
-          propagatedBuildInputs = with python.pkgs; [
-            httpx
-            requests
-            tiktoken
-          ];
-
-          # Skip the runtime deps check since wheel metadata says "tavily-python"
-          # but we expose it as "tavily"
-          pythonCatchConflictsPhase = "";
-        };
-
-        agentframework = python.pkgs.buildPythonPackage rec {
-          pname = "agentframework";
-          version = "0.1.0";
-          src = ./.;
-
-          format = "pyproject";
-
-          pythonRelaxDeps = true;
-
-          # Skip runtime deps check - we handle deps manually
-          dontCheckRuntimeDeps = true;
-
-          nativeBuildInputs = with python.pkgs; [
-            hatchling
-          ];
-
-          propagatedBuildInputs = with python.pkgs; [
-            anthropic
-            openai
-            httpx
-            pyyaml
-            rich
-            beautifulsoup4
-            prompt-toolkit
-            aiohttp
-            pydantic
-            tenacity
-            sqlalchemy
-            aiosqlite
-            greenlet
-            fastapi
-            uvicorn
-            websockets
-            markdown
-            sentry-sdk
-            tiktoken
-            charset-normalizer
-            chardet
-            markdownify
-            urllib3
-          ] ++ [
-            tavily
-          ] ++ [
-            # Not available in nixpkgs
-            # ddgs instructor crawl4ai
-          ];
-
-          postPatch = ''
-            sed -i pyproject.toml \
-              -e '/ddgs>=9/d' \
-              -e '/crawl4ai>=0/d' \
-              -e '/instructor>=1/d' \
-              -e '/mkdocs>=1/d' \
-              -e '/mkdocs-material/d' \
-              -e '/mkdocstrings>=0/d' \
-              -e '/mkdocstrings-python/d' \
-              -e '/textual>=8/d' \
-              -e '/chromadb>=0/d' \
-              -e '/nicegui>=3/d'
-
-            # Rewrite absolute imports from src.* to standard package imports
-            find src -name "*.py" -exec sed -i {} \
-              -e 's/from src\.agentframework/from agentframework/g' \
-              -e 's/import src\.agentframework/import agentframework/g' \
-              -e 's/from src\.workflows/from workflows/g' \
-              -e 's/import src\.workflows/import workflows/g' \;
-          '';
-
-          postInstall = ''
-            cp -r src/workflows $out/${python.sitePackages}/
-          '';
-        };
+        # Build a virtualenv that includes agentframework and all its dependencies
+        agentframeworkEnv = pythonSet.mkVirtualEnv "agentframework-env" workspace.deps.default;
 
         frontend = pkgs.buildNpmPackage {
           pname = "agentframework-frontend";
@@ -138,7 +95,6 @@
           frontend_dir = os.environ.get("AGENT_FRONTEND_DIR")
 
           if os.path.isdir(frontend_dir):
-              # Remove the redirect route and replace with static file serving
               for i, route in enumerate(app.routes):
                   if hasattr(route, 'path') and route.path == '/':
                       app.routes.pop(i)
@@ -182,7 +138,6 @@
             export ECHO_SESSION_DIR="''${HOME}/.echo-ai/sessions"
             mkdir -p "''${HOME}/.echo-ai/sessions"
 
-            # Load env from ~/.echo-ai/.env if it exists
             ENV_FILE="''${HOME}/.echo-ai/.env"
             if [ -f "$ENV_FILE" ]; then
                 while IFS='=' read -r key value; do
@@ -200,8 +155,8 @@
 
             sed -i $out/libexec/serve-wrapper.sh \
               -e "s|__FRONTEND_DIR__|$out/share/agentframework/frontend|g" \
-              -e "s|__PYTHONPATH__|${python.pkgs.makePythonPath (agentframework.propagatedBuildInputs ++ [ agentframework ])}|g" \
-              -e "s|__PYTHON__|${python.interpreter}|g" \
+              -e "s|__PYTHONPATH__|${agentframeworkEnv}/${basePython.sitePackages}|g" \
+              -e "s|__PYTHON__|${agentframeworkEnv}/bin/python|g" \
               -e "s|__SERVER_SCRIPT__|${server-script}|g"
 
             cp $out/libexec/serve-wrapper.sh $out/bin/agent-web
@@ -211,9 +166,9 @@
 
         devShell = pkgs.mkShell {
           packages = [
-            python
-            python.pkgs.pip
-            python.pkgs.uv
+            pythonSet.python
+            pythonSet.python.pkgs.pip
+            pkgs.uv
             pkgs.nodejs_22
             pkgs.pre-commit
             pkgs.nixpkgs-fmt
@@ -238,7 +193,6 @@
 
           shellHook = ''
             export PYTHONPATH=$PWD/src
-            # Load env from ~/.echo-ai/.env if it exists
             if [ -f "$HOME/.echo-ai/.env" ]; then
                 set -a
                 source "$HOME/.echo-ai/.env"
@@ -250,11 +204,10 @@
 
             echo ""
             echo "Agent Framework dev environment ready"
-            echo "  Backend:  uv sync --extra dev --extra otel --extra ui --extra vector-db --extra web-scraping (synced automatically on entry)"
+            echo "  Backend:  uv sync (synced automatically on entry)"
             echo "  Frontend: cd frontend && npm install"
             echo "  Config:   ~/.echo-ai/config.yaml"
             echo "  Nix Ops:"
-            echo "    Format code:      nix fmt"
             echo "    Build fullstack:  nix build"
             echo "    Run fullstack:    nix run ."
           '';
@@ -264,7 +217,7 @@
       {
         packages = {
           default = combined;
-          backend = agentframework;
+          backend = pythonSet.agentframework;
           frontend = frontend;
           fullstack = combined;
         };
@@ -279,7 +232,7 @@
         };
 
         checks = {
-          backend = agentframework;
+          backend = pythonSet.agentframework;
           frontend-pkg = frontend;
           fullstack = combined;
         };

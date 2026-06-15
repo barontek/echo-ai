@@ -346,7 +346,11 @@ class WebSearchTool(Tool):
 
         try:
             max_results = self.limits.get("max_search_results", 5)
-            results = await self.search_provider.search(query, max_results=max_results)
+
+            results = await asyncio.wait_for(
+                self.search_provider.search(query, max_results=max_results),
+                timeout=30.0,
+            )
 
             if not results:
                 return ToolResult(content="No results found.")
@@ -357,7 +361,8 @@ class WebSearchTool(Tool):
                     title = r.get("title", "")
                     url = r.get("url", "")
                     snippet = r.get("snippet", "")
-                    formatted.append(f"- {title}: {url}\n  {snippet[:500]}")
+                    snippet_limit = self.limits.get("max_search_result_snippet", 500)
+                    formatted.append(f"- {title}: {url}\n  {snippet[:snippet_limit]}")
                 return ToolResult(content="\n\n".join(formatted))
 
             async with AsyncWebCrawler(verbose=False) as crawler:
@@ -372,17 +377,23 @@ class WebSearchTool(Tool):
                         )
                     )
 
-                gathered_results = await asyncio.gather(*tasks, return_exceptions=True)
+                gathered_results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=60.0,
+                )
 
                 for i, r in enumerate(gathered_results):
                     if isinstance(r, Exception):
                         snippet = results[i].get("snippet", "")
                         title = results[i].get("title", "")
                         url = results[i].get("url", "")
-                        formatted.append(f"- {title}: {url}\n  {snippet[:500]}")
+                        snippet_limit = self.limits.get("max_search_result_snippet", 500)
+                        formatted.append(f"- {title}: {url}\n  {snippet[:snippet_limit]}")
                     else:
                         formatted.append(r)
 
             return ToolResult(content="\n\n".join(formatted))
+        except asyncio.TimeoutError:
+            return ToolResult(error="Search timed out")
         except Exception as e:
             return ToolResult(error=f"Search failed: {e}")

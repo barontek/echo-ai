@@ -153,9 +153,9 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
 
     for msg in reversed(messages):
         content = msg.content
-        if msg.role == "tool" and len(content) > 10000:
+        if msg.role == "tool" and len(content) > 20000:
             content = (
-                content[:10000] + f"\n\n[Output truncated - was {len(content)} chars]"
+                content[:20000] + f"\n\n[Output truncated - was {len(content)} chars]"
             )
 
         msg_tokens = estimate_tokens(content)

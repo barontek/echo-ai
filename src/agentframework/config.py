@@ -276,6 +276,7 @@ def get_limits_config(config: dict) -> dict:
         "max_search_result_snippet": limits.get("max_search_result_snippet", 500),
         "min_fetch_content_chars": limits.get("min_fetch_content_chars", 50),
         "search_result_truncate": limits.get("search_result_truncate", 1000),
+        "max_search_results": limits.get("max_search_results", 5),
         "max_glob_results": limits.get("max_glob_results", 100),
         "max_grep_results": limits.get("max_grep_results", 100),
         "max_search_query_length": limits.get("max_search_query_length", 500),
@@ -406,6 +407,9 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
 
         if "safety_config" in config_defaults and "safety_config" not in kwargs:
             kwargs["safety_config"] = safety_config
+
+        if "limits" in kwargs and kwargs.get("limits") is None:
+            kwargs["limits"] = get_limits_config(config)
 
         tools.append(tool_class(**kwargs))
 

@@ -57,8 +57,7 @@ site/
 .test_agent_vector_db/
 tmp_sessions/
 
-# uv lock file (use pip/requirements.txt for reproducibility)
-uv.lock
+# uv.lock tracked for uv2nix reproducible Nix builds
 
 # FastHTML session key
 .sesskey

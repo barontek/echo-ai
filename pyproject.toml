@@ -10,7 +10,7 @@ dependencies = [
     "pyyaml>=6.0",
     "rich>=13.0.0",
     "ddgs>=9.0.0",
-    "tavily>=0.2.0",
+    "tavily-python>=0.7.0",
     "markdownify>=0.14.0",
     "beautifulsoup4>=4.12.0",
     "prompt_toolkit>=3.0.0",
@@ -35,7 +35,6 @@ dependencies = [
     "mkdocs-material>=9.0.0",
     "mkdocstrings>=0.25.0",
     "mkdocstrings-python>=0.4.0",
-    "httpx2>=2.4.0",
 ]
 
 [project.optional-dependencies]

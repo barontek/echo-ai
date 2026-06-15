@@ -42,9 +42,9 @@ def test_trim_messages_max_tokens_zero():
 
 
 def test_trim_messages_tool_truncation():
-    large_content = "x" * 15000
+    large_content = "x" * 25000
     msg = Message(role="tool", content=large_content, tool_call_id="1")
-    trimmed = trim_messages_by_tokens([msg], 5000)
+    trimmed = trim_messages_by_tokens([msg], 6000)
     assert "[Output truncated" in trimmed[0].content
 
 

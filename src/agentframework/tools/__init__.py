@@ -82,6 +82,7 @@ from .db import SQLiteQueryTool, SQLiteSchemaTool
 from .human import AskUserTool
 from .rag import SemanticSearchTool, DocumentIngestionTool
 from .humanizer import HumanizerTool
+from .deep_search import DeepSearchTool
 
 
 TOOL_REGISTRY: dict[str, Type[Tool]] = {
@@ -104,6 +105,7 @@ TOOL_REGISTRY: dict[str, Type[Tool]] = {
     "semantic_search": SemanticSearchTool,
     "ingest_document": DocumentIngestionTool,
     "humanizer": HumanizerTool,
+    "deep_search": DeepSearchTool,
 }
 
 TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
@@ -113,11 +115,12 @@ TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
     "list_dir": {"base_dir": ".", "safety_config": None},
     "glob": {"base_dir": ".", "safety_config": None},
     "grep": {"base_dir": ".", "safety_config": None},
-    "web_fetch": {"safety_config": None},
-    "web_search": {"safety_config": None, "provider": "duckduckgo"},
+    "web_fetch": {"safety_config": None, "limits": None},
+    "web_search": {"safety_config": None, "provider": "duckduckgo", "limits": None},
     "git": {"base_dir": ".", "safety_config": None},
     "memory": {"db_path": None, "safety_config": None},
     "notes": {"notes_dir": None},
+    "deep_search": {"safety_config": None, "limits": None},
 }
 
 

@@ -171,6 +171,8 @@
             pkgs.uv
             pkgs.nodejs_22
             pkgs.pre-commit
+            pkgs.ruff
+            pkgs.pyright
             pkgs.nixpkgs-fmt
             pkgs.gnumake
             pkgs.sqlite

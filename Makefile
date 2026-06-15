@@ -45,15 +45,15 @@ test:
 	PYTHONPATH=src uv run pytest --cov=src/agentframework --cov-report=term-missing tests/ -v
 
 lint:
-	uv run ruff check src/ tests/
+	ruff check src/ tests/
 
 typecheck:
-	uv run pyright src/
+	pyright --pythonpath .venv/bin/python src/
 
 verify:
 	uv run pytest tests/ -q
-	uv run ruff check src/ tests/
-	uv run pyright src/
+	ruff check src/ tests/
+	pyright --pythonpath .venv/bin/python src/
 
 security:
 	uv run pip-audit || true

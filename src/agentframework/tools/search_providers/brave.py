@@ -118,7 +118,7 @@ class BraveSearchProvider(BaseSearchProvider):
                 "Accept-Encoding": "gzip",
             }
 
-            async def _search(url: str) -> list[dict[str, Any]]:
+            async def _search(url: str) -> dict[str, Any]:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.get(url, headers=headers, params=params)
                     resp.raise_for_status()

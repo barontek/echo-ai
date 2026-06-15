@@ -68,7 +68,7 @@ class DeepSearchTool(Tool):
         try:
             search_provider = self._get_search_provider()
             results = await asyncio.wait_for(
-                search_provider.search(query, max_results=5),
+                search_provider.search(query, max_results=10),
                 timeout=30.0,
             )
         except Exception as e:
@@ -78,7 +78,7 @@ class DeepSearchTool(Tool):
         if not results:
             return ToolResult(content="No results found.")
 
-        results = results[:5]
+        results = results[:10]
         fetch_tool = None
 
         async def fetch(r: dict[str, Any]) -> tuple[str, str, str]:
@@ -94,8 +94,10 @@ class DeepSearchTool(Tool):
             return r.get("title", ""), r.get("url", ""), content
 
         contents: list[tuple[str, str, str]] = []
-        for r in results:
-            contents.append(await fetch(r))
+        for i in range(0, len(results), 2):
+            batch = results[i:i+2]
+            batch_results = await asyncio.gather(*(fetch(r) for r in batch))
+            contents.extend(batch_results)
 
         def _strip_thinking(text: str) -> str:
             if THINKING_START in text and THINKING_END in text:
@@ -134,10 +136,14 @@ class DeepSearchTool(Tool):
                 return None
 
         formatted_parts: list[str] = []
-        for title, url, content in contents:
-            result = await summarize(title, url, content)
-            if result:
-                formatted_parts.append(result)
+        for i in range(0, len(contents), 2):
+            batch = contents[i:i+2]
+            batch_results = await asyncio.gather(
+                *(summarize(t, u, c) for t, u, c in batch)
+            )
+            for r in batch_results:
+                if r:
+                    formatted_parts.append(r)
 
         if not formatted_parts:
             return ToolResult(content="No relevant results found.")

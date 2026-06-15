@@ -10,14 +10,14 @@ npm install
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server |
-| `npm run build` | Build for production |
-| `npm run test:run` | Run vitest tests |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript checks |
-| `npm run check` | All checks (lint + typecheck + test + build) |
+| Command             | Description                                  |
+| ------------------- | -------------------------------------------- |
+| `npm run dev`       | Start dev server                             |
+| `npm run build`     | Build for production                         |
+| `npm run test:run`  | Run vitest tests                             |
+| `npm run lint`      | ESLint                                       |
+| `npm run typecheck` | TypeScript checks                            |
+| `npm run check`     | All checks (lint + typecheck + test + build) |
 
 ## Communication
 

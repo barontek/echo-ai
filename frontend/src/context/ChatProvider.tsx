@@ -190,11 +190,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               // This prevents stale responses from a previous chat overwriting
               // the cleared state after the user clicked New Chat.
               if (
-                data.session_id
-                && activeSessionIdRef.current != null
-                && data.session_id !== activeSessionIdRef.current
+                data.session_id &&
+                activeSessionIdRef.current != null &&
+                data.session_id !== activeSessionIdRef.current
               ) {
-                debugLog('done:ignored', { event: data.session_id, current: activeSessionIdRef.current });
+                debugLog('done:ignored', {
+                  event: data.session_id,
+                  current: activeSessionIdRef.current,
+                });
                 setIsStreaming(false);
                 break;
               }

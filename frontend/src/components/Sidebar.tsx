@@ -20,9 +20,7 @@ export const Sidebar = memo(function Sidebar() {
 
   const filteredSessions = !searchTerm
     ? sessions
-    : sessions.filter((s) =>
-        s.title?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    : sessions.filter((s) => s.title?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const handleDelete = (sessionId: string) => {
     deleteSession(sessionId);

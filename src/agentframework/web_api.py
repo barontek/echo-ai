@@ -1234,8 +1234,9 @@ async def websocket_chat(websocket: WebSocket):
                 return
 
         try:
+            msg_count_before = len(active_agent.messages)
             response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
-            for msg in active_agent.messages:
+            for msg in active_agent.messages[msg_count_before:]:
                 tc = getattr(msg, "tool_calls", None)
                 if tc:
                     has_tools = True

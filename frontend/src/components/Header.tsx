@@ -45,11 +45,7 @@ export const Header = memo(function Header() {
             ></span>
             <span>{statusText}</span>
           </div>
-          <button
-            className="header-icon-btn"
-            onClick={toggleTheme}
-            title="Toggle theme"
-          >
+          <button className="header-icon-btn" onClick={toggleTheme} title="Toggle theme">
             {theme === 'dark' ? '☀' : '☾'}
           </button>
           <button

@@ -1198,14 +1198,31 @@ async def websocket_chat(websocket: WebSocket):
             if stop_requested:
                 raise asyncio.CancelledError()
 
-            if THINKING_START in chunk:
-                chunk = chunk.replace(THINKING_START, "")
-                in_thinking = True
+            # Extract any thinking tail before __THINKING_END__ so it goes
+            # to thinking_content, not accumulated_content (fixes the bug
+            # where "tail.__THINKING_END__\n\nresponse" leaked the tail
+            # into the response box).
+            thinking_tail = ""
             if THINKING_END in chunk:
-                chunk = chunk.replace(THINKING_END, "")
+                thinking_tail, chunk = chunk.split(THINKING_END, 1)
                 in_thinking = False
 
-            if in_thinking:
+            if THINKING_START in chunk:
+                before, chunk = chunk.split(THINKING_START, 1)
+                if not in_thinking and before:
+                    accumulated_content += before
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "content", "content": accumulated_content}
+                        )
+                in_thinking = True
+
+            # Incorporate any thinking tail that was split from a
+            # __THINKING_END__ boundary, then route the rest.
+            if thinking_tail:
+                thinking_content += thinking_tail
+                payload = {"type": "thinking", "content": thinking_content}
+            elif in_thinking:
                 thinking_content += chunk
                 payload = {"type": "thinking", "content": thinking_content}
             else:

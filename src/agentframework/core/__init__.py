@@ -10,7 +10,6 @@ from .router import SemanticRouter
 from .tool_runtime import (
     execute_single_tool,
     execute_tool_calls,
-    create_tool_result_notice,
     validate_tool_args,
     format_tool_failure,
     ToolError,
@@ -33,7 +32,6 @@ __all__ = [
     "SemanticRouter",
     "execute_single_tool",
     "execute_tool_calls",
-    "create_tool_result_notice",
     "validate_tool_args",
     "format_tool_failure",
     "ToolError",

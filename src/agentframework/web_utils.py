@@ -8,8 +8,6 @@ from typing import Any
 from .constants import THINKING_END, THINKING_START
 
 _INTERNAL_PATTERNS = [
-    re.compile(r"System Note: Tools executed"),
-    re.compile(r"Tool '.*' returned:"),
     re.compile(r"^FAILED: .*"),
     re.compile(r"\[Persistent Memory\]"),
 ]

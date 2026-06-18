@@ -213,9 +213,8 @@ class OllamaProvider(LLMProvider):
 
             # FIX: Translate inline <think> tags for models that put thoughts in content
             if "<think>" in content:
-                content = content.replace("<think>", THINKING_START + "\n").replace(
-                    "", "\n" + THINKING_END
-                )
+                content = content.replace("<think>", THINKING_START + "\n")
+                content = content.replace("</think>", "\n" + THINKING_END)
 
             if thinking and THINKING_START not in content:
                 content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
@@ -318,6 +317,7 @@ class OllamaProvider(LLMProvider):
                 thinking_ended = False  # FIX: Use a flag instead of clearing the string
                 tool_calls = []
                 has_seen_non_json = False  # Track if we've seen actual text content
+                tag_leftover = ""  # Partial <think>/</think> tag left over from previous chunk
 
                 async for line in response.aiter_lines():
                     if not line.strip():
@@ -348,11 +348,23 @@ class OllamaProvider(LLMProvider):
                                 True  # FIX: Use flag so thinking string isn't lost
                             )
 
-                        # FIX: Translate inline <think> tags from models like DeepSeek-R1
-                        if "<think>" in chunk:
+                        # Handle <think>/</think> tags that may be split across chunks
+                        # by accumulating partial tags until the full tag is seen
+                        chunk = tag_leftover + chunk
+                        tag_leftover = ""
+
+                        if "<think>" in chunk or "</think>" in chunk:
                             chunk = chunk.replace("<think>", THINKING_START)
-                        if "</think>" in chunk:
                             chunk = chunk.replace("</think>", THINKING_END)
+
+                        # Check if chunk ends with an incomplete tag boundary
+                        # (max partial tag length is 7 for e.g. "<think>" without ">")
+                        for tag_start in ("<think", "</thin"):
+                            pos = chunk.rfind(tag_start)
+                            if pos != -1 and pos >= len(chunk) - len(tag_start):
+                                tag_leftover = chunk[pos:]
+                                chunk = chunk[:pos]
+                                break
 
                         # Skip chunks that are part of markdown tool calls or tool schemas
                         # until we've seen some normal text content
@@ -410,6 +422,25 @@ class OllamaProvider(LLMProvider):
 
                     if data.get("done"):
                         break
+
+            # Flush any remaining content from the tag leftover
+            if tag_leftover:
+                tag_leftover = (
+                    tag_leftover.replace("<think>", THINKING_START).replace(
+                        "</think>", THINKING_END
+                    )
+                )
+                if has_seen_non_json:
+                    content += tag_leftover
+                    if on_chunk:
+                        on_chunk(tag_leftover)
+                else:
+                    content += tag_leftover
+
+            # Catch any raw tags that slipped through split boundaries
+            content = content.replace("<think>", THINKING_START).replace(
+                "</think>", THINKING_END
+            )
 
             # Also check content for markdown tool calls (qwen2.5-coder style)
             if content:

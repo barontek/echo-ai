@@ -1,7 +1,6 @@
 """Core agent implementation with session support."""
 
 import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -24,7 +23,6 @@ from ..conversation import (
 )
 from .tool_runtime import (
     execute_tool_calls as runtime_execute_tool_calls,
-    create_tool_result_notice,
 )
 from .session_runtime import (
     undo_change,
@@ -415,15 +413,14 @@ class Agent:
                 thinking_process = response.thinking
 
             # Record assistant's tool-calling message in history
+            # Arguments must remain a dict (JSON object) — Ollama rejects string-encoded args
             tool_call_dicts = [
                 {
                     "id": tc.id,
                     "type": "function",
                     "function": {
                         "name": tc.name,
-                        "arguments": json.dumps(tc.arguments)
-                        if isinstance(tc.arguments, dict)
-                        else tc.arguments,
+                        "arguments": tc.arguments,
                     },
                 }
                 for tc in response.tool_calls
@@ -542,10 +539,6 @@ class Agent:
 
         new_messages = current_messages + tool_messages
 
-        notice = create_tool_result_notice(tool_messages)
-        if notice:
-            new_messages.append(notice)
-
         return tool_messages, new_messages
 
     async def _execute_tool(self, tool_call: LLMToolCall) -> ToolResult:
@@ -594,11 +587,26 @@ class Agent:
             },
         )
 
+        system_prompt = self.config.system_prompt
+
+        summary = self._get_session_summary()
+        if summary:
+            section = f"[Conversation Summary]\n{summary}"
+            system_prompt = (
+                f"{system_prompt}\n\n{section}" if system_prompt else section
+            )
+
         return format_messages_for_llm(
             filtered_messages,
-            system_prompt=self.config.system_prompt,
+            system_prompt=system_prompt,
             sub_agents=self.sub_agents,
         )
+
+    def _get_session_summary(self) -> str:
+        """Return the conversation summary from session metadata, if any."""
+        if self.session_manager and self.session_manager.current_session:
+            return self.session_manager.current_session.metadata.get("summary", "")
+        return ""
 
     def undo(self) -> str:
         """Undo the last file change."""
@@ -644,6 +652,12 @@ class Agent:
         try:
             summary = await summarize_old_messages(dropped, self.llm)
             if summary and gen == self._session_gen:
+                # Remove the original dropped messages from self.messages by identity
+                dropped_ids = {id(m) for m in dropped}
+                self.messages = [
+                    m for m in self.messages if id(m) not in dropped_ids
+                ]
+
                 summary_msg = Message(role="system", content=summary)
                 self.messages.insert(1, summary_msg)
                 logger.info(
@@ -671,9 +685,15 @@ class Agent:
         if not self.session_manager.current_session:
             return "Failed to create session."
 
-        self.session_manager.current_session.messages = serialize_messages(
-            self.messages
-        )
+        serialized = serialize_messages(self.messages)
+        existing = self.session_manager.current_session.messages
+
+        # Only sync messages if self.messages is not behind the session store.
+        # When memory summarization truncates self.messages, existing has the
+        # full history — overwriting would permanently delete old messages from DB.
+        if len(serialized) >= len(existing):
+            self.session_manager.current_session.messages = serialized
+
         self.session_manager.save_session()
         return f"Session saved: {self.session_manager.current_session.id}"
 

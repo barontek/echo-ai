@@ -255,20 +255,3 @@ async def execute_tool_calls(
             timings[tc.id] = elapsed
 
     return messages, timings
-
-
-def create_tool_result_notice(tool_messages: list[Message]) -> Message | None:
-    """Create a system notice message about tool execution results."""
-    if not tool_messages:
-        return None
-
-    tool_results = "\n".join(
-        # Tool notice truncation limit — increase if models need more context
-        f"Tool '{msg.tool_name}' returned: {msg.content[:8000]}"
-        for msg in tool_messages
-        if msg.content
-    )
-    return Message(
-        role="user",
-        content=f"System Note: Tools executed.\n{tool_results}\n\nProvide a final response to the user summarizing these results.",
-    )

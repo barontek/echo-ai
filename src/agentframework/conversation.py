@@ -117,10 +117,24 @@ def format_messages_for_llm(
                         "type": "function",
                         "function": {
                             "name": msg.tool_name or "",
-                            "arguments": json.dumps(msg.tool_arguments or {}),
+                            "arguments": msg.tool_arguments or {},
                         },
                     }
                 ]
+
+            # Normalize arguments to dict (Ollama rejects string-encoded args)
+            if tool_calls:
+                normalized = []
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    args = fn.get("arguments")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {"raw": args}
+                    normalized.append({**tc, "function": {**fn, "arguments": args}})
+                tool_calls = normalized
 
             result.append(
                 {
@@ -191,6 +205,48 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
     return result
 
 
+def _smart_context_select(
+    messages: list[Message], keep_count: int
+) -> tuple[list[Message], list[Message]]:
+    """Select an informative subset of messages for the LLM context window.
+
+    Priority: system messages > tool interactions > recent context > evenly sampled.
+    Returns (kept, dropped).
+    """
+    if len(messages) <= keep_count:
+        return list(messages), []
+
+    n = len(messages)
+    must_keep: set[int] = set()
+
+    for i, m in enumerate(messages):
+        if m.role == "system":
+            must_keep.add(i)
+
+    for i, m in enumerate(messages):
+        if m.tool_calls or m.tool_name:
+            must_keep.add(i)
+
+    recent_count = max(keep_count * 2 // 5, 1)
+    for i in range(max(0, n - recent_count), n):
+        must_keep.add(i)
+
+    remaining_budget = keep_count - len(must_keep)
+    if remaining_budget > 0:
+        candidates = [i for i in range(n) if i not in must_keep]
+        if candidates:
+            step = max(len(candidates) // remaining_budget, 1)
+            for idx in range(0, len(candidates), step):
+                if len(must_keep) >= keep_count:
+                    break
+                must_keep.add(candidates[idx])
+
+    sorted_indices = sorted(must_keep)[:keep_count]
+    kept = [messages[i] for i in sorted_indices]
+    dropped = [m for i, m in enumerate(messages) if i not in sorted_indices]
+    return kept, dropped
+
+
 async def apply_context_window(
     messages: list[Message],
     max_context_messages: int,
@@ -201,6 +257,7 @@ async def apply_context_window(
 
     Returns a tuple of (filtered_messages, dropped_messages).
     The dropped messages can be summarized in a background task.
+    Uses smart selection to keep informative messages rather than blind FIFO.
     """
     if not messages:
         return [], []
@@ -208,32 +265,28 @@ async def apply_context_window(
     if max_context_messages <= 0 and max_context_chars <= 0:
         return messages, []
 
-    if max_context_messages > 0 and max_context_chars <= 0:
-        dropped = (
-            messages[:-max_context_messages]
-            if len(messages) > max_context_messages
-            else []
+    all_dropped: list[Message] = []
+    working = list(messages)
+
+    # Step 1: Character-based token trim
+    if max_context_chars > 0:
+        keep_recent_tokens = int(max_context_chars * 0.7)
+        recent = trim_messages_by_tokens(working, keep_recent_tokens)
+        if len(recent) < len(working):
+            all_dropped.extend(
+                working[: -len(recent)] if recent else working[:-1]
+            )
+            working = recent
+
+    # Step 2: Message-count trim with smart selection
+    if max_context_messages > 0:
+        kept, additional_dropped = _smart_context_select(
+            working, max_context_messages
         )
-        return messages[-max_context_messages:], list(dropped)
+        all_dropped.extend(additional_dropped)
+        return kept, all_dropped
 
-    keep_recent_tokens = int(max_context_chars * 0.7)
-    recent = trim_messages_by_tokens(messages, keep_recent_tokens)
-
-    if len(recent) == len(messages):
-        return recent[
-            -max_context_messages:
-        ] if max_context_messages > 0 else recent, []
-
-    # Hard FIFO truncation - no summarization
-    if recent:
-        dropped = messages[: -len(recent)]
-    else:
-        dropped = messages[:-1] if messages else []
-
-    result = recent
-    return result[-max_context_messages:] if max_context_messages > 0 else result, list(
-        dropped
-    )
+    return working, all_dropped
 
 
 async def summarize_old_messages(messages_to_summarize: list[Message], llm: Any) -> str:

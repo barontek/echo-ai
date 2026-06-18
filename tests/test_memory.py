@@ -356,15 +356,20 @@ class TestMemoryManagerSummarization:
     async def test_summarize_success(self, mock_session_manager, mock_llm):
         manager = MemoryManager(mock_session_manager)
         messages = [Message(role="user", content=f"msg {i}") for i in range(30)]
+        mock_session_manager.current_session.messages = [
+            {"role": "user", "content": f"msg {i}"} for i in range(30)
+        ]
         mock_llm.chat.return_value = MagicMock(content="Compact summary")
         result = await manager.summarize_if_needed(messages, mock_llm)
-        assert len(result) == 6
+        assert len(result) == 20
         assert mock_llm.chat.called
         assert (
             mock_session_manager.current_session.metadata["summary"]
             == "Compact summary"
         )
         assert mock_session_manager.save_session.called
+        # Verify session.messages was NOT truncated (the old bug)
+        assert len(mock_session_manager.current_session.messages) == 30
 
     @pytest.mark.asyncio
     async def test_summarize_with_existing_summary(

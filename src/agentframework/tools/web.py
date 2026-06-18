@@ -36,6 +36,12 @@ def get_http_client() -> httpx.AsyncClient:
             timeout=httpx.Timeout(20.0, connect=10.0),
             follow_redirects=True,
             limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                ),
+            },
         )
     return _http_client
 

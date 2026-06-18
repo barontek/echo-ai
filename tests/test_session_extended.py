@@ -1,14 +1,11 @@
 """Extended tests for session management - covering edge cases."""
 
-import json
 import pytest
 import sqlite3
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from src.agentframework.session import (
-    Session,
     SessionManager,
     SessionEvent,
     ChangeTracker,
@@ -239,7 +236,7 @@ class TestChangeTrackerExtended:
         backup_dir = tmp_path / "backups"
         backup_dir.mkdir()
         (backup_dir / "stale.txt").write_text("stale")
-        tracker = ChangeTracker(backup_dir=str(backup_dir))
+        _ = ChangeTracker(backup_dir=str(backup_dir))
         assert not (backup_dir / "stale.txt").exists()
 
     def test_backup_dir_cleanup_exception(self, tmp_path):

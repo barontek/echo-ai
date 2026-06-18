@@ -155,9 +155,6 @@ class TestConvenienceFunctions:
         m2 = get_metrics()
         assert m1 is m2
 
-    def test_record_agent_request(self, metrics):
-        get_metrics()  # ensure same instance
-
     def test_record_agent_request(self):
         m = get_metrics()
         m._counters.clear()

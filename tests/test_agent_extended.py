@@ -5,7 +5,7 @@ import re
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from src.agentframework.core import Agent, AgentConfig
-from src.agentframework.core.agent import _extract_thinking, SubAgentConfig
+from src.agentframework.core.agent import _extract_thinking
 from src.agentframework.tools import Tool, ToolResult
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from src.agentframework.conversation import Message
@@ -532,7 +532,6 @@ class TestCancelledError:
     @pytest.mark.asyncio
     async def test_cancelled_error_in_run_streaming(self, tmp_path):
         session_dir = tmp_path / "sessions"
-        provider = SimpleProvider()
 
         class CancellingProvider(SimpleProvider):
             async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
@@ -561,7 +560,6 @@ class TestToolLoopWithSession:
     @pytest.mark.asyncio
     async def test_tool_call_response_with_thinking(self, tmp_path):
         session_dir = tmp_path / "sessions"
-        provider = ThinkingProvider()
 
         class ThinkingToolProvider(ThinkingProvider):
             def __init__(self):

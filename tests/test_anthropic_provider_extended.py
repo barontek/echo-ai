@@ -4,7 +4,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.agentframework.providers.anthropic import AnthropicProvider
-from src.agentframework.providers import LLMToolCall
 
 
 @pytest.mark.asyncio

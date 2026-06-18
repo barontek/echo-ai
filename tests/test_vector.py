@@ -63,7 +63,7 @@ class TestVectorStoreAddDocuments:
         assert isinstance(ids[0], str)
 
     def test_add_documents_with_metadatas(self, store):
-        ids = store.add_documents(
+        _ids = store.add_documents(
             ["doc1"],
             metadatas=[{"source": "test", "priority": 1}],
         )
@@ -72,13 +72,13 @@ class TestVectorStoreAddDocuments:
         assert call_kwargs["metadatas"] == [{"source": "test", "priority": 1}]
 
     def test_add_documents_default_metadata(self, store):
-        ids = store.add_documents(["doc1"])
+        _ = store.add_documents(["doc1"])
         store.collection.add.assert_called_once()
         call_kwargs = store.collection.add.call_args.kwargs
         assert call_kwargs["metadatas"] == [{"source": "manual_ingestion"}]
 
     def test_add_documents_filters_invalid_metadata(self, store):
-        ids = store.add_documents(
+        _ = store.add_documents(
             ["doc1"],
             metadatas=[{"valid_str": "ok", "valid_int": 1, "bad_list": [1, 2, 3]}],
         )

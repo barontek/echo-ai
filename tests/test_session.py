@@ -424,7 +424,6 @@ class TestSessionImportExport:
             manager.import_session({"title": "no-id"})
 
     def test_import_session_roundtrip(self, manager):
-        import pytest
         manager.create_session(session_id="export_me", title="Export Test")
         manager.add_message("user", "hello")
         data = manager.export_session("export_me")
@@ -440,7 +439,6 @@ class TestSessionImportExport:
             mgr2.close()
 
     def test_import_session_without_created_at_defaults_to_now(self, manager):
-        import pytest
         data = {"id": "imported_now", "messages": [], "metadata": {}}
         session = manager.import_session(data)
         assert session.id == "imported_now"

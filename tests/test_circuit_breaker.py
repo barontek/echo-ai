@@ -2,7 +2,7 @@
 
 import time
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from src.agentframework.circuit_breaker import (
     CircuitBreaker,

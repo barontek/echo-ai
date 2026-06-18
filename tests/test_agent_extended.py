@@ -740,6 +740,7 @@ class TestCloseExtended:
         agent.close()
 
     def test_close_otel_shutdown_error(self):
+        pytest.importorskip("opentelemetry")
         from opentelemetry.sdk.trace import TracerProvider
 
         agent = Agent(AgentConfig(session_enabled=False), SimpleProvider())

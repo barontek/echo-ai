@@ -754,12 +754,11 @@ class Agent:
 
                     if inspect.iscoroutinefunction(close_method):
                         try:
-                            # Try to run in current loop or create task
-                            loop = asyncio.get_event_loop()
-                            if loop.is_running():
+                            try:
+                                loop = asyncio.get_running_loop()
                                 loop.create_task(close_method())
-                            else:
-                                loop.run_until_complete(close_method())
+                            except RuntimeError:
+                                asyncio.run(close_method())
                         except Exception as e:
                             logger.debug(f"Async close method failed: {e}")
                     else:

@@ -1,5 +1,8 @@
 """Tests for Agent class."""
 
+import asyncio
+import time
+
 import pytest
 
 from src.agentframework.core import Agent, AgentConfig
@@ -117,29 +120,30 @@ class TestParallelExecution:
 
     @pytest.mark.asyncio
     async def test_sequential_execution_by_default(self, agent_with_mock_tool):
-        """When parallel_tool_execution=False, tools execute sequentially."""
+        """When parallel_tool_execution=False, tools execute sequentially (total time ≈ sum of individual delays)."""
         agent = agent_with_mock_tool
         agent.config.parallel_tool_execution = False
 
+        async def slow_execute(command: str, count: int = 1, **kwargs) -> ToolResult:
+            await asyncio.sleep(0.03)
+            return ToolResult(content=f"Executed {command} {count} times")
+
+        agent.tool_map["mock"].execute = slow_execute  # type: ignore[method-assign]
+
         tool_calls = [
-            LLMToolCall(
-                id="1", name="mock", arguments={"command": "test1", "count": 1}
-            ),
-            LLMToolCall(
-                id="2", name="mock", arguments={"command": "test2", "count": 1}
-            ),
+            LLMToolCall(id="1", name="mock", arguments={"command": "test1", "count": 1}),
+            LLMToolCall(id="2", name="mock", arguments={"command": "test2", "count": 1}),
         ]
 
+        start = time.monotonic()
         await agent._execute_tool_calls(tool_calls)
+        elapsed = time.monotonic() - start
 
-        # Verify both tools were executed
-        tool = agent.tool_map["mock"]
-        assert isinstance(tool, MockTool)
-        assert tool.executed is True
+        assert elapsed >= 0.05, "Sequential: 2 calls × 0.03s should take ≥ 0.06s"
 
     @pytest.mark.asyncio
     async def test_parallel_execution_when_enabled(self):
-        """When parallel_tool_execution=True, tools execute in parallel."""
+        """When parallel_tool_execution=True, tools run concurrently (total time ≈ max delay, not sum)."""
         config = AgentConfig(
             tools=[MockTool()],
             parallel_tool_execution=True,
@@ -148,21 +152,22 @@ class TestParallelExecution:
         provider = MockProvider()
         agent = Agent(llm_provider=provider, config=config)
 
+        async def slow_execute(command: str, count: int = 1, **kwargs) -> ToolResult:
+            await asyncio.sleep(0.03)
+            return ToolResult(content=f"Executed {command} {count} times")
+
+        agent.tool_map["mock"].execute = slow_execute  # type: ignore[method-assign]
+
         tool_calls = [
-            LLMToolCall(
-                id="1", name="mock", arguments={"command": "test1", "count": 1}
-            ),
-            LLMToolCall(
-                id="2", name="mock", arguments={"command": "test2", "count": 1}
-            ),
+            LLMToolCall(id="1", name="mock", arguments={"command": "test1", "count": 1}),
+            LLMToolCall(id="2", name="mock", arguments={"command": "test2", "count": 1}),
         ]
 
+        start = time.monotonic()
         await agent._execute_tool_calls(tool_calls)
+        elapsed = time.monotonic() - start
 
-        # Verify both tools were executed
-        tool = agent.tool_map["mock"]
-        assert isinstance(tool, MockTool)
-        assert tool.executed is True
+        assert elapsed < 0.05, "Parallel: 2 concurrent calls should take ≈ 0.03s, not 0.06s"
         agent.close()
 
 
@@ -245,33 +250,6 @@ class TestPydanticValidation:
         assert len(tool_messages) == 1
         assert "Validation error" in tool_messages[0].content
         assert "command" in tool_messages[0].content.lower()
-
-
-class TestSanitizeJsonIntegration:
-    """Integration tests for JSON sanitization in tool execution."""
-
-    @pytest.mark.asyncio
-    async def test_execute_tool_with_markdown_json(self):
-        """Tool should execute even if LLM returns markdown-wrapped JSON."""
-        config = AgentConfig(tools=[MockTool()], session_enabled=False)
-        provider = MockProvider()
-        agent = Agent(llm_provider=provider, config=config)
-
-        # Simulate LLM returning markdown-wrapped JSON
-        tool_call = LLMToolCall(
-            id="1",
-            name="mock",
-            arguments={"command": "test", "count": 1},
-        )
-        tool_call.arguments = '```json\n{"command": "test", "count": 1}\n```'  # type: ignore[assignment]
-
-        # The sanitization happens inside _execute_tool when parsing JSON
-        # This test verifies the flow works end-to-end
-        await agent._execute_tool(tool_call)
-
-        # Note: The arguments are already parsed by the provider before reaching _execute_tool
-        # This test documents expected behavior
-        agent.close()
 
 
 class TestAgentConfig:
@@ -469,7 +447,6 @@ class TestAgentIntegration:
         agent.close()
 
     def test_context_summarization_path_runs_when_budget_small(self):
-        import asyncio
         from src.agentframework.conversation import Message
 
         provider = SequenceProvider([LLMResponse(content="ok")])
@@ -485,7 +462,11 @@ class TestAgentIntegration:
         for i in range(30):
             agent.messages.append(Message(role="user", content=f"message {i} " * 20))
         prepared = asyncio.run(agent._prepare_messages(agent.messages))
-        assert len(prepared) > 0
+        assert len(prepared) <= 10, f"max_context_messages=10, got {len(prepared)}"
+        assert len(prepared) < 30, "Context window should have dropped messages"
+        assert len(prepared) > 0, "Some messages should remain after filtering"
+        assert agent._pending_summary is not None, "Dropped messages should be stored for background summarization"
+        assert len(agent._pending_summary) > 0
         agent.close()
 
     def test_session_save_load_and_undo_redo(self, tmp_path):

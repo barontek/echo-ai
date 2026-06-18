@@ -26,14 +26,14 @@ from src.agentframework.session import (
 class TestSession:
     """Tests for Session dataclass."""
 
-    def test_create_session(self):
+    def test_session_create_defaults(self):
         session = Session(id="test-123")
         assert session.id == "test-123"
         assert isinstance(session.created_at, datetime)
         assert session.messages == []
         assert session.metadata == {}
 
-    def test_session_to_dict(self):
+    def test_session_to_dict_serializes_all_fields(self):
         session = Session(id="test-123")
         session.messages = [{"role": "user", "content": "hello"}]
         session.metadata = {"model": "test"}
@@ -44,7 +44,7 @@ class TestSession:
         assert data["messages"] == [{"role": "user", "content": "hello"}]
         assert data["metadata"] == {"model": "test"}
 
-    def test_session_from_dict(self):
+    def test_session_from_dict_reconstructs_session(self):
         data = {
             "id": "test-456",
             "created_at": "2024-01-01T12:00:00",
@@ -56,7 +56,7 @@ class TestSession:
         assert session.messages == [{"role": "assistant", "content": "hi"}]
         assert session.metadata == {"key": "value"}
 
-    def test_session_roundtrip(self):
+    def test_session_roundtrip_preserves_all_fields(self):
         original = Session(
             id="roundtrip-test",
             title="My Chat",
@@ -106,7 +106,7 @@ def manager(session_dir):
 
 
 class TestSessionManagerCRUD:
-    def test_create_and_load(self, manager):
+    def test_create_and_load_persists_session(self, manager):
         created = manager.create_session(session_id="s1", title="First Chat")
         assert created.id == "s1"
         assert created.title == "First Chat"
@@ -128,7 +128,7 @@ class TestSessionManagerCRUD:
         assert manager.current_session is not None
         assert manager.current_session.id == "s1"
 
-    def test_create_with_auto_id(self, manager):
+    def test_create_session_auto_id_generates_nonempty_id(self, manager):
         session = manager.create_session()
         assert session.id is not None
         assert len(session.id) > 0
@@ -141,7 +141,7 @@ class TestSessionManagerCRUD:
         assert loaded is not None
         assert loaded.title == "Overwritten"
 
-    def test_list_sessions_order(self, manager):
+    def test_list_sessions_returns_most_recent_first(self, manager):
         manager.create_session(session_id="old")
         time.sleep(0.05)
         manager.create_session(session_id="new")
@@ -156,7 +156,7 @@ class TestSessionManagerCRUD:
         assert sessions == []
         assert total == 0
 
-    def test_list_sessions_pagination(self, manager):
+    def test_list_sessions_pagination_returns_correct_slice(self, manager):
         for i in range(5):
             manager.create_session(session_id=f"session_{i}")
         sessions, total = manager.list_sessions(limit=2, offset=0)
@@ -166,7 +166,7 @@ class TestSessionManagerCRUD:
         assert len(sessions) == 2
         assert total == 5
 
-    def test_list_sessions_search(self, manager):
+    def test_list_sessions_search_filters_by_title(self, manager):
         manager.create_session(session_id="test_alpha", title="Alpha Session")
         manager.create_session(session_id="test_beta", title="Beta Session")
         manager.create_session(session_id="test_gamma", title="Gamma Session")
@@ -177,7 +177,7 @@ class TestSessionManagerCRUD:
 
 
 class TestMessagePersistence:
-    def test_add_message_persists(self, manager):
+    def test_add_message_persists_to_database(self, manager):
         manager.create_session(session_id="msg_test")
         manager.add_message("user", "hello")
         manager.add_message("assistant", "hi there")
@@ -190,7 +190,7 @@ class TestMessagePersistence:
         assert loaded.messages[0]["content"] == "hello"
         assert loaded.messages[1]["role"] == "assistant"
 
-    def test_add_message_with_metadata(self, manager):
+    def test_add_message_with_metadata_stores_extra_fields(self, manager):
         manager.create_session(session_id="msg-meta-test")
         manager.add_message("user", "Hello", name="test")
         msg = manager.current_session.messages[0]
@@ -203,7 +203,7 @@ class TestMessagePersistence:
         assert sessions == []
         assert total == 0
 
-    def test_save_session_updates_existing(self, manager):
+    def test_save_session_updates_existing_record(self, manager):
         manager.create_session(session_id="update_test", title="V1")
         manager.current_session.title = "V2"
         manager.current_session.messages = [{"role": "user", "content": "updated"}]
@@ -221,7 +221,7 @@ class TestMessagePersistence:
         manager.current_session = None
         manager.save_session()  # Should not crash
 
-    def test_get_history_returns_messages(self, manager):
+    def test_get_history_returns_current_messages(self, manager):
         manager.create_session(session_id="hist")
         manager.add_message("user", "test")
         history = manager.get_history()
@@ -232,8 +232,52 @@ class TestMessagePersistence:
         assert manager.get_history() == []
 
 
+class TestTruncateHistory:
+    def test_truncate_history_mid_index_removes_later_messages(self, manager):
+        manager.create_session(session_id="trunc")
+        manager.add_message("user", "first")
+        manager.add_message("user", "second")
+        manager.add_message("user", "third")
+        manager.truncate_history(1)
+        assert len(manager.current_session.messages) == 1
+        assert manager.current_session.messages[0]["content"] == "first"
+
+    def test_truncate_history_index_zero_clears_all(self, manager):
+        manager.create_session(session_id="trunc0")
+        manager.add_message("user", "msg")
+        manager.truncate_history(0)
+        assert manager.current_session.messages == []
+
+    def test_truncate_history_negative_index_clears_all(self, manager):
+        manager.create_session(session_id="trunc_neg")
+        manager.add_message("user", "msg")
+        manager.truncate_history(-5)
+        assert manager.current_session.messages == []
+
+    def test_truncate_history_index_beyond_len_is_noop(self, manager):
+        manager.create_session(session_id="trunc_noop")
+        manager.add_message("user", "msg")
+        manager.truncate_history(100)
+        assert len(manager.current_session.messages) == 1
+
+    def test_truncate_history_no_current_session_is_noop(self, manager):
+        manager.current_session = None
+        manager.truncate_history(0)  # Should not crash
+
+    def test_truncate_history_persists_to_db(self, manager):
+        manager.create_session(session_id="trunc_persist")
+        manager.add_message("user", "keep")
+        manager.add_message("user", "delete")
+        manager.truncate_history(1)
+        manager.current_session = None
+        loaded = manager.load_session("trunc_persist")
+        assert loaded is not None
+        assert len(loaded.messages) == 1
+        assert loaded.messages[0]["content"] == "keep"
+
+
 class TestPurge:
-    def test_purge_all(self, manager):
+    def test_purge_sessions_removes_all_and_resets_current(self, manager):
         manager.create_session(session_id="a")
         manager.create_session(session_id="b")
         manager.create_session(session_id="c")
@@ -250,9 +294,17 @@ class TestPurge:
         manager.purge_sessions()
         assert manager.current_session is None
 
-    def test_purge_zero_sessions(self, manager):
+    def test_purge_sessions_empty_db_returns_zero(self, manager):
         count = manager.purge_sessions()
         assert count == 0
+
+    def test_purge_sessions_age_zero_purges_all(self, manager):
+        manager.create_session(session_id="a")
+        manager.create_session(session_id="b")
+        count = manager.purge_sessions(older_than_days=0)
+        assert count == 2
+        sessions, total = manager.list_sessions()
+        assert total == 0
 
     def test_purge_with_days_filter(self, manager):
         manager.create_session(session_id="old_one")
@@ -285,6 +337,12 @@ class TestPurgeEmpty:
         remaining, total = manager.list_sessions()
         assert total == 1
         assert remaining[0].id == "with_user"
+
+    def test_purge_empty_skips_sessions_with_only_assistant_messages(self, manager):
+        manager.create_session(session_id="assistant_only")
+        manager.add_message("assistant", "hello")
+        count = manager.purge_empty_sessions()
+        assert count == 1
 
     def test_purge_empty_keeps_sessions_with_any_user_message(self, manager):
         manager.create_session(session_id="user_only")
@@ -355,8 +413,60 @@ class TestMigration:
         mgr2.close()
 
 
+class TestSessionImportExport:
+    def test_export_session_nonexistent_returns_none(self, manager):
+        result = manager.export_session("does-not-exist")
+        assert result is None
+
+    def test_import_session_missing_id_raises_value_error(self, manager):
+        import pytest
+        with pytest.raises(ValueError, match="Missing required field: id"):
+            manager.import_session({"title": "no-id"})
+
+    def test_import_session_roundtrip(self, manager):
+        import pytest
+        manager.create_session(session_id="export_me", title="Export Test")
+        manager.add_message("user", "hello")
+        data = manager.export_session("export_me")
+        assert data is not None
+
+        mgr2 = SessionManager(str(manager.session_dir))
+        try:
+            imported = mgr2.import_session(data)
+            assert imported.id == "export_me"
+            assert imported.title == "Export Test"
+            assert imported.messages == [{"role": "user", "content": "hello"}]
+        finally:
+            mgr2.close()
+
+    def test_import_session_without_created_at_defaults_to_now(self, manager):
+        import pytest
+        data = {"id": "imported_now", "messages": [], "metadata": {}}
+        session = manager.import_session(data)
+        assert session.id == "imported_now"
+        assert session.created_at is not None
+
+
+class TestToolResultsAttachment:
+    def test_add_tool_results_no_assistant_message_is_noop(self, manager):
+        manager.create_session(session_id="tool_noop")
+        manager.add_message("user", "hello")
+        manager.add_tool_results_to_last_assistant([{"tool_call_id": "tc1", "content": "result"}])
+        assert len(manager.current_session.messages) == 1
+
+    def test_add_tool_results_empty_list_is_noop(self, manager):
+        manager.create_session(session_id="tool_empty")
+        manager.add_message("assistant", "no tools")
+        manager.add_tool_results_to_last_assistant([])
+        assert len(manager.current_session.messages) == 1
+
+    def test_add_tool_results_no_current_session_is_noop(self, manager):
+        manager.current_session = None
+        manager.add_tool_results_to_last_assistant([{"tool_call_id": "tc1", "content": "x"}])  # Should not crash
+
+
 class TestSessionEdgeCases:
-    def test_session_with_empty_messages(self, manager):
+    def test_load_session_empty_messages_returns_empty_list(self, manager):
         manager.create_session(session_id="empty_msgs")
         manager.current_session = None
         loaded = manager.load_session("empty_msgs")
@@ -404,7 +514,7 @@ class TestChangeTracker:
     def tracker(self):
         return ChangeTracker()
 
-    def test_record_change(self, tracker):
+    def test_record_change_stores_change_with_all_fields(self, tracker):
         tracker.record_change(
             "write", "file.txt", old_content=None, new_content="hello"
         )
@@ -414,7 +524,7 @@ class TestChangeTracker:
         assert tracker.changes[0]["old_content"] is None
         assert tracker.changes[0]["new_content"] == "hello"
 
-    def test_undo(self, tracker):
+    def test_undo_returns_last_change(self, tracker):
         tracker.record_change("write", "file.txt", new_content="hello")
         change = tracker.undo()
         assert change is not None
@@ -425,7 +535,7 @@ class TestChangeTracker:
     def test_undo_empty(self, tracker):
         assert tracker.undo() is None
 
-    def test_redo(self, tracker):
+    def test_redo_returns_last_undone_change(self, tracker):
         tracker.record_change("write", "file.txt", new_content="hello")
         tracker.undo()
         change = tracker.redo()
@@ -443,18 +553,18 @@ class TestChangeTracker:
         tracker.record_change("write", "file2.txt", new_content="b")
         assert len(tracker.redo_stack) == 0
 
-    def test_can_undo(self, tracker):
+    def test_can_undo_returns_true_with_changes(self, tracker):
         assert tracker.can_undo() is False
         tracker.record_change("write", "file.txt")
         assert tracker.can_undo() is True
 
-    def test_can_redo(self, tracker):
+    def test_can_redo_returns_true_after_undo(self, tracker):
         assert tracker.can_redo() is False
         tracker.record_change("write", "file.txt")
         tracker.undo()
         assert tracker.can_redo() is True
 
-    def test_multiple_undo_redo(self, tracker):
+    def test_multiple_undo_redo_cycles_all_changes_in_order(self, tracker):
         tracker.record_change("write", "file1.txt", new_content="a")
         tracker.record_change("write", "file2.txt", new_content="b")
         tracker.record_change("write", "file3.txt", new_content="c")
@@ -655,7 +765,7 @@ def test_reverse_direction(session_dir):
         rest_mgr.close()
 
 
-def test_concurrent_create_and_load(session_dir):
+def test_concurrent_create_and_load_persists_across_managers(session_dir):
     """Stress-test sequential creates/loads across managers."""
     mgr_a = SessionManager(session_dir)
     mgr_b = SessionManager(session_dir)

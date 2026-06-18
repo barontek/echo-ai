@@ -255,31 +255,26 @@ class Agent:
         )
 
         try:
-            # We use the LLM directly to get a short summary
-            try:
-                title_response = await asyncio.wait_for(
-                    self.llm.chat(
-                        messages=[{"role": "user", "content": prompt}], temperature=0.3
-                    ),
-                    timeout=30.0,  # Increased timeout for slower reasoning models
-                )
-                raw = title_response.thinking or title_response.content
-                if THINKING_START in title_response.content:
-                    after_thinking = title_response.content.split(THINKING_END, 1)[1]
-                    raw = after_thinking.strip()
-                raw = re.sub(
-                    rf"{re.escape(THINKING_START)}.*?{re.escape(THINKING_END)}",
-                    "",
-                    raw,
-                    flags=re.DOTALL,
-                ).strip()
-                return raw.strip().strip('"').strip("'")
-            except (asyncio.TimeoutError, Exception) as e:
-                logger.debug(f"Title generation failed or timed out: {e}")
-                return simple_title  # Use first words of user message, not the prompt
-        except Exception as e:
-            logger.error(f"Failed to generate session title: {e}")
-            return simple_title  # Use fallback instead of None
+            title_response = await asyncio.wait_for(
+                self.llm.chat(
+                    messages=[{"role": "user", "content": prompt}], temperature=0.3
+                ),
+                timeout=30.0,
+            )
+            raw = title_response.thinking or title_response.content
+            if THINKING_START in title_response.content:
+                after_thinking = title_response.content.split(THINKING_END, 1)[1]
+                raw = after_thinking.strip()
+            raw = re.sub(
+                rf"{re.escape(THINKING_START)}.*?{re.escape(THINKING_END)}",
+                "",
+                raw,
+                flags=re.DOTALL,
+            ).strip()
+            return raw.strip().strip('"').strip("'")
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.debug(f"Title generation failed or timed out: {e}")
+            return simple_title
 
     async def extract_data(self, prompt: str, response_model: type[Any]) -> Any:
         """Extract strictly typed JSON data mapped to the given Pydantic model natively."""

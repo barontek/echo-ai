@@ -82,14 +82,6 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
     global _state
 
-    # Initialize Sentry early in startup
-    try:
-        from src.agentframework.sentry import init_sentry
-
-        init_sentry()
-    except Exception as e:
-        logger.debug(f"Sentry initialization skipped: {e}")
-
     logger.info("=" * 50)
     logger.info("  Echo AI - Starting up...")
     logger.info("=" * 50)
@@ -139,19 +131,12 @@ app = FastAPI(title="Echo AI API", lifespan=lifespan)
 # Global exception handler with Sentry capture
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Capture all unhandled exceptions with Sentry."""
+    """Capture all unhandled exceptions."""
     # Handle ExceptionGroup from Python 3.13+ (extract the original exception)
     if isinstance(exc, ExceptionGroup):
         exc = exc.exceptions[0] if exc.exceptions else exc
 
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    try:
-        from src.agentframework.sentry import captureException
-
-        captureException(exc, extra={"path": str(request.url.path)})
-    except Exception:
-        pass  # Don't let Sentry errors mask the original error
-
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -254,9 +239,6 @@ async def request_logging_middleware(request: Request, call_next):
 
     try:
         response = await call_next(request)
-    except Exception:
-        # Let FastAPI's exception handler deal with it
-        raise
     finally:
         duration = time.perf_counter() - start_time
         # Log after response is ready (or on error)
@@ -264,10 +246,41 @@ async def request_logging_middleware(request: Request, call_next):
             f"[{cid}] <-- {request.method} {request.url.path} ({duration * 1000:.1f}ms)"
         )
 
-    # Add timing header
     response.headers["X-Response-Time"] = f"{duration * 1000:.1f}ms"
-
     return response
+
+
+def _extract_tool_calls_info(tool_calls: list) -> list[dict]:
+    tool_calls_info: list[dict] = []
+    for t in tool_calls:
+        name: str = "unknown"
+        args: dict = {}
+        if isinstance(t, dict):
+            name = t.get("function", {}).get("name", "unknown")
+            raw_args = t.get("function", {}).get("arguments", {})
+        else:
+            name = getattr(t, "name", "unknown")
+            raw_args = getattr(t, "arguments", {})
+
+        if isinstance(raw_args, str):
+            try:
+                unescaped = raw_args.encode().decode("unicode_escape")
+                args = json.loads(unescaped)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    args = {"raw": raw_args}
+        elif isinstance(raw_args, dict):
+            args = raw_args
+        else:
+            args = {"raw": str(raw_args)}
+
+        tc_info: dict = {"name": name, "arguments": args}
+        if isinstance(t, dict) and "result" in t:
+            tc_info["result"] = t["result"]
+        tool_calls_info.append(tc_info)
+    return tool_calls_info
 
 
 def _get_cors_config() -> dict:
@@ -569,12 +582,6 @@ async def index():
     return RedirectResponse(url="http://localhost:3000", status_code=302)
 
 
-@app.get("/sentry-debug", tags=["Debug"])
-async def trigger_error():
-    """Trigger a test error for Sentry verification."""
-    return {"result": 1 / 0}
-
-
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check endpoint for container orchestration and load balancers.
@@ -621,10 +628,7 @@ async def detailed_health_check():
             components["sessions"] = f"error: {str(e)}"
 
     if state.agent and state.agent.memory_manager:
-        try:
-            components["memory"] = "ok"
-        except Exception as e:
-            components["memory"] = f"error: {str(e)}"
+        components["memory"] = "ok"
 
     all_healthy = all(
         v != "error" and not v.startswith("error")
@@ -1261,38 +1265,7 @@ async def websocket_chat(websocket: WebSocket):
                 tc = getattr(msg, "tool_calls", None)
                 if tc:
                     has_tools = True
-                    for t in tc:
-                        name = "unknown"
-                        args = {}
-                        if isinstance(t, dict):
-                            name = t.get("function", {}).get("name", "unknown")
-                            raw_args = t.get("function", {}).get("arguments", {})
-                        else:
-                            name = getattr(t, "name", "unknown")
-                            raw_args = getattr(t, "arguments", {})
-
-                        # Handle arguments - could be string, dict, or already parsed
-                        if isinstance(raw_args, str):
-                            # First, fix any escaped unicode (e.g., \\u0131 -> ü)
-                            try:
-                                # Try to unescape and parse as JSON
-                                unescaped = raw_args.encode().decode("unicode_escape")
-                                args = json.loads(unescaped)
-                            except (json.JSONDecodeError, UnicodeDecodeError):
-                                try:
-                                    # Try direct parse
-                                    args = json.loads(raw_args)
-                                except json.JSONDecodeError:
-                                    args = {"raw": raw_args}
-                        elif isinstance(raw_args, dict):
-                            args = raw_args
-                        else:
-                            args = {"raw": str(raw_args)}
-
-                        tc_info = {"name": name, "arguments": args}
-                        if "result" in t:
-                            tc_info["result"] = t["result"]
-                        tool_calls_info.append(tc_info)
+                    tool_calls_info.extend(_extract_tool_calls_info(tc))
 
             if not accumulated_content:
                 # All streamed content went to thinking (no __THINKING_END__ seen).

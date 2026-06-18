@@ -1,4 +1,36 @@
 from src.agentframework.web_api import filter_messages_for_ui
+from src.agentframework.web_utils import extract_thinking_content
+from src.agentframework.constants import THINKING_START, THINKING_END
+
+
+def test_extract_thinking_content():
+    """Direct unit tests for the thinking extraction function."""
+    # Normal case: both markers present
+    thinking, display = extract_thinking_content("__THINKING__first_plan__THINKING_END__final_answer")
+    assert thinking == "first_plan"
+    assert display == "final_answer"
+
+    # No thinking at all
+    thinking, display = extract_thinking_content("just a plain message")
+    assert thinking is None
+    assert display == "just a plain message"
+
+    # Unclosed thinking (no __THINKING_END__)
+    thinking, display = extract_thinking_content("__THINKING__model started thinking but never closed it and kept going")
+    assert thinking == "model started thinking but never closed it and kept going"
+    assert display == ""
+
+    # Only the opening marker (edge case)
+    thinking, display = extract_thinking_content("__THINKING__")
+    assert thinking == ""
+    assert display == ""
+
+    # Unclosed thinking with newlines
+    content = f"{THINKING_START}\nmulti\nline\nthought\n{THINKING_END}\n\nanswer"
+    thinking, display = extract_thinking_content(content)
+    assert thinking == "multi\nline\nthought"
+    assert display == "answer"
+
 
 def test_filter_messages_for_ui():
     messages = [
@@ -35,6 +67,26 @@ def test_filter_messages_for_ui():
     assert len(thinking_msg) == 1
     assert thinking_msg[0]["thinking"] == "Searching..."
     assert thinking_msg[0]["content"] == "Result is 42"
+
+
+def test_filter_messages_unclosed_thinking():
+    """Session reload with unclosed __THINKING__ (model never output </think>)."""
+    messages = [
+        {"role": "user", "content": "Hello!"},
+        {"role": "assistant", "content": "__THINKING__The user wants a summary... I will use web_fetch..."},
+    ]
+
+    filtered = filter_messages_for_ui(messages)
+
+    # The thinking content should be extracted, no raw __THINKING__ in display
+    assert len(filtered) == 2
+    thinking_msg = [m for m in filtered if "thinking" in m]
+    assert len(thinking_msg) == 1
+    # Everything after __THINKING__ becomes thinking content
+    assert "The user wants a summary" in thinking_msg[0]["thinking"]
+    # The display content should be empty (model never closed the tag)
+    assert thinking_msg[0]["content"] == ""
+
 
 def test_filter_messages_as_objects():
     class Msg:

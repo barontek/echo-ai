@@ -466,6 +466,100 @@ class TestWebSocket:
                 assert d1["type"] == "done"
                 assert d1["thinking"] == "I am thinking..."
 
+    def test_chat_websocket_unclosed_thinking(self):
+        """Model opens __THINKING__ but never closes it (no </think>)."""
+        with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
+            mock_agent = MagicMock()
+            mock_agent.session_manager = None
+
+            async def mock_run_streaming(prompt, on_chunk=None):
+                if on_chunk:
+                    on_chunk("__THINKING__")
+                    on_chunk("I am thinking all the way through and never stop...")
+                    on_chunk("still thinking, no end in sight")
+                return "__THINKING__\nI am thinking all the way through and never stop...\nstill thinking, no end in sight"
+
+            mock_agent.run_streaming = mock_run_streaming
+            mock_agent.messages = []
+            mock_create.return_value = mock_agent
+
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_text(
+                    json.dumps({"provider": "openai", "model": "gpt-4o"})
+                )
+                websocket.receive_json()  # ready
+
+                websocket.send_text(
+                    json.dumps({"type": "message", "content": "Think long"})
+                )
+                websocket.receive_json()  # message echo
+
+                t1 = websocket.receive_json()
+                assert t1["type"] == "thinking"
+                t2 = websocket.receive_json()
+                assert t2["type"] == "thinking"
+                assert "never stop" in t2["content"]
+                t3 = websocket.receive_json()
+                assert t3["type"] == "thinking"
+                assert t3["content"] != ""  # Thinking still accumulating
+
+                # Fallback handler closes thinking and sends the stripped content
+                t_close = websocket.receive_json()
+                assert t_close["type"] == "thinking"
+                c_fallback = websocket.receive_json()
+                assert c_fallback["type"] == "content"
+                assert "__THINKING__" not in c_fallback["content"]
+
+                d1 = websocket.receive_json()
+                assert d1["type"] == "done"
+                assert "never stop" in d1["thinking"]  # All thinking preserved
+                assert "__THINKING__" not in d1["content"]  # Marker cleaned
+
+    def test_chat_websocket_thinking_tail_in_same_chunk(self):
+        """Tail of thinking text and __THINKING_END__ in the same chunk."""
+        with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
+            mock_agent = MagicMock()
+            mock_agent.session_manager = None
+
+            async def mock_run_streaming(prompt, on_chunk=None):
+                if on_chunk:
+                    on_chunk("__THINKING__I think therefore")
+                    on_chunk(" I am.__THINKING_END__\n\nHere is my final answer.")
+                return "Result"
+
+            mock_agent.run_streaming = mock_run_streaming
+            mock_agent.messages = []
+            mock_create.return_value = mock_agent
+
+            with client.websocket_connect("/ws/chat") as websocket:
+                websocket.send_text(
+                    json.dumps({"provider": "openai", "model": "gpt-4o"})
+                )
+                websocket.receive_json()  # ready
+
+                websocket.send_text(
+                    json.dumps({"type": "message", "content": "think"})
+                )
+                websocket.receive_json()  # message echo
+
+                t1 = websocket.receive_json()
+                assert t1["type"] == "thinking"
+
+                # Second chunk: thinking_tail " I am." is flushed via queue
+                # THEN the remaining content is routed as content
+                t2 = websocket.receive_json()
+                assert t2["type"] == "thinking"
+                assert t2["content"] == "I think therefore I am."
+
+                c1 = websocket.receive_json()
+                assert c1["type"] == "content"
+                assert "final answer" in c1["content"]
+
+                d1 = websocket.receive_json()
+                assert d1["type"] == "done"
+                assert d1["thinking"] == "I think therefore I am."
+                assert "__THINKING__" not in d1["content"]
+
     def test_chat_websocket_stop(self):
         with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
             mock_agent = MagicMock()

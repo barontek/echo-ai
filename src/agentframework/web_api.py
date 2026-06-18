@@ -1221,8 +1221,12 @@ async def websocket_chat(websocket: WebSocket):
             # __THINKING_END__ boundary, then route the rest.
             if thinking_tail:
                 thinking_content += thinking_tail
-                payload = {"type": "thinking", "content": thinking_content}
-            elif in_thinking:
+                with contextlib.suppress(asyncio.QueueFull):
+                    send_queue.put_nowait(
+                        {"type": "thinking", "content": thinking_content}
+                    )
+
+            if in_thinking:
                 thinking_content += chunk
                 payload = {"type": "thinking", "content": thinking_content}
             else:

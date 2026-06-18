@@ -1291,7 +1291,25 @@ async def websocket_chat(websocket: WebSocket):
                         tool_calls_info.append(tc_info)
 
             if not accumulated_content:
-                accumulated_content = response
+                # All streamed content went to thinking (no __THINKING_END__ seen).
+                # Strip the __THINKING__ marker from the fallback since it was
+                # already sent to the thinking box, and close the thinking state.
+                fallback = response
+                if fallback.startswith(THINKING_START):
+                    fallback = fallback[len(THINKING_START):].lstrip()
+                    if THINKING_END in fallback:
+                        thinking_tail, fallback = fallback.split(THINKING_END, 1)
+                        thinking_content += thinking_tail
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "thinking", "content": thinking_content}
+                        )
+                    in_thinking = False
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "content", "content": fallback.lstrip()}
+                        )
+                accumulated_content = fallback
 
         except asyncio.CancelledError:
             # Keep accumulated_content as-is (partial response preserved)

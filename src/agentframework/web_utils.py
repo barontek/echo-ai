@@ -22,13 +22,18 @@ def extract_thinking_content(content: str) -> tuple[str | None, str]:
     Returns:
         Tuple of (thinking_content, display_content).
     """
-    if THINKING_START not in content or THINKING_END not in content:
+    if THINKING_START not in content:
         return None, content
 
-    parts = content.split(THINKING_END, 1)
-    thinking = parts[0].replace(THINKING_START, "").strip()
-    display = parts[1].strip()
-    return thinking, display
+    if THINKING_END in content:
+        parts = content.split(THINKING_END, 1)
+        thinking = parts[0].replace(THINKING_START, "").strip()
+        display = parts[1].strip()
+        return thinking, display
+
+    # Unclosed thinking — treat everything after __THINKING__ as thinking
+    _, after = content.split(THINKING_START, 1)
+    return after.strip(), ""
 
 
 def normalize_tool_call(tc: Any) -> dict[str, Any]:

@@ -2,26 +2,85 @@
     {
         "id": "eval_01",
         "prompt": "What is the capital of France?",
-        "expected_behavior": "The agent should state that the capital is Paris."
+        "expected_behavior": "The agent should state that the capital is Paris.",
+        "expected_keywords": ["Paris"],
+        "tool_used": null
     },
     {
         "id": "eval_02",
         "prompt": "Write a one-line Python script to print 'Hello World'.",
-        "expected_behavior": "The agent should return a valid python script containing exactly `print('Hello World')`."
+        "expected_behavior": "The agent should return a valid python script containing exactly `print('Hello World')`.",
+        "expected_keywords": ["print('Hello World')"],
+        "tool_used": null
     },
     {
         "id": "eval_03",
         "prompt": "Calculate 25 * 4 using the python tool.",
-        "expected_behavior": "The agent must use the PythonTool to compute 100, and explicitly return the number 100 in its response."
+        "expected_behavior": "The agent must use the PythonTool to compute 100, and explicitly return the number 100 in its response.",
+        "expected_keywords": ["100"],
+        "tool_used": "python_execute"
     },
     {
         "id": "eval_04",
         "prompt": "Who won the super bowl in 2024?",
-        "expected_behavior": "The agent should mention the Kansas City Chiefs."
+        "expected_behavior": "The agent should mention the Kansas City Chiefs.",
+        "expected_keywords": ["Chiefs", "Kansas City"],
+        "tool_used": "web_search"
     },
     {
         "id": "eval_05",
         "prompt": "If a triangle has sides 3, 4, what is the hypotenuse?",
-        "expected_behavior": "The agent should state the hypotenuse is 5 (based on the Pythagorean theorem)."
+        "expected_behavior": "The agent should state the hypotenuse is 5 (based on the Pythagorean theorem).",
+        "expected_keywords": ["5"],
+        "tool_used": null
+    },
+    {
+        "id": "eval_06",
+        "prompt": "Run 'echo hello_world_42' in bash and return the output.",
+        "expected_behavior": "The agent should use the bash tool to execute 'echo hello_world_42' and return the output containing 'hello_world_42'.",
+        "expected_keywords": ["hello_world_42"],
+        "tool_used": "bash"
+    },
+    {
+        "id": "eval_07",
+        "prompt": "Read pyproject.toml and tell me the project name.",
+        "expected_behavior": "The agent should use the read_file tool to read pyproject.toml and extract the project name, which is 'agentframework'.",
+        "expected_keywords": ["agentframework"],
+        "tool_used": "read_file"
+    },
+    {
+        "id": "eval_08",
+        "prompt": "Search the web for information about the Eiffel Tower and tell me what year it was completed.",
+        "expected_behavior": "The agent should use the web_search tool to find the completion year of the Eiffel Tower and state 1889.",
+        "expected_keywords": ["1889", "Eiffel"],
+        "tool_used": "web_search"
+    },
+    {
+        "id": "eval_09",
+        "prompt": "Remember that my favorite pet is a cat. Use the memory tool to save this fact, then retrieve it and confirm what you saved.",
+        "expected_behavior": "The agent should use the memory tool to save the fact about the user's favorite pet and then recall it, reporting the fact back.",
+        "expected_keywords": ["cat", "pet", "favorite"],
+        "tool_used": "memory"
+    },
+    {
+        "id": "eval_10",
+        "prompt": "Use deep_search to research the key features of Python 3.13 and explain the new JIT compiler.",
+        "expected_behavior": "The agent should use the deep_search tool (not web_search) to research Python 3.13 features and provide details about the JIT compiler.",
+        "expected_keywords": ["JIT", "compiler", "Python"],
+        "tool_used": "deep_search"
+    },
+    {
+        "id": "eval_11",
+        "prompt": "Ask the researcher sub-agent to search for recent breakthroughs in quantum computing.",
+        "expected_behavior": "The agent should use the delegate tool to route the query to the 'researcher' sub-agent and return the result.",
+        "expected_keywords": ["quantum"],
+        "tool_used": "delegate"
+    },
+    {
+        "id": "eval_12",
+        "prompt": "Create a note titled 'eval-test' with content 'Hello from eval' and then list all your notes.",
+        "expected_behavior": "The agent should use the notes tool to create a new note and list notes, with 'eval-test' appearing in the results.",
+        "expected_keywords": ["eval-test"],
+        "tool_used": "notes"
     }
 ]

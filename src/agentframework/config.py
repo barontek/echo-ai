@@ -182,6 +182,7 @@ ENV_VAR_MAPPING = {
     "ECHO_ALLOW_NETWORK": ("safety", "allow_network"),
     "ECHO_SESSION_DIR": ("agent", "session_dir"),
     "ECHO_MAX_ITERATIONS": ("agent", "max_iterations"),
+    "ECHO_API_KEY": ("web", "api_key"),
 }
 
 
@@ -198,6 +199,7 @@ def apply_env_overrides(config: dict) -> dict:
     - ECHO_ALLOW_NETWORK: Enable network access
     - ECHO_SESSION_DIR: Session storage directory
     - ECHO_MAX_ITERATIONS: Max agent iterations
+    - ECHO_API_KEY: Bearer token for API authentication
     - ANTHROPIC_API_KEY: Anthropic API key
     - OPENAI_API_KEY: OpenAI API key
     """

@@ -20,6 +20,7 @@ DANGEROUS_PATTERNS = [
     (re.compile(r"curl.*\|\s*(sh|bash|zsh)"), "Download and execute"),
     (re.compile(r"wget.*\|\s*(sh|bash|zsh)"), "Download and execute"),
     (re.compile(r"python.*-c.*exec"), "Python code execution"),
+    (re.compile(r"python[23]?\s+.*-[a-zA-Z]*c\b"), "Python inline code execution"),
     (re.compile(r"perl.*-e.*"), "Perl code execution"),
     (re.compile(r"ruby.*-e.*"), "Ruby code execution"),
     (re.compile(r"node.*-e.*"), "Node.js code execution"),

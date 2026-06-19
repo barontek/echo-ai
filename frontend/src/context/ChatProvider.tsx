@@ -35,14 +35,7 @@ function combineAssistantMessages(
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<ChatContextValue['sessions']>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [currentModel, setCurrentModel] = useState<string>(() => {
-    // Try to load last used model from localStorage
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('last_model');
-      if (stored) return stored;
-    }
-    return 'qwen3:4b-instruct';
-  });
+  const [currentModel, setCurrentModel] = useState<string>('qwen3:4b-instruct');
   const [models, setModels] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatContextValue['messages']>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
@@ -416,11 +409,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const loadData = async () => {
       try {
         debugLog('loadData:start');
-        const [sessionsData, modelsData] = await Promise.all([api.getSessions(), api.getModels()]);
+        const [sessionsData, modelsData, prefsData] = await Promise.all([
+          api.getSessions(),
+          api.getModels(),
+          api.getPreferences(),
+        ]);
         debugLog('loadData:sessions', sessionsData.length);
         debugLog('loadData:models', modelsData.length);
+        debugLog('loadData:prefs', prefsData);
         setSessions(sessionsData);
         setModels(modelsData);
+        if (prefsData.model) {
+          setCurrentModel(prefsData.model);
+        }
       } catch (err) {
         console.error('[Chat] Failed to load data:', err);
       }
@@ -494,10 +495,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (model: string) => {
       debugLog('selectModel', model);
       setCurrentModel(model);
-      // Save to localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('last_model', model);
-      }
+      api.setPreferences({ model }).catch(console.error);
       reconnect();
     },
     [reconnect]

@@ -146,3 +146,39 @@ def test_ollama_list_models(provider):
 
         models = provider.list_models()
         assert models == ["m1", "m2"]
+
+
+@pytest.mark.asyncio
+async def test_chat_native_tool_calls_skips_content_extraction(provider):
+    """When the response contains native tool_calls, _extract_tool_calls_from_content is not called."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "message": {
+            "content": '```json\n{"name": "get_weather", "arguments": {"city": "Paris"}}\n```',
+            "tool_calls": [
+                {
+                    "id": "native_call_1",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": {"city": "London"},
+                    },
+                }
+            ],
+        }
+    }
+
+    provider.client.post = AsyncMock(return_value=mock_response)
+
+    with patch.object(provider, "_extract_tool_calls_from_content") as mock_extract:
+        response = await provider.chat(
+            [{"role": "user", "content": "weather?"}],
+            tools=[{"type": "function", "function": {"name": "get_weather"}}],
+        )
+
+        mock_extract.assert_not_called()
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "get_weather"
+        assert response.tool_calls[0].arguments == {"city": "London"}
+        assert response.tool_calls[0].id == "native_call_1"

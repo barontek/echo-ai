@@ -104,62 +104,46 @@ class OpenAIProvider(LLMProvider):
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "stream": True,
         }
 
         if tools:
             params["tools"] = tools
 
         content = ""
-        tool_calls_dict = {}
 
         async with AsyncOpenAI(
             api_key=self.api_key,
             timeout=self.timeout,
         ) as client:
-            response = await client.chat.completions.create(**params)
+            async with client.chat.completions.stream(**params) as stream:
+                async for event in stream:
+                    if event.type == "content.delta":
+                        content += event.delta
+                        if on_chunk:
+                            on_chunk(event.delta)
 
-            async for chunk in response:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                if not delta:
-                    continue
+                final_completion = await stream.get_final_completion()
 
-                if delta.content:
-                    content += delta.content
-                    if on_chunk:
-                        on_chunk(delta.content)
+        msg = final_completion.choices[0].message
 
-                if getattr(delta, "tool_calls", None):
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in tool_calls_dict:
-                            tool_calls_dict[idx] = {
-                                "id": tc.id,
-                                "name": tc.function.name,
-                                "arguments": "",
-                            }
-                        if tc.function and tc.function.arguments:
-                            tool_calls_dict[idx]["arguments"] += tc.function.arguments
-
-        tool_calls = []
         import json
 
-        for _, tc in sorted(tool_calls_dict.items()):
-            args = {}
-            try:
-                if tc["arguments"]:
-                    args = json.loads(tc["arguments"])
-            except json.JSONDecodeError:
-                pass
-            tool_calls.append(
-                LLMToolCall(
-                    id=tc["id"] or "",
-                    name=tc["name"] or "",
-                    arguments=args,
+        tool_calls = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                args = {}
+                try:
+                    if tc.function.arguments:
+                        args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    pass
+                tool_calls.append(
+                    LLMToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=args,
+                    )
                 )
-            )
 
         return LLMResponse(content=content, tool_calls=tool_calls)
 

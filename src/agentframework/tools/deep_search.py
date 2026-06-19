@@ -79,25 +79,25 @@ class DeepSearchTool(Tool):
             return ToolResult(content="No results found.")
 
         results = results[:10]
-        fetch_tool = None
+
+        from .web import WebFetchTool
+        fetch_tool = WebFetchTool(
+            safety_config=self._safety_config,
+            limits=self._limits,
+        )
 
         async def fetch(r: dict[str, Any]) -> tuple[str, str, str]:
-            nonlocal fetch_tool
-            if fetch_tool is None:
-                from .web import WebFetchTool
-                fetch_tool = WebFetchTool(
-                    safety_config=self._safety_config,
-                    limits=self._limits,
-                )
             result = await fetch_tool.execute(r.get("url", ""))
             content = result.content if not result.error else r.get("snippet", "")
             return r.get("title", ""), r.get("url", ""), content
 
-        contents: list[tuple[str, str, str]] = []
-        for i in range(0, len(results), 2):
-            batch = results[i:i+2]
-            batch_results = await asyncio.gather(*(fetch(r) for r in batch))
-            contents.extend(batch_results)
+        semaphore = asyncio.Semaphore(5)
+
+        async def fetch_with_limit(r: dict[str, Any]) -> tuple[str, str, str]:
+            async with semaphore:
+                return await fetch(r)
+
+        contents = await asyncio.gather(*(fetch_with_limit(r) for r in results))
 
         def _strip_thinking(text: str) -> str:
             if THINKING_START in text and THINKING_END in text:

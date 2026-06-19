@@ -204,6 +204,7 @@ observability:
   service_name: "echo-ai"
 
 web:
+  api_key: null  # Set to a string to require Bearer token auth; also via ECHO_API_KEY env var
   cors_origins:
     - "http://localhost:3000"
     - "http://localhost:8000"

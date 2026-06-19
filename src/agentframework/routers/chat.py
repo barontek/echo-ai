@@ -1,0 +1,665 @@
+"""Chat endpoints: WebSocket, SSE, and sync chat."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+from datetime import datetime
+from typing import Any
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+
+from src.agentframework import web_api
+from src.agentframework.constants import THINKING_END, THINKING_START
+from src.agentframework.core.session_runtime import deserialize_messages
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["Chat"])
+
+
+@router.post("/api/chat")
+async def chat(
+    message: web_api.ChatPayload,
+    state: Annotated[web_api.AppState, Depends(web_api.get_state)],
+):
+    """Non-streaming chat endpoint.
+
+    Sends a message and waits for the complete response.
+    Use for simple integrations or testing.
+
+    For real-time streaming, use the WebSocket endpoint `/ws/chat`.
+
+    Body:
+        - content: The user's message
+        - session_id: Optional session ID to continue a conversation
+
+    Returns:
+        {
+            "response": "The assistant's response...",
+            "messages": [...]
+        }
+
+    Example:
+        ```bash
+        curl -X POST http://localhost:8000/api/chat \\
+          -H "Content-Type: application/json" \\
+          -d '{"content": "Hello!"}'
+        ```
+    """
+    if state.agent is None:
+        state.agent = web_api._create_runtime_agent(
+            provider="ollama", model="qwen3:4b-instruct"
+        )
+
+    prompt = message.content
+    state.message_history.append(
+        {
+            "role": "user",
+            "content": prompt,
+            "timestamp": datetime.now().strftime("%H:%M"),
+        }
+    )
+
+    response = await state.agent.run(prompt)
+
+    state.message_history.append(
+        {
+            "role": "assistant",
+            "content": response,
+            "timestamp": datetime.now().strftime("%H:%M"),
+        }
+    )
+
+    return {"response": response, "messages": state.message_history}
+
+
+@router.post("/chat")
+async def handle_chat(request: web_api.ChatRequest):
+    """Synchronous chat endpoint."""
+    try:
+        agent = web_api.get_or_create_agent(request)
+        response = await agent.run(request.prompt)
+        session_id = None
+        if agent.session_manager and agent.session_manager.current_session:
+            session_id = agent.session_manager.current_session.id
+        return {
+            "session_id": session_id,
+            "response": response,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stream")
+async def stream_chat(
+    prompt: str,
+    session_id: str | None = None,
+    provider: str = "ollama",
+    model: str = "qwen3:4b-instruct",
+):
+    """Server-Sent Events (SSE) streaming endpoint."""
+    req = web_api.ChatRequest(
+        prompt=prompt, session_id=session_id, provider=provider, model=model
+    )
+    agent = web_api.get_or_create_agent(req)
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    def on_chunk(chunk: str):
+        queue.put_nowait(chunk)
+
+    async def chat_runner():
+        try:
+            await agent.run_streaming(prompt, on_chunk=on_chunk)
+        finally:
+            await queue.put(None)
+
+    asyncio.create_task(chat_runner())
+
+    async def event_generator():
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket):
+    """WebSocket chat endpoint for real-time streaming.
+
+    Connect to: `wss://localhost:8080/ws/chat` (HTTPS/WSS required)
+
+    ## Sending Messages
+
+    Send JSON messages to the server:
+
+    ```json
+    {"type": "message", "content": "Hello!"}
+    ```
+
+    Optional: include session_id to continue a conversation.
+    ```json
+    {"type": "message", "content": "Hello!", "session_id": "20260319_143052"}
+    ```
+
+    To stop generation mid-stream:
+    ```json
+    {"type": "stop"}
+    ```
+
+    ## Receiving Messages
+
+    Server sends JSON events:
+
+    ```json
+    {"type": "content", "content": "Hello"}  // Streaming content
+    {"type": "thinking", "content": "Let me think..."}  // Model thinking
+    {"type": "done", "content": "...", "tool_calls": [...]}  // Complete response
+    {"type": "error", "content": "Error message"}  // Error occurred
+    ```
+
+    ## JavaScript Example
+
+    ```javascript
+    const ws = new WebSocket('wss://localhost:8080/ws/chat');
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'content') {
+            console.log('Received:', data.content);
+        }
+    };
+    ws.send(JSON.stringify({type: 'message', content: 'Hi!'}));
+    ```
+    """
+    scheme = websocket.scope.get("scheme", "ws")
+    if scheme == "http":
+        await websocket.close(code=4001, reason="HTTPS/WSS required")
+        return
+
+    if web_api._api_key:
+        auth = websocket.headers.get("authorization", "")
+        if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != web_api._api_key:
+            await websocket.close(code=4001, reason="Unauthorized: invalid or missing API key")
+            return
+
+    await websocket.accept()
+
+    if web_api._state is None:
+        await websocket.send_json(
+            {"type": "error", "content": "Server not initialized"}
+        )
+        return
+
+    _ws_message_history: list[dict[str, Any]] = []
+    active_agent: web_api.Agent | None = None
+    streaming_task: asyncio.Task | None = None
+    stop_requested = False
+
+    async def send_keepalive() -> None:
+        try:
+            while True:
+                await asyncio.sleep(15)
+                await websocket.send_json({"type": "ping"})
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug(f"Keepalive error: {e}")
+
+    keepalive_task = asyncio.create_task(send_keepalive())
+
+    async def run_agent(prompt: str):
+        nonlocal streaming_task, stop_requested
+        if not active_agent:
+            return
+
+        # Ensure session exists and send session_start immediately
+        if active_agent.session_manager:
+            active_agent._ensure_session()
+            if active_agent.session_manager.current_session:
+                sid = active_agent.session_manager.current_session.id
+                logger.warning(
+                    "ws:trace run_agent session_start=%s messages=%d",
+                    sid,
+                    len(active_agent.messages),
+                )
+                try:
+                    await websocket.send_json(
+                        {
+                            "type": "session_start",
+                            "session_id": sid,
+                        }
+                    )
+                except WebSocketDisconnect:
+                    return
+
+        timestamp = datetime.now().strftime("%H:%M")
+        _ws_message_history.append(
+            {"role": "user", "content": prompt, "timestamp": timestamp}
+        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": prompt,
+                    "timestamp": timestamp,
+                }
+            )
+        except WebSocketDisconnect:
+            return
+
+        accumulated_content = ""
+        thinking_content = ""
+        in_thinking = False
+        send_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=1024)
+
+        async def sender_loop():
+            try:
+                while True:
+                    msg = await send_queue.get()
+                    if msg is None:
+                        break
+                    try:
+                        await websocket.send_json(msg)
+                    except (WebSocketDisconnect, RuntimeError):
+                        break
+            except Exception as e:
+                logger.debug(f"WebSocket sender loop error: {e}")
+
+        sender_task = asyncio.create_task(sender_loop())
+
+        def on_chunk(chunk: str) -> None:
+            nonlocal accumulated_content, thinking_content, in_thinking
+            if stop_requested:
+                raise asyncio.CancelledError()
+
+            # Extract any thinking tail before __THINKING_END__ so it goes
+            # to thinking_content, not accumulated_content (fixes the bug
+            # where "tail.__THINKING_END__\n\nresponse" leaked the tail
+            # into the response box).
+            thinking_tail = ""
+            if THINKING_END in chunk:
+                thinking_tail, chunk = chunk.split(THINKING_END, 1)
+                in_thinking = False
+
+            if THINKING_START in chunk:
+                before, chunk = chunk.split(THINKING_START, 1)
+                if not in_thinking and before:
+                    accumulated_content += before
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "content", "content": accumulated_content}
+                        )
+                in_thinking = True
+
+            # Incorporate any thinking tail that was split from a
+            # __THINKING_END__ boundary, then route the rest.
+            if thinking_tail:
+                thinking_content += thinking_tail
+                with contextlib.suppress(asyncio.QueueFull):
+                    send_queue.put_nowait(
+                        {"type": "thinking", "content": thinking_content}
+                    )
+
+            if in_thinking:
+                thinking_content += chunk
+                payload = {"type": "thinking", "content": thinking_content}
+            else:
+                accumulated_content += chunk
+                payload = {"type": "content", "content": accumulated_content}
+
+            with contextlib.suppress(asyncio.QueueFull):
+                send_queue.put_nowait(payload)
+
+        has_tools = False
+        tool_calls_info = []
+
+        # Send session info immediately when AI starts responding
+        if (
+            active_agent.session_manager
+            and active_agent.session_manager.current_session
+        ):
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "session_start",
+                        "session_id": active_agent.session_manager.current_session.id,
+                    }
+                )
+            except WebSocketDisconnect:
+                return
+
+        try:
+            msg_count_before = len(active_agent.messages)
+            response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
+            for msg in active_agent.messages[msg_count_before:]:
+                tc = getattr(msg, "tool_calls", None)
+                if tc:
+                    has_tools = True
+                    tool_calls_info.extend(web_api._extract_tool_calls_info(tc))
+
+            if not accumulated_content:
+                # All streamed content went to thinking (no __THINKING_END__ seen).
+                # Strip the __THINKING__ marker from the fallback since it was
+                # already sent to the thinking box, and close the thinking state.
+                fallback = response
+                if fallback.startswith(THINKING_START):
+                    fallback = fallback[len(THINKING_START):].lstrip()
+                    if THINKING_END in fallback:
+                        thinking_tail, fallback = fallback.split(THINKING_END, 1)
+                        thinking_content += thinking_tail
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "thinking", "content": thinking_content}
+                        )
+                    in_thinking = False
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "content", "content": fallback.lstrip()}
+                        )
+                accumulated_content = fallback
+
+        except asyncio.CancelledError:
+            # Keep accumulated_content as-is (partial response preserved)
+            thinking_content = ""
+            has_tools = False
+            tool_calls_info = []
+            logger.debug("Generation cancelled, preserving partial content")
+        except Exception as e:
+            logger.error(f"WebSocket chat error: {e}", exc_info=True)
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "content": "An error occurred while processing your request. Please try again.",
+                }
+            )
+            return
+        finally:
+            await send_queue.put(None)
+            await sender_task
+            streaming_task = None
+
+        timestamp = datetime.now().strftime("%H:%M")
+
+        _ws_message_history.append(
+            {
+                "role": "assistant",
+                "content": accumulated_content,
+                "timestamp": timestamp,
+                "thinking": thinking_content,
+                "has_tools": has_tools,
+            }
+        )
+
+        # Send done message first
+        try:
+            await websocket.send_json(
+                {
+                    "type": "done",
+                    "content": accumulated_content,
+                    "thinking": thinking_content,
+                    "timestamp": timestamp,
+                    "has_tools": has_tools,
+                    "tool_calls": tool_calls_info,
+                    "session_id": active_agent.session_manager.current_session.id
+                    if active_agent.session_manager
+                    and active_agent.session_manager.current_session
+                    else None,
+                    "title": active_agent.session_manager.current_session.title
+                    if active_agent.session_manager
+                    and active_agent.session_manager.current_session
+                    else None,
+                }
+            )
+        except WebSocketDisconnect:
+            pass
+
+        # Generate title in background (after sending done)
+        if (
+            active_agent.session_manager
+            and active_agent.session_manager.current_session
+            and not active_agent.session_manager.current_session.title
+        ):
+            asyncio.create_task(web_api._generate_title_async(active_agent))
+
+    try:
+        # 1. Wait for config
+        raw_config = await websocket.receive_text()
+        config = web_api.WsConfigPayload.model_validate_json(raw_config)
+        active_agent = web_api._create_runtime_agent(
+            config.provider,
+            config.model,
+            api_key=config.api_key,
+            session_id=config.session_id,
+        )
+        # Trigger auto-title if needed
+        if (
+            active_agent.session_manager
+            and active_agent.session_manager.current_session
+            and not active_agent.session_manager.current_session.title
+        ):
+            new_title = await active_agent.generate_title()
+            if new_title:
+                active_agent.session_manager.current_session.title = new_title
+                active_agent.save_session()
+
+        await websocket.send_json(
+            {
+                "type": "ready",
+                "session_id": active_agent.session_manager.current_session.id
+                if active_agent.session_manager
+                and active_agent.session_manager.current_session
+                else None,
+                "title": active_agent.session_manager.current_session.title
+                if active_agent.session_manager
+                and active_agent.session_manager.current_session
+                else None,
+            }
+        )
+
+        # 2. Continuous message loop
+        while True:
+            raw_message = await websocket.receive_text()
+            message = web_api.WsMessagePayload.model_validate_json(raw_message)
+
+            if message.type == "pong":
+                continue
+
+            if message.type == "stop":
+                stop_requested = True
+                if streaming_task and not streaming_task.done():
+                    streaming_task.cancel()
+                continue
+
+            if message.type == "edit":
+                edit_index = message.index
+                edit_content = message.content
+
+                logger.debug(
+                    "ws:edit",
+                    extra={
+                        "index": edit_index,
+                        "content": edit_content[:30] if edit_content else None,
+                        "session_id": message.session_id,
+                    },
+                )
+
+                if edit_index is None:
+                    await websocket.send_json(
+                        {"type": "error", "content": "Missing edit index"}
+                    )
+                    continue
+
+                if not active_agent.session_manager or not message.session_id:
+                    await websocket.send_json(
+                        {"type": "error", "content": "No active session"}
+                    )
+                    continue
+
+                session = active_agent.session_manager.load_session(message.session_id)
+                if not session:
+                    await websocket.send_json(
+                        {"type": "error", "content": "Session not found"}
+                    )
+                    continue
+                logger.debug(
+                    "ws:edit:session_loaded",
+                    extra={
+                        "session_id": session.id if session else None,
+                        "messages_count": len(session.messages) if session else 0,
+                        "all_roles": [m.get("role") for m in session.messages]
+                        if session
+                        else [],
+                    },
+                )
+                if (
+                    not session
+                    or edit_index < 0
+                    or edit_index >= len(session.messages) - 1
+                ):
+                    await websocket.send_json(
+                        {"type": "error", "content": "Invalid edit index"}
+                    )
+                    continue
+
+                target_msg = session.messages[edit_index]
+                logger.debug(
+                    "ws:edit:target_msg",
+                    extra={
+                        "target_msg": target_msg,
+                        "role": target_msg.get("role"),
+                        "edit_index": edit_index,
+                        "session_messages": session.messages,
+                    },
+                )
+
+                # Frontend excludes system message from its array, but session includes it
+                # So frontend index 0 = session index 1, frontend index N = session index N+1
+                target_index = edit_index + 1
+                target_msg = session.messages[target_index]
+
+                if not edit_content:
+                    await websocket.send_json(
+                        {"type": "error", "content": "Missing edit content"}
+                    )
+                    continue
+
+                logger.debug(
+                    "ws:edit:processing",
+                    extra={
+                        "edit_index": edit_index,
+                        "target_index": target_index,
+                        "session_messages_before": len(session.messages),
+                        "edit_content": edit_content[:50],
+                    },
+                )
+
+                # Load session and update the target message with new content
+                active_agent.session_manager.current_session = session
+
+                session.messages[target_index] = {
+                    "role": "user",
+                    "content": edit_content,
+                    "timestamp": session.messages[target_index].get(
+                        "timestamp", datetime.now().strftime("%H:%M")
+                    ),
+                }
+
+                # Truncate everything at and after target_index
+                # This removes the old user message so run_agent can add it fresh
+                active_agent.session_manager.truncate_history(target_index)
+
+                # Deserialize session messages to agent messages
+                active_agent.messages = deserialize_messages(session.messages)
+
+                # Also update local message_history to match the truncated session
+                _ws_message_history[:] = _ws_message_history[:target_index]
+
+                # Truncate any existing streaming task and run agent with new prompt
+                if streaming_task and not streaming_task.done():
+                    streaming_task.cancel()
+                    await asyncio.sleep(0.1)
+
+                stop_requested = False
+                streaming_task = asyncio.create_task(run_agent(edit_content))
+                continue
+
+            if message.type == "message" or not message.type:
+                prompt = (message.content or "").strip()
+                if not prompt:
+                    continue
+
+                # Load the session if session_id is provided
+                if message.session_id and active_agent.session_manager:
+                    active_agent.messages = []
+                    active_agent._pending_summary = None
+                    prev_session_id = (
+                        active_agent.session_manager.current_session.id
+                        if active_agent.session_manager.current_session
+                        else None
+                    )
+                    prev_msg_count = len(active_agent.messages)
+                    load_result = active_agent.load_session(message.session_id)
+                    if load_result.startswith("Session not found"):
+                        logger.warning(
+                            "ws:session not visible, creating directly: %s",
+                            message.session_id,
+                        )
+                        active_agent.session_manager.create_session(
+                            session_id=message.session_id
+                        )
+                        active_agent.messages = []
+                        load_result = active_agent.load_session(message.session_id)
+                    logger.warning(
+                        "ws:trace load_session"
+                        " requested=%s prev_session=%s prev_msgs=%d"
+                        " result=%s"
+                        " now_session=%s now_msgs=%d"
+                        " db_path=%s"
+                        " messages=%s",
+                        message.session_id,
+                        prev_session_id,
+                        prev_msg_count,
+                        load_result,
+                        active_agent.session_manager.current_session.id
+                        if active_agent.session_manager.current_session
+                        else None,
+                        len(active_agent.messages),
+                        str(active_agent.session_manager.db_path),
+                        [m.get("role") if isinstance(m, dict) else getattr(m, "role", "?")
+                         for m in active_agent.messages[:3]],
+                    )
+
+                if streaming_task and not streaming_task.done():
+                    streaming_task.cancel()
+                    await asyncio.sleep(0.1)  # Small delay to ensure cleanup
+
+                stop_requested = False
+                streaming_task = asyncio.create_task(run_agent(prompt))
+
+    except (WebSocketDisconnect, json.JSONDecodeError, ValueError):
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket connection error: {e}", exc_info=True)
+        with contextlib.suppress(Exception):
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "content": "WebSocket connection error. Please refresh and try again.",
+                }
+            )
+    finally:
+        if streaming_task and not streaming_task.done():
+            streaming_task.cancel()
+        keepalive_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await keepalive_task

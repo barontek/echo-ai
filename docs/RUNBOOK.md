@@ -37,6 +37,18 @@ docker run -p 8000:8000 \
   echo-ai
 ```
 
+### Docker Named Volume
+
+The service mounts a named volume `echo_data` at `/root/.echo-ai` — the default data directory for session databases and memory files.
+
+```bash
+# Backup the named volume
+docker run --rm -v echo_data:/data -v $(pwd):/backup alpine tar czf /backup/echo-data-backup.tar.gz /data
+
+# Restore from backup
+docker run --rm -v echo_data:/data -v $(pwd):/backup alpine tar xzf /backup/echo-data-backup.tar.gz -C /
+```
+
 ### Docker Compose (Recommended)
 
 ```bash

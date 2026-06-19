@@ -135,6 +135,42 @@ class TestSecurityValidator:
         assert safe is True
         assert reason == "OK"
 
+    def test_command_safety_python_inline_blocked(self, temp_workspace):
+        config = SafetyConfig(
+            workspace=temp_workspace,
+            allow_network=True,
+            allowed_commands=["*"],
+        )
+        validator = SecurityValidator(config)
+
+        safe, reason = validator.check_command_safety('python -c "import os"')
+        assert safe is False
+        assert "Python inline code execution" in reason
+
+        safe, reason = validator.check_command_safety("python3 -c \"os.system('ls')\"")
+        assert safe is False
+        assert "Python inline code execution" in reason
+
+        safe, reason = validator.check_command_safety("python3 -Bc \"exec('...')\"")
+        assert safe is False
+        assert "Python inline code execution" in reason
+
+    def test_command_safety_python_script_allowed(self, temp_workspace):
+        config = SafetyConfig(
+            workspace=temp_workspace,
+            allow_network=True,
+            allowed_commands=["*"],
+        )
+        validator = SecurityValidator(config)
+
+        safe, reason = validator.check_command_safety("python script.py")
+        assert safe is True
+        assert reason == "OK"
+
+        safe, reason = validator.check_command_safety("python3 -m pytest")
+        assert safe is True
+        assert reason == "OK"
+
     def test_command_safety_not_in_allowlist(self, validator):
         safe, reason = validator.check_command_safety("vim")
         assert safe is False

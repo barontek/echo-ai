@@ -88,8 +88,27 @@ class OllamaProvider(LLMProvider):
         self.stream_timeout = httpx.Timeout(timeout * 5, connect=30.0)
         self.client = httpx.AsyncClient(timeout=self.stream_timeout)
 
-    def _extract_tool_calls_from_content(self, content: str) -> list[LLMToolCall]:
-        """Extract tool calls from markdown code blocks or plain JSON in content."""
+    def _extract_tool_calls_from_content(
+        self,
+        content: str,
+        native_tool_calls: list[dict] | None = None,
+    ) -> list[LLMToolCall]:
+        """Extract tool calls from markdown code blocks, plain JSON, or native API field."""
+        if native_tool_calls:
+            tool_calls = []
+            for tc in native_tool_calls:
+                args = tc.get("function", {}).get("arguments", {})
+                if isinstance(args, str):
+                    args = json.loads(args)
+                tool_calls.append(
+                    LLMToolCall(
+                        id=tc.get("id", ""),
+                        name=tc.get("function", {}).get("name", ""),
+                        arguments=args,
+                    )
+                )
+            return tool_calls
+
         tool_calls = []
 
         # First try markdown code blocks
@@ -97,11 +116,13 @@ class OllamaProvider(LLMProvider):
         # to handle nested JSON objects (e.g. arguments with nested objects).
         pattern = r"\`\`\`(?:json)?\s*\n?(\{.*\}).*\n?\`\`\`"
         matches = re.findall(pattern, content, re.DOTALL)
+        extraction_method = "markdown block"
 
         # Also try to find plain JSON tool calls ({"name": "...", "arguments": ...})
         if not matches:
             pattern = r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\}|null)\s*\}'
             matches = re.findall(pattern, content)
+            extraction_method = "plain JSON"
 
         # Also try to find tool name followed by JSON arguments (e.g. "web_search{\"query\": \"test\"}")
         # Sort by length descending to match longer names first (e.g. web_search before search)
@@ -114,6 +135,10 @@ class OllamaProvider(LLMProvider):
                     for name, args_str in simple_matches:
                         try:
                             arguments = json.loads(args_str)
+                            logger.warning(
+                                "Extracted tool call '%s' via name-prefix heuristic extraction",
+                                name,
+                            )
                             tool_calls.append(
                                 LLMToolCall(
                                     id=f"call_{len(tool_calls)}",
@@ -125,6 +150,8 @@ class OllamaProvider(LLMProvider):
                             continue
                     if tool_calls:
                         break
+            if tool_calls:
+                return tool_calls
 
         for match in matches:
             try:
@@ -145,6 +172,11 @@ class OllamaProvider(LLMProvider):
                 if not name or name.lower() == "none" or name.lower() == "null":
                     continue
 
+                logger.warning(
+                    "Extracted tool call '%s' via %s extraction",
+                    name,
+                    extraction_method,
+                )
                 tool_calls.append(
                     LLMToolCall(
                         id=f"call_{len(tool_calls)}",
@@ -234,7 +266,7 @@ class OllamaProvider(LLMProvider):
                     )
 
             # Also check content for markdown tool calls (qwen2.5-coder style)
-            if content:
+            if content and not tool_calls:
                 extracted = self._extract_tool_calls_from_content(content)
                 if extracted:
                     tool_calls = extracted

@@ -13,8 +13,12 @@ from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi.testclient import TestClient
 from starlette.requests import Request
+from starlette.websockets import WebSocketDisconnect
 from src.agentframework.web_api import app
 import src.agentframework.web_api as web_api
+from src.agentframework.routers.chat import handle_chat
+from src.agentframework.routers.workflows import workflows_list, workflow_run
+from pathlib import Path
 
 client = TestClient(app)
 
@@ -27,6 +31,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def ensure_state():
     """Ensure application state is initialized for each test."""
+    web_api._rate_limiter.clear()
     state = web_api.get_state()
     # Close any existing real agent before replacing with mock
     if state.agent is not None and not isinstance(state.agent, MagicMock):
@@ -613,11 +618,10 @@ class TestWorkflows:
     @pytest.mark.asyncio
     async def test_workflows_list_endpoint(self, monkeypatch):
         monkeypatch.setattr(
-            web_api,
-            "list_workflows",
+            "src.agentframework.routers.workflows.list_workflows",
             lambda: [{"id": "w1", "title": "W1", "description": "d"}],
         )
-        result = await web_api.workflows_list()
+        result = await workflows_list()
         assert result == {
             "workflows": [{"id": "w1", "title": "W1", "description": "d"}]
         }
@@ -635,13 +639,14 @@ class TestWorkflows:
         state.agent = "agent"  # type: ignore[assignment] - Test mock value
         state.message_history = []
         monkeypatch.setattr(
-            web_api, "get_workflow", lambda _workflow_id: FakeWorkflow()
+            "src.agentframework.routers.workflows.get_workflow",
+            lambda _workflow_id: FakeWorkflow(),
         )
 
         payload = web_api.WorkflowRunPayload(
             workflow_id="research_and_summarize", topic="hello"
         )
-        result = await web_api.workflow_run(payload, state)
+        result = await workflow_run(payload, state)
         assert captured_state["topic"] == "hello"
         assert captured_state["agent"] == "agent"
         assert result["workflow_id"] == "research_and_summarize"
@@ -1164,12 +1169,12 @@ class TestWorkflowErrors:
 
 class TestRateLimitMiddleware:
     def test_rate_limit_bypassed_for_localhost_returns_200(self):
-        web_api._rate_limit_storage.clear()
+        web_api._rate_limiter.clear()
         response = client.get("/health")
         assert response.status_code == 200
 
     def test_rate_limit_headers_present(self):
-        web_api._rate_limit_storage.clear()
+        web_api._rate_limiter.clear()
         response = client.get("/api/review")
         assert response.status_code == 200
         assert "X-RateLimit-Remaining" in response.headers
@@ -1522,7 +1527,7 @@ class TestChatEndpointNoAgent:
     @pytest.mark.asyncio
     async def test_chat_api_creates_agent_when_none(self, mock_agent):
         """chat endpoint should create agent when state.agent is None."""
-        web_api._rate_limit_storage.clear()
+        web_api._rate_limiter.clear()
         state = web_api.get_state()
         state.agent = None
         with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
@@ -1544,7 +1549,7 @@ class TestHandleChatEdgeCases:
         state.agent = mock_agent
         mock_agent.session_manager.current_session = MagicMock(id="sess-handle")
         req = web_api.ChatRequest(prompt="hello")
-        result = await web_api.handle_chat(req)
+        result = await handle_chat(req)
         assert result["session_id"] == "sess-handle"
         assert result["response"] == "Mock response"
 
@@ -1556,7 +1561,7 @@ class TestHandleChatEdgeCases:
         mock_agent.run = AsyncMock(side_effect=Exception("run failed"))
         req = web_api.ChatRequest(prompt="hello")
         with pytest.raises(Exception):
-            await web_api.handle_chat(req)
+            await handle_chat(req)
 
 
 class TestRouteIntentSuccess:
@@ -1583,7 +1588,7 @@ class TestRouteIntentSuccess:
 class TestRateLimitApplied:
     def test_rate_limit_exceeded_returns_429(self):
         """When rate limit is exceeded, middleware returns 429."""
-        web_api._rate_limit_storage.clear()
+        web_api._rate_limiter.clear()
         saved_requests = web_api._RATE_LIMIT_REQUESTS
         saved_window = web_api._RATE_LIMIT_WINDOW
         web_api._RATE_LIMIT_REQUESTS = 1
@@ -1595,7 +1600,7 @@ class TestRateLimitApplied:
             data = response.json()
             assert data["error"] == "Rate limit exceeded"
         finally:
-            web_api._rate_limit_storage.clear()
+            web_api._rate_limiter.clear()
             web_api._RATE_LIMIT_REQUESTS = saved_requests
             web_api._RATE_LIMIT_WINDOW = saved_window
 
@@ -1638,7 +1643,7 @@ class TestCorsConfig:
 class TestDetailedHealthEdgeCases:
     @pytest.fixture(autouse=True)
     def _clear_rate_limit(self):
-        web_api._rate_limit_storage.clear()
+        web_api._rate_limiter.clear()
         yield
     def test_detailed_health_memory_ok(self, mock_agent):
         """When memory_manager exists, detailed health should report memory ok."""
@@ -2230,7 +2235,7 @@ class TestDetailedHealthMemoryErrorPath:
         err_mgr.list_sessions.side_effect = Exception("oops")
         mock_agent.memory_manager = MagicMock()
         state.agent.session_manager = err_mgr
-        web_api._rate_limit_storage.clear()
+        web_api._rate_limiter.clear()
         response = client.get("/health/detailed")
         assert response.status_code == 200
         data = response.json()
@@ -2357,3 +2362,142 @@ async def test_exception_group_handler_delegates():
     request = MagicMock(spec=Request)
     response = await web_api.exception_group_handler(request, eg)
     assert response.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Bearer token authentication
+# ---------------------------------------------------------------------------
+
+
+class TestBearerAuth:
+    """Tests for Bearer token authentication on /api/* and /ws/chat."""
+
+    CORRECT_KEY = "test-secret-key-123"
+
+    @pytest.fixture(autouse=True)
+    def _enable_auth(self, monkeypatch):
+        monkeypatch.setattr(web_api, "_api_key", self.CORRECT_KEY)
+        yield
+
+    def test_correct_token_passes(self):
+        response = client.get(
+            "/api/review", headers={"Authorization": f"Bearer {self.CORRECT_KEY}"}
+        )
+        assert response.status_code == 200
+
+    def test_wrong_token_returns_401(self):
+        response = client.get(
+            "/api/review", headers={"Authorization": "Bearer wrong-token"}
+        )
+        assert response.status_code == 401
+
+    def test_no_token_returns_401(self):
+        response = client.get("/api/review")
+        assert response.status_code == 401
+
+    def test_wrong_scheme_returns_401(self):
+        response = client.get(
+            "/api/review", headers={"Authorization": f"Basic {self.CORRECT_KEY}"}
+        )
+        assert response.status_code == 401
+
+    def test_health_unauthenticated(self):
+        response = client.get("/health")
+        assert response.status_code == 200
+
+    def test_health_detailed_unauthenticated(self):
+        state = web_api.get_state()
+        state.agent = None
+        response = client.get("/health/detailed")
+        assert response.status_code == 200
+
+    def test_auth_disabled_no_key(self, monkeypatch):
+        monkeypatch.setattr(web_api, "_api_key", None)
+        response = client.get("/api/review")
+        assert response.status_code == 200
+
+
+class TestBearerAuthWebSocket:
+    """Bearer token auth for WebSocket endpoint."""
+
+    CORRECT_KEY = "test-ws-key-456"
+
+    @pytest.fixture(autouse=True)
+    def _enable_auth(self, monkeypatch):
+        monkeypatch.setattr(web_api, "_api_key", self.CORRECT_KEY)
+        yield
+
+    def test_ws_correct_token_passes(self, ws_mock_agent):
+        with patch(
+            "src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent
+        ):
+            with TestClient(app) as tc:
+                with tc.websocket_connect(
+                    "/ws/chat", headers={"Authorization": f"Bearer {self.CORRECT_KEY}"}
+                ) as ws:
+                    ws.send_json({"provider": "ollama", "model": "m"})
+                    ready = ws.receive_json()
+                    assert ready["type"] == "ready"
+
+    def test_ws_wrong_token_rejected(self, ws_mock_agent):
+        with patch(
+            "src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent
+        ):
+            with TestClient(app) as tc:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    with tc.websocket_connect(
+                        "/ws/chat",
+                        headers={"Authorization": "Bearer wrong-key"},
+                    ):
+                        pass
+                assert exc_info.value.code == 4001
+
+    def test_ws_no_token_rejected(self, ws_mock_agent):
+        with patch(
+            "src.agentframework.web_api._create_runtime_agent", return_value=ws_mock_agent
+        ):
+            with TestClient(app) as tc:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    with tc.websocket_connect("/ws/chat"):
+                        pass
+                assert exc_info.value.code == 4001
+
+
+# ---------------------------------------------------------------------------
+# Preferences
+# ---------------------------------------------------------------------------
+
+
+class TestPreferences:
+    def test_get_preferences_returns_empty_when_no_file(self):
+        web_api._PREFERENCES_PATH.unlink(missing_ok=True)
+        response = client.get("/api/preferences")
+        assert response.status_code == 200
+        assert response.json() == {}
+
+    def test_post_preferences_saves_and_get_returns_it(self):
+        web_api._PREFERENCES_PATH.unlink(missing_ok=True)
+        response = client.post("/api/preferences", json={"model": "gpt-4"})
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+        response = client.get("/api/preferences")
+        assert response.status_code == 200
+        assert response.json() == {"model": "gpt-4"}
+
+    def test_post_preferences_overwrites_previous(self):
+        client.post("/api/preferences", json={"model": "old-model"})
+        client.post("/api/preferences", json={"model": "new-model"})
+        response = client.get("/api/preferences")
+        assert response.json() == {"model": "new-model"}
+
+    def test_preferences_handles_corrupted_json_gracefully(self, tmp_path):
+        prefs_file = tmp_path / "preferences.json"
+        prefs_file.write_text("not json}")
+        web_api._PREFERENCES_PATH = prefs_file
+        try:
+            response = client.get("/api/preferences")
+            assert response.status_code == 200
+            assert response.json() == {}
+        finally:
+            web_api._PREFERENCES_PATH = Path.home() / ".echo-ai" / "preferences.json"

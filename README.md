@@ -38,6 +38,7 @@ Override config.yaml settings with environment variables:
 | `ECHO_MODEL` | Model name | `qwen3:4b-instruct` |
 | `ECHO_BASE_URL` | Ollama base URL | `http://localhost:11434` |
 | `ECHO_TEMPERATURE` | Model temperature | `0.1` |
+| `ECHO_API_KEY` | Bearer token for API authentication | `my-secret-token` |
 | `ECHO_WORKSPACE` | Workspace directory | `/home/user/workspace` |
 | `ECHO_SESSION_DIR` | Session storage directory | `~/.echo-ai/sessions` |
 | `ECHO_MAX_ITERATIONS` | Max agent iterations | `50` |

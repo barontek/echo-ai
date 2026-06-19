@@ -18,6 +18,9 @@ RUN uv pip install . --system
 # Copy project files
 COPY --chown=appuser:appgroup . .
 
+# Ensure data directory exists (used as mount point for echo_data volume)
+RUN mkdir -p /root/.echo-ai/sessions /root/.echo-ai/memory
+
 # Switch to non-root user
 USER appuser
 

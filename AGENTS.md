@@ -33,6 +33,13 @@ cd frontend && npm run build
 - **Deep search**: `src/agentframework/tools/deep_search.py` — fetch → filter → summarize pipeline
 - **Search providers**: `src/agentframework/tools/search_providers/` — Brave, DuckDuckGo, Tavily
 
+## Sub-Agent Delegation
+
+1. Sub-agents are registered via `agent.register_sub_agent()`
+2. The first registration lazily creates a `DelegateTool` and adds it to the tool map
+3. `DelegateTool` spawns a transient `Agent` with no session, sharing the root agent's LLM provider
+4. The result is returned as a `ToolResult` string
+
 ## Frontend Communication
 
 - WebSocket: `/ws/chat`

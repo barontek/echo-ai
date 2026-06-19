@@ -130,6 +130,10 @@ class Agent:
         """Add a user message to the conversation."""
         self.messages.append(Message(role="user", content=content))
 
+    # DelegateTool is instantiated lazily on the first call to this method,
+    # not at Agent construction time.  This means the delegate tool will
+    # not appear in the tool schema sent to the LLM until at least one
+    # sub-agent has been registered.
     def register_sub_agent(
         self,
         name: str,

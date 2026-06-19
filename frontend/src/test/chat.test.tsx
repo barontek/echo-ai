@@ -21,6 +21,8 @@ const { mockApi, wsCalls } = vi.hoisted(() => ({
     }),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     updateConfig: vi.fn().mockResolvedValue(undefined),
+    getPreferences: vi.fn().mockResolvedValue({}),
+    setPreferences: vi.fn().mockResolvedValue(undefined),
     healthCheck: vi.fn().mockResolvedValue({ status: 'healthy', version: '0.1.0' }),
   },
   wsCalls: [] as string[],
@@ -342,6 +344,48 @@ describe('Session History Bug Tests', () => {
       );
 
       expect(screen.getByTestId('current-model').textContent).toBe('qwen3:4b-instruct');
+    });
+
+    it('should load model from API preferences on mount', async () => {
+      mockApi.getPreferences.mockResolvedValueOnce({ model: 'llama3.2:latest' });
+
+      function TestComponent() {
+        const { currentModel } = useChat();
+        return <span data-testid="pref-model">{currentModel}</span>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(mockApi.getPreferences).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('pref-model').textContent).toBe('llama3.2:latest');
+      });
+    });
+
+    it('should persist model via API on selectModel', async () => {
+      function TestComponent() {
+        const { selectModel } = useChat();
+        return <button onClick={() => selectModel('gpt-4')}>Use GPT-4</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Use GPT-4'));
+
+      await waitFor(() => {
+        expect(mockApi.setPreferences).toHaveBeenCalledWith({ model: 'gpt-4' });
+      });
     });
 
     it('should handle empty sessions list', async () => {

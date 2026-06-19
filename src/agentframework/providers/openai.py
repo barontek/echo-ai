@@ -1,5 +1,6 @@
 """OpenAI provider implementation."""
 
+import json
 import os
 from typing import Any
 
@@ -125,8 +126,6 @@ class OpenAIProvider(LLMProvider):
                 final_completion = await stream.get_final_completion()
 
         msg = final_completion.choices[0].message
-
-        import json
 
         tool_calls = []
         if msg.tool_calls:

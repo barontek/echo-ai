@@ -7,7 +7,9 @@ export interface ChatContextValue {
   sessions: Array<{ id: string; title: string; created_at: string }>;
   activeSessionId: string | null;
   currentModel: string;
+  currentProvider: string;
   models: string[];
+  providers: string[];
   messages: Array<{
     role: 'user' | 'assistant';
     content: string;
@@ -31,6 +33,7 @@ export interface ChatContextValue {
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   selectModel: (model: string) => void;
+  selectProvider: (provider: string) => void;
   reconnect: () => void;
 }
 

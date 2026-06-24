@@ -17,7 +17,7 @@ def undo_change(change_tracker) -> str:
 
     if change["old_content"] is not None:
         try:
-            Path(change["path"]).write_text(change["old_content"])
+            Path(change["path"]).write_text(change["old_content"], encoding="utf-8")
             return f"Undid write to {change['path']}"
         except Exception as e:
             return f"Undo failed: {e}"
@@ -34,7 +34,7 @@ def redo_change(change_tracker) -> str:
 
     if change["new_content"] is not None:
         try:
-            Path(change["path"]).write_text(change["new_content"])
+            Path(change["path"]).write_text(change["new_content"], encoding="utf-8")
             return f"Redid write to {change['path']}"
         except Exception as e:
             return f"Redo failed: {e}"

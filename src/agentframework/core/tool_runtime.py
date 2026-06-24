@@ -148,13 +148,14 @@ async def execute_single_tool(
         if result.error:
             if callback_manager:
                 callback_manager.on_tool_error(run_id, tool_call.name, result.error)
+            ec = result.error_category or "execution_error"
             msg = Message(
                 role="tool",
-                content=format_tool_failure(ToolError("policy_denied", result.error)),
+                content=format_tool_failure(ToolError(ec, result.error)),
                 tool_call_id=tool_call.id,
                 tool_name=tool_call.name,
                 tool_arguments=tool_call.arguments,
-                error_category="policy_denied",
+                error_category=ec,
             )
             record_tool_execution(tool_call.name, perf_counter() - started, False)
         else:

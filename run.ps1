@@ -77,18 +77,36 @@ switch ($Mode) {
         Write-Host "==================================" -ForegroundColor Cyan
         Write-Host ""
 
-        # Start backend
-        Write-Host "Starting backend..." -ForegroundColor Yellow
-        Start-Process -FilePath ".venv\Scripts\python.exe" -Arguments "-m src.agentframework.web_api" -NoNewWindow
-        Start-Sleep -Seconds 3
-
-        # Start frontend
-        Write-Host "Starting frontend..." -ForegroundColor Yellow
-        Set-Location "frontend"
-        if (-not (Test-Path "node_modules")) {
-            npm install --silent
+        # Kill any old backend process on port 8080
+        $oldProc = Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess
+        if ($oldProc) {
+            Write-Host "Killing old backend process (PID: $oldProc)..." -ForegroundColor Yellow
+            Stop-Process -Id $oldProc -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
         }
-        npm run dev
+
+        # Start backend as visible process (output goes to console)
+        Write-Host "Starting backend..." -ForegroundColor Yellow
+        $backend = Start-Process -NoNewWindow -PassThru -FilePath ".venv\Scripts\python.exe" -ArgumentList "-m", "src.agentframework.web_api"
+
+        try {
+            Start-Sleep -Seconds 3
+
+            # Start frontend (foreground, blocking)
+            Write-Host "Starting frontend..." -ForegroundColor Yellow
+            Push-Location "frontend"
+            if (-not (Test-Path "node_modules")) {
+                npm install --silent
+            }
+            npm run dev
+        } finally {
+            Pop-Location
+            # Cleanup backend when frontend exits
+            Write-Host "Stopping backend..." -ForegroundColor Yellow
+            if ($backend -and !$backend.HasExited) {
+                $backend.Kill($true)
+            }
+        }
     }
 
     "web" {

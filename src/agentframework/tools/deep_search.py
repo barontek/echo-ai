@@ -41,7 +41,7 @@ class DeepSearchTool(Tool):
         self._limits = limits
 
     def _get_search_provider(self):
-        provider_type = (self._limits or {}).get("provider", "duckduckgo")
+        provider_type = (self._limits or {}).get("provider", "brave")
         from .search_providers import get_search_provider
         return get_search_provider(provider_type)
 
@@ -53,7 +53,7 @@ class DeepSearchTool(Tool):
             model_cfg = config.get("model", {})
             self.provider = get_provider(
                 name=model_cfg.get("provider", "ollama"),
-                model=model_cfg.get("name", "qwen3:4b-instruct"),
+                model=model_cfg.get("name", "qwen3.5:latest"),
                 base_url=model_cfg.get("base_url"),
                 timeout=model_cfg.get("timeout", 60),
                 num_ctx=model_cfg.get("num_ctx"),

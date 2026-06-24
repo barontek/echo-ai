@@ -14,6 +14,7 @@ from tenacity import (
 
 from . import LLMProvider, LLMResponse, LLMToolCall
 from ..constants import THINKING_END, THINKING_START
+from ..conversation import normalize_args_for_ollama
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +202,7 @@ class OllamaProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> LLMResponse:
         """Send a chat request to Ollama."""
+        messages = normalize_args_for_ollama(messages)
         options = {}
         if self.num_ctx is not None:
             options["num_ctx"] = self.num_ctx
@@ -309,6 +311,7 @@ class OllamaProvider(LLMProvider):
         on_chunk: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
         """Actual streaming implementation."""
+        messages = normalize_args_for_ollama(messages)
         options = {}
         if self.num_ctx is not None:
             options["num_ctx"] = self.num_ctx

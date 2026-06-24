@@ -122,19 +122,16 @@ def format_messages_for_llm(
                     }
                 ]
 
-            # Normalize arguments to dict (Ollama rejects string-encoded args)
+            # Convert arguments from dict to JSON string (OpenAI/LM Studio format)
             if tool_calls:
-                normalized = []
+                serialized = []
                 for tc in tool_calls:
                     fn = tc.get("function", {})
                     args = fn.get("arguments")
-                    if isinstance(args, str):
-                        try:
-                            args = json.loads(args)
-                        except (json.JSONDecodeError, TypeError):
-                            args = {"raw": args}
-                    normalized.append({**tc, "function": {**fn, "arguments": args}})
-                tool_calls = normalized
+                    if isinstance(args, dict):
+                        args = json.dumps(args)
+                    serialized.append({**tc, "function": {**fn, "arguments": args}})
+                tool_calls = serialized
 
             result.append(
                 {
@@ -154,6 +151,27 @@ def format_messages_for_llm(
         else:
             result.append({"role": msg.role, "content": msg.content})
 
+    return result
+
+
+def normalize_args_for_ollama(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert arguments in tool_calls from JSON strings to dicts (Ollama requirement)."""
+    result = []
+    for msg in messages:
+        if msg.get("tool_calls"):
+            normalized = []
+            for tc in msg["tool_calls"]:
+                fn = tc.get("function", {})
+                args = fn.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {"raw": args}
+                normalized.append({**tc, "function": {**fn, "arguments": args}})
+            result.append({**msg, "tool_calls": normalized})
+        else:
+            result.append(msg)
     return result
 
 

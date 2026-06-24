@@ -231,7 +231,7 @@ class GrepTool(Tool):
                 if self.validator.is_blocked_extension(str(f)):
                     continue
                 try:
-                    for i, line in enumerate(f.read_text().splitlines(), 1):
+                    for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
                         if regex.search(line):
                             results.append(
                                 f"{f.relative_to(self.base_dir)}:{i}: {line}"

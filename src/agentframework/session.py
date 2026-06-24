@@ -547,7 +547,7 @@ class ChangeTracker:
         if content and len(content) > self.LARGE_FILE_THRESHOLD:
             filepath = self.backup_dir / f"{uuid.uuid4().hex}.txt"
             try:
-                filepath.write_text(content)
+                filepath.write_text(content, encoding="utf-8")
                 return str(filepath)
             except Exception as e:
                 logger.warning("Failed to write large content to backup: %s", e)
@@ -558,7 +558,7 @@ class ChangeTracker:
         """Read content from memory or from backup file if filepath detected."""
         if content and Path(content).exists():
             try:
-                return Path(content).read_text()
+                return Path(content).read_text(encoding="utf-8")
             except Exception as e:
                 logger.warning("Failed to read backup file %s: %s", content, e)
                 return None

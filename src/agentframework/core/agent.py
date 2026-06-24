@@ -40,7 +40,7 @@ class AgentConfig:
     """Configuration for the agent."""
 
     provider: str = "ollama"
-    model: str = "qwen3:4b-instruct"
+    model: str = ""
     temperature: float = 0.3
     timeout: int = 60
     max_iterations: int = 50
@@ -94,6 +94,9 @@ class Agent:
         self.llm = llm_provider
         self.messages: list[Message] = []
         self.tool_map: dict[str, Tool] = {t.name: t for t in config.tools}
+        for tool in self.tool_map.values():
+            if hasattr(tool, '_llm') and tool._llm is None:
+                tool._llm = llm_provider
 
         self.session_manager = None
         self.change_tracker = ChangeTracker()

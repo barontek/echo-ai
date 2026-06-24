@@ -2,12 +2,15 @@
 
 import asyncio
 import os
+import platform
 import signal
 
 from pydantic import BaseModel
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
+
+_IS_WINDOWS = platform.system() == "Windows"
 
 
 class BashParams(BaseModel):
@@ -57,19 +60,24 @@ class BashTool(Tool):
                 return ToolResult(error="Command requires approval")
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            kwargs = dict(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                preexec_fn=os.setsid,
             )
+            if not _IS_WINDOWS:
+                kwargs["preexec_fn"] = os.setsid
+
+            proc = await asyncio.create_subprocess_shell(command, **kwargs)
             try:
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(), timeout=self.timeout
                 )
             except asyncio.TimeoutError:
                 try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    if _IS_WINDOWS:
+                        proc.kill()
+                    else:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 except ProcessLookupError:
                     pass
                 except OSError:

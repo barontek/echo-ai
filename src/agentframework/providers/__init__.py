@@ -131,5 +131,14 @@ def get_provider(
             timeout=timeout,
             num_ctx=num_ctx,
         )
+    elif name == "lm_studio":
+        from .lm_studio import LMStudioProvider
+
+        return LMStudioProvider(
+            model=model,
+            base_url=base_url or "http://localhost:1234",
+            api_key=api_key,
+            timeout=timeout,
+        )
     else:
         raise ValueError(f"Unknown provider: {name}")

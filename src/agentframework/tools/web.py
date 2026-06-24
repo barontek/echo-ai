@@ -262,8 +262,8 @@ class WebSearchTool(Tool):
             self.validator = SecurityValidator(SafetyConfig(allow_network=False))
 
         # Initialize search provider
-        provider_type = self.limits.get("provider", "duckduckgo")
-        from src.agentframework.tools.search_providers import get_search_provider
+        provider_type = self.limits.get("provider", "brave")
+        from .search_providers import get_search_provider
 
         try:
             self.search_provider = get_search_provider(provider_type)

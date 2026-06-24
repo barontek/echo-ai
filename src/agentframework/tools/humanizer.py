@@ -142,19 +142,17 @@ class HumanizerTool(Tool):
         )
         self._llm = llm_provider
 
-    @property
-    def llm(self):
+    def _get_provider(self):
         if self._llm is None:
             from ..providers import get_provider
             from ..config import load_config
-
             config = load_config()
             model_cfg = config.get("model", {})
             self._llm = get_provider(
                 name=model_cfg.get("provider", "ollama"),
-                model=model_cfg.get("name", "qwen3:4b-instruct"),
+                model=model_cfg.get("name", "qwen3.5:latest"),
                 base_url=model_cfg.get("base_url"),
-                timeout=model_cfg.get("timeout", 60),
+                timeout=model_cfg.get("timeout", 300),
                 num_ctx=model_cfg.get("num_ctx"),
             )
         return self._llm
@@ -178,13 +176,25 @@ class HumanizerTool(Tool):
         ]
 
         try:
-            response = await self.llm.chat(
+            response = await self._get_provider().chat(
                 messages=messages,
                 temperature=0.3,
             )
             result = response.content.strip()
             if not result:
                 return ToolResult(error="Humanizer returned empty result")
+            # Provider errors get returned as tool errors, not as humanized content
+            if any(
+                result.startswith(prefix)
+                for prefix in (
+                    "HTTP error:",
+                    "An internal error occurred",
+                    "LM Studio error:",
+                    "Anthropic error:",
+                    "OpenAI error:",
+                )
+            ):
+                return ToolResult(error=result)
             return ToolResult(content=result)
         except Exception as e:
-            return ToolResult(error=f"Humanizer failed: {e}")
+            return ToolResult(error=f"Humanizer failed: {str(e) or type(e).__name__}")

@@ -77,6 +77,12 @@ SAFE_COMMANDS = {
     "echo": [],
     "pwd": [],
     "cd": [],
+    "dir": [],
+    "type": [],
+    "findstr": [],
+    "icacls": [],
+    "attrib": [],
+    "where": [],
 }
 
 BLOCKED_EXTENSIONS = [
@@ -121,6 +127,11 @@ BLOCKED_PATHS = [
     "*/.git/config",
     "*.env",
     ".env.*",
+    "C:\\Windows\\System32\\config\\*",
+    "C:\\Windows\\System32\\Groups\\*",
+    "C:\\Windows\\System32\\drivers\\etc\\*",
+    "C:\\Users\\*\\NTUSER.DAT",
+    "C:\\Users\\*\\ntuser.dat",
 ]
 
 
@@ -365,7 +376,7 @@ class SecurityValidator:
 
             audit_path = Path(self.config.audit_log_path)
             audit_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(audit_path, "a") as f:
+            with open(audit_path, "a", encoding="utf-8") as f:
                 f.write(log_entry)
         except Exception as e:
             logger.error(f"Failed to write audit log: {e}")

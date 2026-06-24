@@ -17,7 +17,7 @@ class DenyTool(Tool):
         super().__init__(name="deny_tool", description="Always deny")
 
     async def execute(self, **kwargs):
-        return ToolResult(error="Denied by policy")
+        return ToolResult(error="Denied by policy", error_category="policy_denied")
 
 
 class ExplodeTool(Tool):

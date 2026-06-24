@@ -11,7 +11,7 @@ REM   run.bat tui     - Run TUI
 REM   run.bat install - Install dependencies only
 
 set "MODE=%~1"
-if "%MODE%"=="" set "MODE%"
+if "%MODE%"=="" set "MODE=dev"
 
 REM ============================================
 REM Setup Environment

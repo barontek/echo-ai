@@ -23,8 +23,9 @@ class ApiClient {
     );
   }
 
-  async getModels(): Promise<string[]> {
-    const res = await this.client.get<{ models: string[] }>('/api/models');
+  async getModels(provider?: string): Promise<string[]> {
+    const params = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+    const res = await this.client.get<{ models: string[] }>(`/api/models${params}`);
     return res.data.models || [];
   }
 
@@ -68,12 +69,12 @@ class ApiClient {
     await this.client.post('/api/sessions/rename', { session_id: sessionId, new_title: newTitle });
   }
 
-  async getPreferences(): Promise<{ model?: string }> {
-    const res = await this.client.get<{ model?: string }>('/api/preferences');
+  async getPreferences(): Promise<{ model?: string; provider?: string }> {
+    const res = await this.client.get<{ model?: string; provider?: string }>('/api/preferences');
     return res.data;
   }
 
-  async setPreferences(prefs: { model: string }): Promise<void> {
+  async setPreferences(prefs: { model: string; provider?: string }): Promise<void> {
     await this.client.post('/api/preferences', prefs);
   }
 

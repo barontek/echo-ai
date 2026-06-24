@@ -35,50 +35,56 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> LLMResponse:
         """Send a chat request to Anthropic."""
-        system_msg = None
-        filtered_messages = []
+        try:
+            system_msg = None
+            filtered_messages = []
 
-        for msg in messages:
-            if msg.get("role") == "system":
-                system_msg = msg["content"]
-            else:
-                filtered_messages.append(msg)
+            for msg in messages:
+                if msg.get("role") == "system":
+                    system_msg = msg["content"]
+                else:
+                    filtered_messages.append(msg)
 
-        params = {
-            "model": self.model,
-            "max_tokens": DEFAULT_MAX_TOKENS,
-            "messages": filtered_messages,
-            "temperature": temperature,
-        }
+            params = {
+                "model": self.model,
+                "max_tokens": DEFAULT_MAX_TOKENS,
+                "messages": filtered_messages,
+                "temperature": temperature,
+            }
 
-        if system_msg:
-            params["system"] = system_msg
+            if system_msg:
+                params["system"] = system_msg
 
-        if tools:
-            params["tools"] = tools
+            if tools:
+                params["tools"] = tools
 
-        async with AsyncAnthropic(
-            api_key=self.api_key,
-            timeout=self.timeout,
-        ) as client:
-            response = await client.messages.create(**params)
+            async with AsyncAnthropic(
+                api_key=self.api_key,
+                timeout=self.timeout,
+            ) as client:
+                response = await client.messages.create(**params)
 
-        content = ""
-        tool_calls = []
+            content = ""
+            tool_calls = []
 
-        for block in response.content:
-            if block.type == "text":
-                content += block.text
-            elif block.type == "tool_use":
-                tool_calls.append(
-                    LLMToolCall(
-                        id=block.id,
-                        name=block.name,
-                        arguments=block.input,
+            for block in response.content:
+                if block.type == "text":
+                    content += block.text
+                elif block.type == "tool_use":
+                    tool_calls.append(
+                        LLMToolCall(
+                            id=block.id,
+                            name=block.name,
+                            arguments=block.input,
+                        )
                     )
-                )
 
-        return LLMResponse(content=content, tool_calls=tool_calls)
+            return LLMResponse(content=content, tool_calls=tool_calls)
+        except Exception as e:
+            logger.error("Anthropic chat failed: %s", e)
+            return LLMResponse(
+                content=f"Anthropic error: {str(e) or type(e).__name__}"
+            )
 
     @retry(
         stop=stop_after_attempt(3),

@@ -14,7 +14,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
-from src.agentframework import web_api
 from src.agentframework.constants import THINKING_END, THINKING_START
 from src.agentframework.core.session_runtime import deserialize_messages
 
@@ -22,11 +21,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Chat"])
 
+# Lazy import to avoid circular dependency with web_api
+_web_api = None
+def _get_web_api():
+    global _web_api
+    if _web_api is None:
+        from src.agentframework import web_api as _web_api_module
+        _web_api = _web_api_module
+    return _web_api
+
 
 @router.post("/api/chat")
 async def chat(
-    message: web_api.ChatPayload,
-    state: Annotated[web_api.AppState, Depends(web_api.get_state)],
+    message: _get_web_api().ChatPayload,
+    state: Annotated[_get_web_api().AppState, Depends(_get_web_api().get_state)],
 ):
     """Non-streaming chat endpoint.
 
@@ -53,8 +61,9 @@ async def chat(
         ```
     """
     if state.agent is None:
-        state.agent = web_api._create_runtime_agent(
-            provider="ollama", model="qwen3:4b-instruct"
+        raise HTTPException(
+            status_code=400,
+            detail="No agent initialized. Select a model from the frontend UI first.",
         )
 
     prompt = message.content
@@ -80,10 +89,10 @@ async def chat(
 
 
 @router.post("/chat")
-async def handle_chat(request: web_api.ChatRequest):
+async def handle_chat(request: _get_web_api().ChatRequest):
     """Synchronous chat endpoint."""
     try:
-        agent = web_api.get_or_create_agent(request)
+        agent = _get_web_api().get_or_create_agent(request)
         response = await agent.run(request.prompt)
         session_id = None
         if agent.session_manager and agent.session_manager.current_session:
@@ -101,13 +110,13 @@ async def stream_chat(
     prompt: str,
     session_id: str | None = None,
     provider: str = "ollama",
-    model: str = "qwen3:4b-instruct",
+    model: str = "",
 ):
     """Server-Sent Events (SSE) streaming endpoint."""
-    req = web_api.ChatRequest(
+    req = _get_web_api().ChatRequest(
         prompt=prompt, session_id=session_id, provider=provider, model=model
     )
-    agent = web_api.get_or_create_agent(req)
+    agent = _get_web_api().get_or_create_agent(req)
 
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -185,22 +194,23 @@ async def websocket_chat(websocket: WebSocket):
         await websocket.close(code=4001, reason="HTTPS/WSS required")
         return
 
-    if web_api._api_key:
+    wapi = _get_web_api()
+    if wapi._api_key:
         auth = websocket.headers.get("authorization", "")
-        if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != web_api._api_key:
+        if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != wapi._api_key:
             await websocket.close(code=4001, reason="Unauthorized: invalid or missing API key")
             return
 
     await websocket.accept()
 
-    if web_api._state is None:
+    if _get_web_api()._state is None:
         await websocket.send_json(
             {"type": "error", "content": "Server not initialized"}
         )
         return
 
     _ws_message_history: list[dict[str, Any]] = []
-    active_agent: web_api.Agent | None = None
+    active_agent: _get_web_api().Agent | None = None
     streaming_task: asyncio.Task | None = None
     stop_requested = False
 
@@ -345,7 +355,7 @@ async def websocket_chat(websocket: WebSocket):
                 tc = getattr(msg, "tool_calls", None)
                 if tc:
                     has_tools = True
-                    tool_calls_info.extend(web_api._extract_tool_calls_info(tc))
+                    tool_calls_info.extend(_get_web_api()._extract_tool_calls_info(tc))
 
             if not accumulated_content:
                 # All streamed content went to thinking (no __THINKING_END__ seen).
@@ -429,18 +439,21 @@ async def websocket_chat(websocket: WebSocket):
             and active_agent.session_manager.current_session
             and not active_agent.session_manager.current_session.title
         ):
-            asyncio.create_task(web_api._generate_title_async(active_agent))
+            asyncio.create_task(_get_web_api()._generate_title_async(active_agent))
 
     try:
         # 1. Wait for config
         raw_config = await websocket.receive_text()
-        config = web_api.WsConfigPayload.model_validate_json(raw_config)
-        active_agent = web_api._create_runtime_agent(
+        config = _get_web_api().WsConfigPayload.model_validate_json(raw_config)
+        active_agent = _get_web_api()._create_runtime_agent(
             config.provider,
             config.model,
             api_key=config.api_key,
             session_id=config.session_id,
         )
+        # Store in global state so REST endpoints (sessions, config) use the same agent
+        if _get_web_api()._state is not None:
+            _get_web_api()._state.agent = active_agent
         # Trigger auto-title if needed
         if (
             active_agent.session_manager
@@ -469,7 +482,7 @@ async def websocket_chat(websocket: WebSocket):
         # 2. Continuous message loop
         while True:
             raw_message = await websocket.receive_text()
-            message = web_api.WsMessagePayload.model_validate_json(raw_message)
+            message = _get_web_api().WsMessagePayload.model_validate_json(raw_message)
 
             if message.type == "pong":
                 continue
@@ -649,12 +662,14 @@ async def websocket_chat(websocket: WebSocket):
     except (WebSocketDisconnect, json.JSONDecodeError, ValueError):
         pass
     except Exception as e:
-        logger.error(f"WebSocket connection error: {e}", exc_info=True)
+        import traceback
+        tb = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+        logger.error(f"WebSocket connection error: {e}\n{tb}", exc_info=True)
         with contextlib.suppress(Exception):
             await websocket.send_json(
                 {
                     "type": "error",
-                    "content": "WebSocket connection error. Please refresh and try again.",
+                    "content": f"WebSocket error: {e}",
                 }
             )
     finally:

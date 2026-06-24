@@ -23,6 +23,7 @@ const { mockApi, wsCalls } = vi.hoisted(() => ({
     updateConfig: vi.fn().mockResolvedValue(undefined),
     getPreferences: vi.fn().mockResolvedValue({}),
     setPreferences: vi.fn().mockResolvedValue(undefined),
+    getConfig: vi.fn().mockResolvedValue({ provider: 'ollama', model: 'qwen3:4b-instruct', temperature: 0.3, max_iterations: 50, session_enabled: true }),
     healthCheck: vi.fn().mockResolvedValue({ status: 'healthy', version: '0.1.0' }),
   },
   wsCalls: [] as string[],
@@ -384,7 +385,7 @@ describe('Session History Bug Tests', () => {
       await userEvent.click(screen.getByText('Use GPT-4'));
 
       await waitFor(() => {
-        expect(mockApi.setPreferences).toHaveBeenCalledWith({ model: 'gpt-4' });
+        expect(mockApi.setPreferences).toHaveBeenCalledWith({ model: 'gpt-4', provider: 'ollama' });
       });
     });
 

@@ -23,7 +23,7 @@ class ModelConfig(BaseModel):
     provider: str = Field(
         default="ollama", description="LLM provider: anthropic, openai, or ollama"
     )
-    name: str = Field(default="qwen3:4b-instruct", description="Model name")
+    name: str = Field(default="", description="Model name (selected from frontend UI)")
     base_url: str | None = Field(default=None, description="Base URL for Ollama")
     temperature: float = Field(
         default=0.3, ge=0.0, le=2.0, description="Model temperature"
@@ -169,7 +169,7 @@ def validate_config_schema(config: dict) -> "ConfigValidationResult":
 console = Console(color_system="256")
 logger = logging.getLogger(__name__)
 
-VALID_PROVIDERS = {"ollama", "openai", "anthropic"}
+VALID_PROVIDERS = {"ollama", "openai", "anthropic", "lm_studio"}
 VALID_TOOLS = set(TOOL_REGISTRY.keys())
 
 
@@ -262,7 +262,7 @@ def load_config(path: str | None = None) -> dict:
     """
     config_path = find_config_path(path)
     if config_path:
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
     else:
         config = {}
@@ -341,11 +341,8 @@ def get_safety_config(config: dict) -> SafetyConfig:
     approval_timeout = safety.get("approval_timeout", 30)
 
     def approval_callback(tool: str, details: str) -> bool:
-        """Request user approval for potentially dangerous operations.
-
-        Uses select.select() for timeout on stdin instead of threading.
-        """
-        import select
+        """Request user approval for potentially dangerous operations."""
+        import asyncio
         import sys
 
         warning_msg = _tool_warning(tool, details)
@@ -354,15 +351,22 @@ def get_safety_config(config: dict) -> SafetyConfig:
         )
 
         print("Allow? (y/N): ", end="", flush=True)
-        ready, _, _ = select.select([sys.stdin], [], [], approval_timeout)
-        if not ready:
+
+        try:
+            loop = asyncio.get_event_loop()
+            response = loop.run_until_complete(
+                asyncio.wait_for(
+                    loop.run_in_executor(None, sys.stdin.readline),
+                    timeout=approval_timeout,
+                )
+            )
+        except asyncio.TimeoutError:
             console.print(
                 f"[red]Approval timed out after {approval_timeout}s. Denying.[/red]"
             )
             return False
 
-        response = sys.stdin.readline().strip().lower()
-        return response in ("y", "yes")
+        return response.strip().lower() in ("y", "yes")
 
     return SafetyConfig(
         workspace=safety.get("workspace", "."),

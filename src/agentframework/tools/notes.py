@@ -74,7 +74,7 @@ class PersonalNotesTool(Tool):
                     error=f"Note '{filename}' already exists. Use append_to_note instead."
                 )
 
-            path.write_text(content)
+            path.write_text(content, encoding="utf-8")
             return ToolResult(content=f"Created note: {filename}.md")
         except Exception as e:
             return ToolResult(error=f"Failed to create note: {str(e)}")
@@ -86,7 +86,7 @@ class PersonalNotesTool(Tool):
             if not path.exists():
                 return ToolResult(error=f"Note '{filename}' not found.")
 
-            content = path.read_text()
+            content = path.read_text(encoding="utf-8")
             return ToolResult(content=f"# {filename}\n\n{content}")
         except Exception as e:
             return ToolResult(error=f"Failed to read note: {str(e)}")
@@ -98,13 +98,13 @@ class PersonalNotesTool(Tool):
 
             # Create with content if doesn't exist
             if not path.exists():
-                path.write_text(content)
+                path.write_text(content, encoding="utf-8")
                 return ToolResult(content=f"Created and added to note: {filename}.md")
 
             # Append
-            existing = path.read_text()
+            existing = path.read_text(encoding="utf-8")
             new_content = existing + "\n" + content
-            path.write_text(new_content)
+            path.write_text(new_content, encoding="utf-8")
             return ToolResult(content=f"Appended to note: {filename}.md")
         except Exception as e:
             return ToolResult(error=f"Failed to append: {str(e)}")
@@ -116,7 +116,7 @@ class PersonalNotesTool(Tool):
             query_lower = query.lower()
 
             for note_file in self.notes_dir.glob("*.md"):
-                content = note_file.read_text().lower()
+                content = note_file.read_text(encoding="utf-8").lower()
                 if query_lower in content:
                     # Show matching snippet
                     lines = content.split("\n")

@@ -27,6 +27,7 @@ class ToolResult:
 
     content: str = ""
     error: str | None = None
+    error_category: str | None = None
     metadata: dict[str, Any] | None = None
 
     def __str__(self) -> str:
@@ -116,7 +117,7 @@ TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
     "glob": {"base_dir": ".", "safety_config": None},
     "grep": {"base_dir": ".", "safety_config": None},
     "web_fetch": {"safety_config": None, "limits": None},
-    "web_search": {"safety_config": None, "provider": "duckduckgo", "limits": None},
+    "web_search": {"safety_config": None, "provider": "brave", "limits": None},
     "git": {"base_dir": ".", "safety_config": None},
     "memory": {"db_path": None, "safety_config": None},
     "notes": {"notes_dir": None},

@@ -35,8 +35,10 @@ function combineAssistantMessages(
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<ChatContextValue['sessions']>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [currentModel, setCurrentModel] = useState<string>('qwen3:4b-instruct');
+  const [currentModel, setCurrentModel] = useState<string>('');
+  const [currentProvider, setCurrentProvider] = useState<string>('ollama');
   const [models, setModels] = useState<string[]>([]);
+  const [providers] = useState<string[]>(['ollama', 'openai', 'anthropic', 'lm_studio']);
   const [messages, setMessages] = useState<ChatContextValue['messages']>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [isConnected, setIsConnected] = useState(false);
@@ -54,7 +56,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const MAX_RECONNECT_DELAY = 30_000;
 
   const connect = useCallback(() => {
-    debugLog('connect', { model: currentModel });
+    debugLog('connect', { model: currentModel, provider: currentProvider });
+
+    if (!currentModel) {
+      debugLog('connect', 'no model selected, deferring');
+      return;
+    }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       debugLog('connect', 'already connected');
@@ -78,8 +85,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setIsConnected(true);
         setConnectionStatus('connected');
         // Send config to initialize
-        const configMsg = JSON.stringify({ provider: 'ollama', model: currentModel });
-        debugLog('ws:send', { type: 'config', model: currentModel });
+        const configMsg = JSON.stringify({ provider: currentProvider, model: currentModel });
+        debugLog('ws:send', { type: 'config', provider: currentProvider, model: currentModel });
         ws.send(configMsg);
       };
 
@@ -296,7 +303,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('[Chat] Failed to connect:', err);
     }
-  }, [currentModel]);
+  }, [currentModel, currentProvider]);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -422,6 +429,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (prefsData.model) {
           setCurrentModel(prefsData.model);
         }
+        if (prefsData.provider) {
+          setCurrentProvider(prefsData.provider);
+        }
+        // Provider comes from saved preferences, not file config
+        // (the .env file may override for CLI but frontend lets user choose)
       } catch (err) {
         console.error('[Chat] Failed to load data:', err);
       }
@@ -495,10 +507,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (model: string) => {
       debugLog('selectModel', model);
       setCurrentModel(model);
-      api.setPreferences({ model }).catch(console.error);
+      api.setPreferences({ model, provider: currentProvider }).catch(console.error);
       reconnect();
     },
-    [reconnect]
+    [reconnect, currentProvider]
+  );
+
+  const selectProvider = useCallback(
+    (provider: string) => {
+      debugLog('selectProvider', provider);
+      setCurrentProvider(provider);
+      api.setPreferences({ model: currentModel, provider }).catch(console.error);
+      // Refetch models for the new provider
+      api.getModels(provider).then(setModels).catch(console.error);
+      reconnect();
+    },
+    [reconnect, currentModel]
   );
 
   const retryMessage = useCallback(
@@ -516,7 +540,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sessions,
     activeSessionId,
     currentModel,
+    currentProvider,
     models,
+    providers,
     messages,
     connectionStatus,
     isConnected,
@@ -532,6 +558,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     selectSession,
     deleteSession,
     selectModel,
+    selectProvider,
     reconnect,
   };
 

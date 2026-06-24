@@ -16,7 +16,7 @@ async def _async_read_text(path: Path) -> str:
         async with aiofiles.open(path, "r", encoding="utf-8") as f:
             return await f.read()
     except ImportError:
-        return path.read_text()
+        return path.read_text(encoding="utf-8")
 
 
 async def _async_write_text(path: Path, content: str) -> None:
@@ -29,7 +29,7 @@ async def _async_write_text(path: Path, content: str) -> None:
             await f.write(content)
     except ImportError:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
 
 
 class ReadFileParams(BaseModel):

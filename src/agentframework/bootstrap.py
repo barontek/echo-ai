@@ -45,8 +45,9 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
 
     agent_config = AgentConfig(
         provider=config.get("model", {}).get("provider", "ollama"),
-        model=config.get("model", {}).get("name", "qwen3:4b-instruct"),
+        model=config.get("model", {}).get("name", ""),
         temperature=config.get("model", {}).get("temperature", 0.3),
+        timeout=config.get("model", {}).get("timeout", 60),
         max_iterations=config.get("agent", {}).get("max_iterations", 50),
         system_prompt=config.get("agent", {}).get("system_prompt", ""),
         tools=get_tools(config, safety_config),

@@ -30,8 +30,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WEB_PORT = 8080
 DEFAULT_PROVIDER = "ollama"
-DEFAULT_MODEL = "qwen3:4b-instruct"
-FALLBACK_MODELS = [DEFAULT_MODEL, "llama3.2:latest", "phi3.5:latest"]
+DEFAULT_MODEL = ""  # Model is selected from frontend UI; empty means deferred
+FALLBACK_MODELS = ["llama3.2:latest", "phi3.5:latest"]
+OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
+ANTHROPIC_MODELS = [
+    "claude-sonnet-4-20250514",
+    "claude-4-5-sonnet-20250710",
+    "claude-3-5-sonnet-latest",
+    "claude-3-5-haiku-latest",
+    "claude-3-opus-latest",
+]
 
 _models_cache: dict[str, tuple[float, dict]] = {}
 _MODELS_CACHE_TTL = 60.0
@@ -43,7 +51,7 @@ def _load_preferences() -> dict[str, str]:
     _PREFERENCES_PATH.parent.mkdir(parents=True, exist_ok=True)
     if _PREFERENCES_PATH.exists():
         try:
-            return json.loads(_PREFERENCES_PATH.read_text())
+            return json.loads(_PREFERENCES_PATH.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {}
@@ -51,7 +59,7 @@ def _load_preferences() -> dict[str, str]:
 
 def _save_preferences(prefs: dict[str, str]) -> None:
     _PREFERENCES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _PREFERENCES_PATH.write_text(json.dumps(prefs, indent=2))
+    _PREFERENCES_PATH.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -72,12 +80,7 @@ def get_state() -> AppState:
     global _state
     if _state is None:
         _state = AppState()
-        try:
-            _state.agent = _create_runtime_agent(
-                provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
-            )
-        except Exception as e:
-            logger.debug(f"Ollama agent initialization deferred: {e}")
+        # Agent creation is deferred until the frontend sends a model via WebSocket
     return _state
 
 
@@ -91,20 +94,11 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     logger.info("  Version: 0.1.0")
     logger.info(f"  Provider: {DEFAULT_PROVIDER}")
-    logger.info(f"  Model: {DEFAULT_MODEL}")
+    logger.info("  Model: selected from frontend UI")
     logger.info("=" * 50)
 
     _state = AppState()
-    try:
-        _state.agent = _create_runtime_agent(
-            provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
-        )
-        if _state.agent and _state.agent.session_manager:
-            purged = _state.agent.session_manager.purge_empty_sessions()
-            if purged > 0:
-                logger.info(f"Purged {purged} empty sessions on startup")
-    except Exception as e:
-        logger.debug(f"Ollama agent initialization deferred: {e}")
+    # Agent creation is deferred — the frontend sends model/provider via WebSocket
     yield
     logger.info("Shutting down Echo AI...")
 
@@ -369,20 +363,29 @@ _configure_cors()
 
 
 def ensure_runtime_agent(state: AppState) -> Agent | None:
-    """Ensure application state has a usable runtime agent."""
+    """Ensure application state has a usable runtime agent.
+
+    If no agent exists yet, tries to create one from saved preferences
+    so that session listing works before the first WebSocket connection.
+    """
     if state.agent is None:
-        try:
-            state.agent = _create_runtime_agent(
-                provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL
-            )
-        except Exception as e:
-            logger.debug(f"Deferred agent creation failed: {e}")
+        prefs = _load_preferences()
+        model = prefs.get("model", "")
+        provider = prefs.get("provider", "ollama")
+        if model:
+            try:
+                state.agent = _create_runtime_agent(
+                    provider=provider, model=model
+                )
+                logger.info("Created agent from saved preferences: %s / %s", provider, model)
+            except Exception as e:
+                logger.debug("Could not create agent from preferences: %s", e)
     return state.agent
 
 
-async def get_models_data() -> dict[str, Any]:
-    """List available Ollama models for API callers (with caching)."""
-    cache_key = "models_async"
+async def get_models_data(provider: str = "ollama", base_url: str | None = None) -> dict[str, Any]:
+    """List available models for the given provider (with caching)."""
+    cache_key = f"models_async_{provider}"
     now = time.monotonic()
 
     # Check cache
@@ -393,25 +396,45 @@ async def get_models_data() -> dict[str, Any]:
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get("http://localhost:11434/api/tags", timeout=5.0)
-            response.raise_for_status()
-            models = response.json().get("models", [])
-            result = {"models": [m["name"] for m in models]}
+            if provider == "ollama":
+                url = f"{base_url or 'http://localhost:11434'}/api/tags"
+                response = await client.get(url, timeout=5.0)
+                response.raise_for_status()
+                models = response.json().get("models", [])
+                result = {"models": [m["name"] for m in models]}
+            elif provider == "lm_studio":
+                url = f"{base_url or 'http://localhost:1234'}/v1/models"
+                response = await client.get(url, timeout=5.0)
+                response.raise_for_status()
+                models = response.json().get("data", [])
+                result = {"models": [m["id"] for m in models]}
+            elif provider == "openai":
+                return {"models": OPENAI_MODELS}
+            elif provider == "anthropic":
+                return {"models": ANTHROPIC_MODELS}
+            else:
+                return {"models": FALLBACK_MODELS}
 
             # Update cache
             _models_cache[cache_key] = (now, result)
             return result
     except Exception as e:
-        logger.debug("Failed to fetch Ollama models: %s", e)
+        logger.debug("Failed to fetch %s models: %s", provider, e)
+        fallback = {
+            "ollama": FALLBACK_MODELS,
+            "lm_studio": ["google/gemma-4-12b-qat"],
+            "openai": OPENAI_MODELS,
+            "anthropic": ANTHROPIC_MODELS,
+        }.get(provider, FALLBACK_MODELS)
         return {
-            "models": FALLBACK_MODELS,
-            "error": "Could not reach Ollama. Showing fallback models.",
+            "models": fallback,
+            "error": f"Could not reach {provider}. Showing fallback models.",
         }
 
 
-def get_models_sync() -> dict[str, Any]:
-    """List available Ollama models for in-process UI callers (with caching)."""
-    cache_key = "models_sync"
+def get_models_sync(provider: str = "ollama", base_url: str | None = None) -> dict[str, Any]:
+    """List available models for the given provider, sync version (with caching)."""
+    cache_key = f"models_sync_{provider}"
     now = time.monotonic()
 
     # Check cache
@@ -421,19 +444,39 @@ def get_models_sync() -> dict[str, Any]:
             return cached_data
 
     try:
-        response = httpx.get("http://localhost:11434/api/tags", timeout=5.0)
-        response.raise_for_status()
-        models = response.json().get("models", [])
-        result = {"models": [m["name"] for m in models]}
+        if provider == "ollama":
+            url = f"{base_url or 'http://localhost:11434'}/api/tags"
+            response = httpx.get(url, timeout=5.0)
+            response.raise_for_status()
+            models = response.json().get("models", [])
+            result = {"models": [m["name"] for m in models]}
+        elif provider == "lm_studio":
+            url = f"{base_url or 'http://localhost:1234'}/v1/models"
+            response = httpx.get(url, timeout=5.0)
+            response.raise_for_status()
+            models = response.json().get("data", [])
+            result = {"models": [m["id"] for m in models]}
+        elif provider == "openai":
+            return {"models": OPENAI_MODELS}
+        elif provider == "anthropic":
+            return {"models": ANTHROPIC_MODELS}
+        else:
+            return {"models": FALLBACK_MODELS}
 
         # Update cache
         _models_cache[cache_key] = (now, result)
         return result
     except Exception as e:
-        logger.debug("Failed to fetch Ollama models: %s", e)
+        logger.debug("Failed to fetch %s models: %s", provider, e)
+        fallback = {
+            "ollama": FALLBACK_MODELS,
+            "lm_studio": ["google/gemma-4-12b-qat"],
+            "openai": OPENAI_MODELS,
+            "anthropic": ANTHROPIC_MODELS,
+        }.get(provider, FALLBACK_MODELS)
         return {
-            "models": FALLBACK_MODELS,
-            "error": "Could not reach Ollama. Showing fallback models.",
+            "models": fallback,
+            "error": f"Could not reach {provider}. Showing fallback models.",
         }
 
 
@@ -529,21 +572,30 @@ def _create_runtime_agent(
     session_id: str | None = None,
 ) -> Agent:
     """Create an agent for the web UI with the same tool config as CLI."""
-    # Safety check for model name
-    if not model or model == "Loading models..." or "models..." in model:
-        model = DEFAULT_MODEL
+    if not model:
+        raise ValueError("Model name is required. Select a model from the frontend UI.")
     config = load_config()
     safety_config = get_safety_config(config)
     tools = get_tools(config, safety_config)
+
+    base_url = config.get("model", {}).get("base_url")
+    # Normalize base_url so env overrides (ECHO_BASE_URL) don't mix provider ports
+    if provider == "ollama" and base_url and base_url != "http://localhost:11434":
+        base_url = None  # Let OllamaProvider use its own default
+    elif provider == "lm_studio" and base_url and base_url != "http://localhost:1234":
+        base_url = None  # Let LM Studio provider use its own default
+    elif provider not in ("ollama", "lm_studio"):
+        base_url = None  # Cloud providers don't need a base URL from config
 
     agent_config = AgentConfig(
         provider=provider,
         model=model,
         temperature=config.get("model", {}).get("temperature", 0.3),
+        timeout=config.get("model", {}).get("timeout", 60),
         max_iterations=config.get("agent", {}).get("max_iterations", 50),
         system_prompt=config.get("agent", {}).get("system_prompt", ""),
         tools=tools,
-        base_url=config.get("model", {}).get("base_url"),
+        base_url=base_url,
         session_enabled=config.get("agent", {}).get("session_enabled", True),
         session_dir=config.get("agent", {}).get("session_dir", DEFAULT_SESSION_DIR),
         num_ctx=config.get("model", {}).get("num_ctx"),
@@ -566,12 +618,13 @@ def _create_runtime_agent(
 
 class ConfigPayload(BaseModel):
     provider: str = "ollama"
-    model: str = "qwen3:4b-instruct"
+    model: str = ""
     api_key: str | None = None
 
 
 class PreferencesPayload(BaseModel):
     model: str
+    provider: str | None = None
 
 
 class ChatPayload(BaseModel):
@@ -585,7 +638,7 @@ class SessionRenamePayload(BaseModel):
 
 class WsConfigPayload(BaseModel):
     provider: str = "ollama"
-    model: str = Field(default="qwen3:4b-instruct", min_length=1)
+    model: str = Field(min_length=1, description="Model name, required for agent creation")
     api_key: str | None = None
     session_id: str | None = None
 
@@ -617,9 +670,11 @@ async def get_preferences():
 
 @app.post("/api/preferences", tags=["Preferences"])
 async def update_preferences(payload: PreferencesPayload):
-    """Persist user preferences (last used model)."""
+    """Persist user preferences (last used model and provider)."""
     prefs = _load_preferences()
     prefs["model"] = payload.model
+    if payload.provider:
+        prefs["provider"] = payload.provider
     _save_preferences(prefs)
     return {"status": "ok"}
 
@@ -631,23 +686,34 @@ async def get_config(
     """Get the current agent configuration.
 
     Returns the current LLM provider, model, and other settings.
+    If no agent is initialized yet, returns defaults from config.yaml.
 
     Returns:
         {"config": {"provider": "...", "model": "...", ...}}
     """
-    if not state.agent:
-        raise HTTPException(
-            status_code=503,
-            detail="Agent not initialized. Please start the server first.",
-        )
-    agent_config = state.agent.config
+    if state.agent:
+        agent_config = state.agent.config
+        return {
+            "config": {
+                "provider": agent_config.provider,
+                "model": agent_config.model,
+                "temperature": agent_config.temperature,
+                "max_iterations": agent_config.max_iterations,
+                "session_enabled": agent_config.session_enabled,
+            }
+        }
+    # No agent yet — return the file-config defaults (model will be empty,
+    # provider comes from config.yaml)
+    cfg = load_config()
+    model_cfg = cfg.get("model", {})
+    agent_cfg = cfg.get("agent", {})
     return {
         "config": {
-            "provider": agent_config.provider,
-            "model": agent_config.model,
-            "temperature": agent_config.temperature,
-            "max_iterations": agent_config.max_iterations,
-            "session_enabled": agent_config.session_enabled,
+            "provider": model_cfg.get("provider", "ollama"),
+            "model": model_cfg.get("name", ""),
+            "temperature": model_cfg.get("temperature", 0.3),
+            "max_iterations": agent_cfg.get("max_iterations", 50),
+            "session_enabled": agent_cfg.get("session_enabled", True),
         }
     }
 
@@ -713,7 +779,7 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     prompt: str
     provider: str = "ollama"
-    model: str = "qwen3:4b-instruct"
+    model: str = ""
     api_key: str | None = None
     stream: bool = False
 
@@ -728,6 +794,11 @@ def get_or_create_agent(req: ChatRequest) -> Agent:
     if _state is None:
         _state = AppState()
     if _state.agent is None:
+        if not req.model:
+            raise HTTPException(
+                status_code=400,
+                detail="Model name is required. Select a model from the frontend UI.",
+            )
         _state.agent = _create_runtime_agent(
             provider=req.provider, model=req.model, api_key=req.api_key
         )

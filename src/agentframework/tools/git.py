@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import platform
 
 from pydantic import BaseModel
 
@@ -104,7 +105,8 @@ class GitTool(Tool):
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_EDITOR"] = "true"
         env["GIT_SEQUENCE_EDITOR"] = "true"
-        env["DEBIAN_FRONTEND"] = "noninteractive"
+        if platform.system() != "Windows":
+            env["DEBIAN_FRONTEND"] = "noninteractive"
 
         try:
             proc = await asyncio.create_subprocess_shell(

@@ -75,7 +75,7 @@ class DelegateTool(Tool):
         # Create sub-agent config
         agent_config = AgentConfig(
             provider=getattr(self.agent.config, "provider", "ollama"),
-            model=sub_config.model or getattr(self.agent.config, "model", "qwen3:4b"),
+            model=sub_config.model or getattr(self.agent.config, "model", "qwen3.5:latest"),
             temperature=getattr(self.agent.config, "temperature", 0.3),
             system_prompt=system_prompt,
             tools=selected_tools,

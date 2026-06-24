@@ -7,15 +7,19 @@ export const Sidebar = memo(function Sidebar() {
     activeSessionId,
     models,
     currentModel,
+    currentProvider,
+    providers,
     selectSession,
     createSession,
     selectModel,
+    selectProvider,
     deleteSession,
     sidebarOpen,
     setSidebarOpen,
   } = useChat();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showProviderDropdown, setShowProviderDropdown] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const filteredSessions = !searchTerm
@@ -56,6 +60,29 @@ export const Sidebar = memo(function Sidebar() {
                 }}
               >
                 {m}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="model-selector">
+        <button className="model-button" onClick={() => setShowProviderDropdown(!showProviderDropdown)}>
+          <span className="model-name">{currentProvider}</span>
+          <span className="dropdown-arrow">▼</span>
+        </button>
+        {showProviderDropdown && (
+          <div className="model-dropdown">
+            {providers.map((p) => (
+              <button
+                key={p}
+                className={`model-option ${p === currentProvider ? 'active' : ''}`}
+                onClick={() => {
+                  selectProvider(p);
+                  setShowProviderDropdown(false);
+                }}
+              >
+                {p}
               </button>
             ))}
           </div>

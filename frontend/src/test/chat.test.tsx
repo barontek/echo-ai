@@ -333,6 +333,8 @@ describe('Session History Bug Tests', () => {
     });
 
     it('should track current model', async () => {
+      mockApi.getPreferences.mockResolvedValueOnce({ model: 'qwen3:4b-instruct' });
+
       function TestComponent() {
         const { currentModel } = useChat();
         return <span data-testid="current-model">{currentModel}</span>;
@@ -344,7 +346,9 @@ describe('Session History Bug Tests', () => {
         </ChatProvider>
       );
 
-      expect(screen.getByTestId('current-model').textContent).toBe('qwen3:4b-instruct');
+      await waitFor(() => {
+        expect(screen.getByTestId('current-model').textContent).toBe('qwen3:4b-instruct');
+      });
     });
 
     it('should load model from API preferences on mount', async () => {

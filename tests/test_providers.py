@@ -108,37 +108,21 @@ async def test_openai_chat_streaming():
         mock_client = AsyncMock()
         mock_openai.return_value.__aenter__.return_value = mock_client
 
-        class MockStream:
-            def __init__(self):
-                self._events = [
-                    MagicMock(type="content.delta", delta="Stream"),
-                    MagicMock(type="content.delta", delta=" Chunk"),
-                ]
-
-            def __aiter__(self):
-                return self._gen()
-
-            async def _gen(self):
-                for e in self._events:
-                    yield e
-
-            async def get_final_completion(self):
-                msg = MagicMock()
-                msg.content = "Stream Chunk"
-                msg.tool_calls = None
+        async def _mock_stream():
+            for content in ["Stream", " Chunk"]:
+                delta = MagicMock()
+                delta.content = content
+                delta.tool_calls = None
+                delta.refusal = None
                 choice = MagicMock()
-                choice.message = msg
-                completion = MagicMock()
-                completion.choices = [choice]
-                return completion
+                choice.delta = delta
+                choice.index = 0
+                choice.finish_reason = None
+                chunk = MagicMock()
+                chunk.choices = [choice]
+                yield chunk
 
-        class MockStreamManager:
-            async def __aenter__(self):
-                return MockStream()
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-        mock_client.chat.completions.stream = MagicMock(return_value=MockStreamManager())
+        mock_client.chat.completions.create = AsyncMock(return_value=_mock_stream())
 
         provider = OpenAIProvider(model="gpt-4", api_key="test-key")
         chunks = []

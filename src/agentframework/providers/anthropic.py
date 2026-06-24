@@ -1,5 +1,6 @@
 """Anthropic provider implementation."""
 
+import logging
 import os
 from typing import Any
 
@@ -13,6 +14,8 @@ from tenacity import (
 
 from ..constants import DEFAULT_MAX_TOKENS
 from . import LLMProvider, LLMResponse, LLMToolCall
+
+logger = logging.getLogger(__name__)
 
 
 class AnthropicProvider(LLMProvider):

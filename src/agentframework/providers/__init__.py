@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol, runtime_checkable
 
+from ..constants import OLLAMA_BASE_URL, LM_STUDIO_BASE_URL
+
 
 @dataclass(slots=True)
 class LLMResponse:
@@ -126,7 +128,7 @@ def get_provider(
 
         return OllamaProvider(
             model=model,
-            base_url=base_url or "http://localhost:11434",
+            base_url=base_url or OLLAMA_BASE_URL,
             api_key=api_key,
             timeout=timeout,
             num_ctx=num_ctx,
@@ -136,7 +138,7 @@ def get_provider(
 
         return LMStudioProvider(
             model=model,
-            base_url=base_url or "http://localhost:1234",
+            base_url=base_url or LM_STUDIO_BASE_URL,
             api_key=api_key,
             timeout=timeout,
         )

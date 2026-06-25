@@ -6,6 +6,7 @@ import sys
 import tempfile
 from pydantic import BaseModel, Field
 
+from ..constants import PYTHON_EXEC_TIMEOUT
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
@@ -21,7 +22,7 @@ class PythonTool(Tool):
 
     parameters_model = PythonExecParams
 
-    def __init__(self, safety_config: SafetyConfig | None = None, execution_timeout: int = 10):
+    def __init__(self, safety_config: SafetyConfig | None = None, execution_timeout: int = PYTHON_EXEC_TIMEOUT):
         super().__init__(
             name="python_execute",
             description="Executes a Python script and returns the stdout and stderr. Use this for math, data analysis, or interacting with local files. You must use print() to see the results of your code.",

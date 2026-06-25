@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -13,11 +15,14 @@ from typing import Annotated, Any
 
 import httpx
 import uvicorn
+import os
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
+from src.agentframework.constants import ECHO_DATA_DIR, OLLAMA_BASE_URL, LM_STUDIO_BASE_URL, CORS_FRONTEND_PORT, CORS_ALT_FRONTEND_PORT, CORS_STREAMLIT_PORT
 from src.agentframework.core import Agent, AgentConfig, create_agent
 from src.agentframework.config import DEFAULT_SESSION_DIR, get_safety_config, get_tools, load_config
 from src.agentframework.rate_limit import RateLimiter
@@ -28,23 +33,20 @@ from src.agentframework.session import DBSessionModel
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_WEB_PORT = 8080
-DEFAULT_PROVIDER = "ollama"
-DEFAULT_MODEL = ""  # Model is selected from frontend UI; empty means deferred
-FALLBACK_MODELS = ["llama3.2:latest", "phi3.5:latest"]
-OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
-ANTHROPIC_MODELS = [
-    "claude-sonnet-4-20250514",
-    "claude-4-5-sonnet-20250710",
-    "claude-3-5-sonnet-latest",
-    "claude-3-5-haiku-latest",
-    "claude-3-opus-latest",
-]
+DEFAULT_WEB_PORT = int(os.environ.get("ECHO_WEB_PORT", "8080"))
+DEFAULT_PROVIDER = os.environ.get("ECHO_DEFAULT_PROVIDER", "ollama")
+DEFAULT_MODEL = os.environ.get("ECHO_DEFAULT_MODEL", "")  # Model is selected from frontend UI; empty means deferred
+FALLBACK_MODELS = ast.literal_eval(os.environ.get("ECHO_FALLBACK_MODELS", '["llama3.2:latest", "phi3.5:latest"]'))
+OPENAI_MODELS = ast.literal_eval(os.environ.get("ECHO_OPENAI_MODELS", '["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]'))
+ANTHROPIC_MODELS = ast.literal_eval(os.environ.get(
+    "ECHO_ANTHROPIC_MODELS",
+    '["claude-sonnet-4-20250514", "claude-4-5-sonnet-20250710", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"]',
+))
 
 _models_cache: dict[str, tuple[float, dict]] = {}
 _MODELS_CACHE_TTL = 60.0
 
-_PREFERENCES_PATH = Path.home() / ".echo-ai" / "preferences.json"
+_PREFERENCES_PATH = ECHO_DATA_DIR / "preferences.json"
 
 
 def _load_preferences() -> dict[str, str]:
@@ -322,19 +324,19 @@ def _get_cors_config() -> dict:
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
         local_network_origins = [
-            f"http://{local_ip}:3000",
-            f"http://{local_ip}:8080",
-            f"http://{local_ip}:3001",
+            f"http://{local_ip}:{CORS_FRONTEND_PORT}",
+            f"http://{local_ip}:{DEFAULT_WEB_PORT}",
+            f"http://{local_ip}:{CORS_ALT_FRONTEND_PORT}",
         ]
     except Exception:
         pass
 
     default_origins = [
-        "http://localhost:3000",
+        f"http://localhost:{CORS_FRONTEND_PORT}",
         f"http://localhost:{DEFAULT_WEB_PORT}",
         f"http://127.0.0.1:{DEFAULT_WEB_PORT}",
-        "http://localhost:8501",
-        "http://127.0.0.1:8501",
+        f"http://localhost:{CORS_STREAMLIT_PORT}",
+        f"http://127.0.0.1:{CORS_STREAMLIT_PORT}",
     ]
 
     all_origins = cors_config.get("origins", default_origins + local_network_origins)
@@ -397,13 +399,13 @@ async def get_models_data(provider: str = "ollama", base_url: str | None = None)
     try:
         async with httpx.AsyncClient() as client:
             if provider == "ollama":
-                url = f"{base_url or 'http://localhost:11434'}/api/tags"
+                url = f"{base_url or OLLAMA_BASE_URL}/api/tags"
                 response = await client.get(url, timeout=5.0)
                 response.raise_for_status()
                 models = response.json().get("models", [])
                 result = {"models": [m["name"] for m in models]}
             elif provider == "lm_studio":
-                url = f"{base_url or 'http://localhost:1234'}/v1/models"
+                url = f"{base_url or LM_STUDIO_BASE_URL}/v1/models"
                 response = await client.get(url, timeout=5.0)
                 response.raise_for_status()
                 models = response.json().get("data", [])
@@ -580,9 +582,9 @@ def _create_runtime_agent(
 
     base_url = config.get("model", {}).get("base_url")
     # Normalize base_url so env overrides (ECHO_BASE_URL) don't mix provider ports
-    if provider == "ollama" and base_url and base_url != "http://localhost:11434":
+    if provider == "ollama" and base_url and base_url != OLLAMA_BASE_URL:
         base_url = None  # Let OllamaProvider use its own default
-    elif provider == "lm_studio" and base_url and base_url != "http://localhost:1234":
+    elif provider == "lm_studio" and base_url and base_url != LM_STUDIO_BASE_URL:
         base_url = None  # Let LM Studio provider use its own default
     elif provider not in ("ollama", "lm_studio"):
         base_url = None  # Cloud providers don't need a base URL from config
@@ -658,7 +660,8 @@ class WorkflowRunPayload(BaseModel):
 @app.get("/", include_in_schema=False)
 async def index():
     """Redirect to React UI."""
-    return RedirectResponse(url="http://localhost:3000", status_code=302)
+    frontend_url = os.environ.get("ECHO_FRONTEND_URL", "http://localhost:3000")
+    return RedirectResponse(url=frontend_url, status_code=302)
 
 
 

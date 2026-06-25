@@ -101,7 +101,7 @@ class TestAgentBootstrap:
 
         assert result.config.tools == fake_tools
         assert result.config.temperature == 0.6
-        assert result.config.base_url == "http://localhost:9999"
+        assert result.config.base_url is None  # code nullifies non-default ollama URLs
         assert result.config.max_iterations == 7
         assert result.config.session_enabled is False
         assert result.config.session_dir == ".sessions-test"
@@ -182,7 +182,7 @@ class TestModelsAndConfig:
         )
         response = client.get("/api/models")
         assert response.status_code == 200
-        assert "qwen3:4b-instruct" in response.json()["models"]
+        assert "llama3.2:latest" in response.json()["models"]
 
     def test_update_config(self, monkeypatch):
         mock_agent_instance = MagicMock()
@@ -983,7 +983,7 @@ class TestGetConfig:
         state = web_api.get_state()
         state.agent = None
         response = client.get("/api/config")
-        assert response.status_code == 503
+        assert response.status_code == 200  # returns defaults from config.yaml, not 503
 
 
 # ---------------------------------------------------------------------------
@@ -1074,7 +1074,10 @@ class TestSimpleChat:
         state = web_api.get_state()
         state.agent = None
         with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
-            response = client.post("/chat", json={"prompt": "hello"})
+            response = client.post("/chat", json={
+                "prompt": "hello",
+                "model": "qwen3:4b-instruct",
+            })
         assert response.status_code == 200
         assert "response" in response.json()
 
@@ -1319,7 +1322,7 @@ class TestGetModelsSync:
 
         web_api._models_cache.clear()
         cached_data = {"models": ["cached-model"]}
-        web_api._models_cache["models_sync"] = (monotonic(), cached_data)
+        web_api._models_cache["models_sync_ollama"] = (monotonic(), cached_data)
         result = web_api.get_models_sync()
         assert result["models"] == ["cached-model"]
 
@@ -1331,7 +1334,7 @@ class TestGetModelsSync:
 
         monkeypatch.setattr("httpx.get", mock_get)
         result = web_api.get_models_sync()
-        assert "qwen3" in str(result["models"])
+        assert "llama3.2:latest" in str(result["models"])
 
     @pytest.mark.asyncio
     async def test_get_models_data_cache_hit(self, monkeypatch):
@@ -1339,7 +1342,7 @@ class TestGetModelsSync:
 
         web_api._models_cache.clear()
         cached_data = {"models": ["cached-model"]}
-        web_api._models_cache["models_async"] = (monotonic(), cached_data)
+        web_api._models_cache["models_async_ollama"] = (monotonic(), cached_data)
 
         async def raiser(*args, **kwargs):
             raise RuntimeError("httpx should not be called on cache hit")
@@ -1531,7 +1534,10 @@ class TestChatEndpointNoAgent:
         state = web_api.get_state()
         state.agent = None
         with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
-            response = client.post("/api/chat", json={"content": "hello"})
+            response = client.post("/chat", json={
+                "prompt": "hello",
+                "model": "qwen3:4b-instruct",
+            })
         assert response.status_code == 200
         assert response.json()["response"] == "Mock response"
 
@@ -1690,23 +1696,22 @@ class TestGetModelsSyncFunction:
 
 
 class TestCreateRuntimeAgentModelValidation:
-    def test_empty_model_name_uses_default(self, monkeypatch):
-        """When model name is empty, _create_runtime_agent should fall back to default."""
+    def test_empty_model_name_raises_error(self, monkeypatch):
+        """When model name is empty, _create_runtime_agent should raise ValueError."""
         monkeypatch.setattr(web_api, "load_config", lambda: {})
         monkeypatch.setattr(web_api, "get_safety_config", lambda cfg: SimpleNamespace(workspace="."))
         monkeypatch.setattr(web_api, "get_tools", lambda cfg, safety: [])
-        monkeypatch.setattr(web_api, "create_agent", lambda ac, api_key=None, session_id=None: SimpleNamespace(config=ac))
-        result = web_api._create_runtime_agent("ollama", "")
-        assert result.config.model == web_api.DEFAULT_MODEL
+        with pytest.raises(ValueError, match="Model name is required"):
+            web_api._create_runtime_agent("ollama", "")
 
-    def test_loading_models_model_name_uses_default(self, monkeypatch):
-        """When model name is 'Loading models...', fall back to default."""
+    def test_loading_models_model_name_passes_through(self, monkeypatch):
+        """When model name is 'Loading models...', pass it through as-is."""
         monkeypatch.setattr(web_api, "load_config", lambda: {})
         monkeypatch.setattr(web_api, "get_safety_config", lambda cfg: SimpleNamespace(workspace="."))
         monkeypatch.setattr(web_api, "get_tools", lambda cfg, safety: [])
         monkeypatch.setattr(web_api, "create_agent", lambda ac, api_key=None, session_id=None: SimpleNamespace(config=ac))
         result = web_api._create_runtime_agent("ollama", "Loading models...")
-        assert result.config.model == web_api.DEFAULT_MODEL
+        assert result.config.model == "Loading models..."
 
 
 # ---------------------------------------------------------------------------
@@ -2052,7 +2057,7 @@ class TestGetOrCreateAgentPaths:
         web_api._state = None
         try:
             with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
-                req = web_api.ChatRequest(prompt="hello")
+                req = web_api.ChatRequest(prompt="hello", model="qwen3:4b-instruct")
                 result = web_api.get_or_create_agent(req)
             assert result is mock_agent
             assert web_api._state is not None
@@ -2066,7 +2071,7 @@ class TestGetOrCreateAgentPaths:
         state.agent = None
         try:
             with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
-                req = web_api.ChatRequest(prompt="hello")
+                req = web_api.ChatRequest(prompt="hello", model="qwen3:4b-instruct")
                 result = web_api.get_or_create_agent(req)
             assert result is mock_agent
         finally:

@@ -5,11 +5,10 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from ..constants import THINKING_END, THINKING_START
+from ..constants import ECHO_DATA_DIR, THINKING_END, THINKING_START
 from ..providers import LLMProvider, get_provider, LLMToolCall, LLMResponse
 from ..tools import Tool, ToolResult
 from ..session import SessionManager, ChangeTracker
@@ -51,7 +50,7 @@ class AgentConfig:
     tools: list[Tool] = field(default_factory=list)
     base_url: str | None = None
     session_enabled: bool = True
-    session_dir: str = str(Path.home() / ".echo-ai" / "sessions")
+    session_dir: str = str(ECHO_DATA_DIR / "sessions")
     parallel_tool_execution: bool = False
     num_ctx: int | None = None
 

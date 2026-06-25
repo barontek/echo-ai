@@ -1,7 +1,7 @@
 """Tests for complex tools."""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from agentframework.tools.notes import PersonalNotesTool
 from agentframework.tools.web import WebFetchTool, WebSearchTool
@@ -155,15 +155,16 @@ async def test_web_search_tool(mock_crawler_class):
 
     mock_crawler.arun.side_effect = mock_arun
 
-    # Test mock DDGS
-    with patch("ddgs.DDGS") as mock_ddgs:
-        instance = mock_ddgs.return_value
-        instance.text.return_value = [
-            {"href": "http://example.com/1", "title": "Result 1", "body": "Snippet 1"},
-            {"href": "http://example.com/2", "title": "Result 2", "body": "Snippet 2"},
-        ]
+    # Mock the search provider
+    mock_provider = AsyncMock()
+    mock_provider.search.return_value = [
+        {"url": "http://example.com/1", "title": "Result 1", "snippet": "Snippet 1"},
+        {"url": "http://example.com/2", "title": "Result 2", "snippet": "Snippet 2"},
+    ]
 
-        res = await tool.execute(query="query")
-        assert not res.error
-        # Results format varies by Python/package version
-        assert "Result 1" in res.content or "example.com/1" in res.content
+    tool.search_provider = mock_provider
+
+    res = await tool.execute(query="query")
+    assert not res.error
+    # Results format varies by Python/package version
+    assert "Result 1" in res.content or "example.com/1" in res.content

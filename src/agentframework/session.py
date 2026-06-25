@@ -10,10 +10,12 @@ from typing import Any
 from sqlalchemy import create_engine, Column, String, DateTime, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from .constants import ECHO_DATA_DIR
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_SESSION_DIR = str(Path.home() / ".echo-ai" / "sessions")
-DEFAULT_BACKUP_DIR = str(Path.home() / ".echo-ai" / "sessions" / ".backups")
+DEFAULT_SESSION_DIR = str(ECHO_DATA_DIR / "sessions")
+DEFAULT_BACKUP_DIR = str(ECHO_DATA_DIR / "sessions" / ".backups")
 
 Base = declarative_base()
 

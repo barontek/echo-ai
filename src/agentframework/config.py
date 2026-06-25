@@ -10,11 +10,12 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 from rich.console import Console
 
+from .constants import ECHO_DATA_DIR
 from .safety import SafetyConfig, SecurityValidator
 from .tools import TOOL_CONFIG_KEYS, TOOL_REGISTRY
 
-DEFAULT_SESSION_DIR = str(Path.home() / ".echo-ai" / "sessions")
-DEFAULT_CONFIG_PATH = str(Path.home() / ".echo-ai" / "config.yaml")
+DEFAULT_SESSION_DIR = str(ECHO_DATA_DIR / "sessions")
+DEFAULT_CONFIG_PATH = str(ECHO_DATA_DIR / "config.yaml")
 
 
 class ModelConfig(BaseModel):
@@ -354,6 +355,11 @@ def get_safety_config(config: dict) -> SafetyConfig:
 
         try:
             loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        try:
             response = loop.run_until_complete(
                 asyncio.wait_for(
                     loop.run_in_executor(None, sys.stdin.readline),

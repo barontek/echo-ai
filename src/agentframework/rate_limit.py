@@ -6,13 +6,15 @@ import sqlite3
 import time
 from pathlib import Path
 
+from .constants import ECHO_DATA_DIR
+
 
 class RateLimiter:
     """Rate limiter backed by SQLite for persistence across restarts."""
 
     def __init__(self, db_path: str | None = None) -> None:
         if db_path is None:
-            db_path = str(Path.home() / ".echo-ai" / "rate_limit.db")
+            db_path = str(ECHO_DATA_DIR / "rate_limit.db")
         self.db_path = db_path
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn: sqlite3.Connection | None = None

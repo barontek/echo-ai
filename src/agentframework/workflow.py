@@ -3,6 +3,8 @@
 import asyncio
 from typing import Any, Callable, Coroutine, AsyncGenerator, Union
 
+from .constants import WORKFLOW_MAX_ITERATIONS
+
 State = dict[str, Any]
 NodeFunc = Callable[[State], Coroutine[Any, Any, State]]
 
@@ -87,9 +89,8 @@ class WorkflowGraph:
 
         # Hard cap to prevent infinite recursive graphs
         iteration = 0
-        max_iterations = 100
 
-        while current_node_name != self.END and iteration < max_iterations:
+        while current_node_name != self.END and iteration < WORKFLOW_MAX_ITERATIONS:
             iteration += 1
             if current_node_name not in self.nodes:
                 raise ValueError(f"Node {current_node_name} not found in graph")
@@ -140,7 +141,7 @@ class WorkflowGraph:
             else:
                 current_node_name = edge.condition
 
-        if current_node_name == self.END or iteration >= max_iterations:
+        if current_node_name == self.END or iteration >= WORKFLOW_MAX_ITERATIONS:
             yield self.END, state
 
     def to_mermaid(self) -> str:

@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from . import Tool, ToolResult
+from ..constants import ECHO_DATA_DIR
 
 
 class NotesParams(BaseModel):
@@ -29,7 +30,7 @@ class PersonalNotesTool(Tool):
         )
 
         if notes_dir is None:
-            self.notes_dir = Path.home() / ".echo-ai" / "notes"
+            self.notes_dir = ECHO_DATA_DIR / "notes"
         else:
             self.notes_dir = Path(notes_dir)
 

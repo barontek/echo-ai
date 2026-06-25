@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from . import Tool, ToolResult
+from ..constants import ECHO_DATA_DIR
 from ..safety import SafetyConfig, SecurityValidator
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class MemoryTool(Tool):
             self.validator = SecurityValidator(SafetyConfig())
 
         if db_path is None:
-            self.db_path = Path.home() / ".echo-ai" / "memory" / "memory.db"
+            self.db_path = ECHO_DATA_DIR / "memory" / "memory.db"
         else:
             self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

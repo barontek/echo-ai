@@ -7,6 +7,7 @@ import signal
 
 from pydantic import BaseModel
 
+from ..constants import BASH_OUTPUT_MAX_CHARS
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
@@ -89,9 +90,9 @@ class BashTool(Tool):
             err = stderr.decode(errors="replace") if stderr else ""
 
             original_len = len(output)
-            output = output[:100000]
-            if original_len > 100000:
-                output += "\n\n[WARNING: Output heavily truncated (exceeded 100k characters)]"
+            output = output[:BASH_OUTPUT_MAX_CHARS]
+            if original_len > BASH_OUTPUT_MAX_CHARS:
+                output += f"\n\n[WARNING: Output heavily truncated (exceeded {BASH_OUTPUT_MAX_CHARS} characters)]"
 
             if proc.returncode != 0:
                 return ToolResult(content=output + ("\n" + err if err else ""))

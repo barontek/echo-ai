@@ -1,7 +1,27 @@
+import ast
 import os
 from typing import Any
 
 from .base import BaseSearchProvider
+
+_DEFAULT_TAVILY_DOMAINS = [
+    "reuters.com", "apnews.com", "bbc.com",
+    "theguardian.com", "aljazeera.com",
+    "middleeasteye.net", "euronews.com",
+    "politico.eu", "afp.com",
+]
+
+
+def _get_tavily_domains() -> list[str]:
+    raw = os.environ.get("TAVILY_INCLUDE_DOMAINS", "")
+    if raw:
+        try:
+            parsed = ast.literal_eval(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except (ValueError, SyntaxError):
+            pass
+    return _DEFAULT_TAVILY_DOMAINS
 
 
 class TavilyProvider(BaseSearchProvider):
@@ -38,12 +58,7 @@ class TavilyProvider(BaseSearchProvider):
                     include_answer=False,
                     include_raw_content=False,
                     include_images=False,
-                    include_domains=[
-                        "reuters.com", "apnews.com", "bbc.com",
-                        "theguardian.com", "aljazeera.com",
-                        "middleeasteye.net", "euronews.com",
-                        "politico.eu", "afp.com",
-                    ],
+                    include_domains=_get_tavily_domains(),
                     exact_match=True,
                     chunks_per_source="auto",
                 )

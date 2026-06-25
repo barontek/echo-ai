@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 from . import LLMProvider, LLMResponse, LLMToolCall
-from ..constants import THINKING_END, THINKING_START
+from ..constants import LM_STUDIO_BASE_URL, THINKING_END, THINKING_START
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class LMStudioProvider(LLMProvider):
     def __init__(
         self,
         model: str,
-        base_url: str = "http://localhost:1234",
+        base_url: str = LM_STUDIO_BASE_URL,
         api_key: str | None = None,
         timeout: int = 60,
     ):

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Literal
 
-from .constants import THINKING_END, THINKING_START
+from .constants import MESSAGE_CONTENT_MAX_CHARS, THINKING_END, THINKING_START
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +185,9 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
 
     for msg in reversed(messages):
         content = msg.content
-        if msg.role == "tool" and len(content) > 20000:
+        if msg.role == "tool" and len(content) > MESSAGE_CONTENT_MAX_CHARS:
             content = (
-                content[:20000] + f"\n\n[Output truncated - was {len(content)} chars]"
+                content[:MESSAGE_CONTENT_MAX_CHARS] + f"\n\n[Output truncated - was {len(content)} chars]"
             )
 
         msg_tokens = estimate_tokens(content)

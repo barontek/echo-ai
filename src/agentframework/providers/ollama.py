@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 from . import LLMProvider, LLMResponse, LLMToolCall
-from ..constants import THINKING_END, THINKING_START
+from ..constants import OLLAMA_BASE_URL, THINKING_END, THINKING_START
 from ..conversation import normalize_args_for_ollama
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class OllamaProvider(LLMProvider):
     def __init__(
         self,
         model: str,
-        base_url: str = "http://localhost:11434",
+        base_url: str = OLLAMA_BASE_URL,
         api_key: str | None = None,
         timeout: int = 60,
         num_ctx: int | None = None,

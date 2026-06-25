@@ -6,6 +6,7 @@ import platform
 
 from pydantic import BaseModel
 
+from ..constants import GIT_OUTPUT_MAX_CHARS, GIT_COMMAND_TIMEOUT
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
@@ -116,14 +117,14 @@ class GitTool(Tool):
                 cwd=self.base_dir,
                 env=env,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=GIT_COMMAND_TIMEOUT)
 
             output = stdout.decode(errors="replace") if stdout else ""
             err = stderr.decode(errors="replace") if stderr else ""
 
             if proc.returncode != 0:
                 return ToolResult(content=output + ("\n" + err if err else ""))
-            return ToolResult(content=output[:50000])
+            return ToolResult(content=output[:GIT_OUTPUT_MAX_CHARS])
         except asyncio.TimeoutError:
             return ToolResult(error="Git command timed out")
         except Exception as e:

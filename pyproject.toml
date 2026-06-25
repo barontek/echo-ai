@@ -33,6 +33,7 @@ dependencies = [
     "mkdocs-material>=9.0.0",
     "mkdocstrings>=0.25.0",
     "mkdocstrings-python>=0.4.0",
+    "duckduckgo-search>=8.1.1",
 ]
 
 [project.optional-dependencies]
@@ -107,3 +108,9 @@ timeout_method = "thread"
 include = ["src/agentframework"]
 exclude = ["src/agentframework/ui_deprecated"]
 reportMissingModuleSource = false
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "ruff>=0.15.19",
+]

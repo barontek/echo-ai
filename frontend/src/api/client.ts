@@ -3,13 +3,15 @@ import type { Session, Config, Message, ApiError } from '../types';
 
 const API_BASE = ''; // Use relative path - goes through Vite proxy in dev
 
+const API_TIMEOUT = parseInt(import.meta.env.VITE_API_TIMEOUT || '10000', 10);
+
 class ApiClient {
   private client;
 
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE,
-      timeout: 10000,
+      timeout: API_TIMEOUT,
       headers: { 'Content-Type': 'application/json' },
     });
 

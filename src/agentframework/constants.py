@@ -1,6 +1,35 @@
 """Constants used throughout the agent framework."""
 
+import os
+from pathlib import Path
+
 import httpx
+
+ECHO_DATA_DIR = Path(os.environ.get("ECHO_DATA_DIR", str(Path.home() / ".echo-ai")))
+
+# Provider base URLs
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+LM_STUDIO_BASE_URL = os.environ.get("LM_STUDIO_BASE_URL", "http://localhost:1234")
+
+# Output truncation limits
+BASH_OUTPUT_MAX_CHARS = int(os.environ.get("BASH_OUTPUT_MAX_CHARS", "100000"))
+GIT_OUTPUT_MAX_CHARS = int(os.environ.get("GIT_OUTPUT_MAX_CHARS", "50000"))
+MESSAGE_CONTENT_MAX_CHARS = int(os.environ.get("MESSAGE_CONTENT_MAX_CHARS", "20000"))
+
+# Execution timeouts (seconds)
+PYTHON_EXEC_TIMEOUT = int(os.environ.get("PYTHON_EXEC_TIMEOUT", "10"))
+GIT_COMMAND_TIMEOUT = int(os.environ.get("GIT_COMMAND_TIMEOUT", "30"))
+WEB_SEARCH_TIMEOUT = int(os.environ.get("WEB_SEARCH_TIMEOUT", "30"))
+WEB_CRAWL_TIMEOUT = int(os.environ.get("WEB_CRAWL_TIMEOUT", "60"))
+DEEP_SEARCH_TIMEOUT = int(os.environ.get("DEEP_SEARCH_TIMEOUT", "30"))
+
+# Workflow
+WORKFLOW_MAX_ITERATIONS = int(os.environ.get("WORKFLOW_MAX_ITERATIONS", "100"))
+
+# CORS default ports
+CORS_FRONTEND_PORT = 3000
+CORS_ALT_FRONTEND_PORT = 3001
+CORS_STREAMLIT_PORT = 8501
 
 THINKING_START = "__THINKING__"
 THINKING_END = "__THINKING_END__"

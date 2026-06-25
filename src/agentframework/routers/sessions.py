@@ -6,8 +6,8 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from src.agentframework.session import DBSessionModel
-from src.agentframework.web_api import (
+from ..session import DBSessionModel
+from ..web_api import (
     AppState,
     SessionRenamePayload,
     create_session_data,

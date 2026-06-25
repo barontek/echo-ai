@@ -101,6 +101,7 @@ markers = [
 timeout = 30
 timeout_method = "thread"
 
+
 [tool.ruff.lint.per-file-ignores]
 "src/agentframework/ui_nicegui/*.py" = ["F403", "F405"]
 

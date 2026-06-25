@@ -551,7 +551,8 @@ class OllamaProvider(LLMProvider):
         # Ollama exposes an OpenAI compatible API at /v1
         openai_client = AsyncOpenAI(
             base_url=f"{self.base_url}/v1",
-            api_key=self.api_key or "ollama",  # dummy API key required by client
+            # Dummy key required by OpenAI client for local Ollama API (no auth needed)
+            api_key=self.api_key or "ollama",
         )
 
         # Use instructor with JSON mode for local open-source models

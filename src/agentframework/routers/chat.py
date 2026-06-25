@@ -7,15 +7,13 @@ import contextlib
 import json
 import logging
 from datetime import datetime
-from typing import Any
-
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
-from src.agentframework.constants import THINKING_END, THINKING_START
-from src.agentframework.core.session_runtime import deserialize_messages
+from ..constants import THINKING_END, THINKING_START
+from ..core.session_runtime import deserialize_messages
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +24,15 @@ _web_api = None
 def _get_web_api():
     global _web_api
     if _web_api is None:
-        from src.agentframework import web_api as _web_api_module
+        from .. import web_api as _web_api_module
         _web_api = _web_api_module
     return _web_api
 
 
 @router.post("/api/chat")
 async def chat(
-    message: _get_web_api().ChatPayload,
-    state: Annotated[_get_web_api().AppState, Depends(_get_web_api().get_state)],
+    message: _get_web_api().ChatPayload,  # type: ignore[valid-type]
+    state: Annotated[_get_web_api().AppState, Depends(_get_web_api().get_state)],  # type: ignore[valid-type]
 ):
     """Non-streaming chat endpoint.
 
@@ -89,7 +87,7 @@ async def chat(
 
 
 @router.post("/chat")
-async def handle_chat(request: _get_web_api().ChatRequest):
+async def handle_chat(request: _get_web_api().ChatRequest):  # type: ignore[valid-type]
     """Synchronous chat endpoint."""
     try:
         agent = _get_web_api().get_or_create_agent(request)
@@ -210,7 +208,7 @@ async def websocket_chat(websocket: WebSocket):
         return
 
     _ws_message_history: list[dict[str, Any]] = []
-    active_agent: _get_web_api().Agent | None = None
+    active_agent: _get_web_api().Agent | None = None  # type: ignore[valid-type]
     streaming_task: asyncio.Task | None = None
     stop_requested = False
 
@@ -452,8 +450,10 @@ async def websocket_chat(websocket: WebSocket):
             session_id=config.session_id,
         )
         # Store in global state so REST endpoints (sessions, config) use the same agent
-        if _get_web_api()._state is not None:
-            _get_web_api()._state.agent = active_agent
+        wapi = _get_web_api()
+        if wapi._state is not None:
+            wapi._state.agent = active_agent
+        assert active_agent is not None
         # Trigger auto-title if needed
         if (
             active_agent.session_manager

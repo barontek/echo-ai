@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Query
 
-from src.agentframework.web_api import get_models_data
+from ..web_api import get_models_data
 
 logger = logging.getLogger(__name__)
 

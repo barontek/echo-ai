@@ -53,6 +53,7 @@ class LMStudioProvider(LLMProvider):
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
+        # Dummy key required by OpenAI client for local LM Studio API (no auth needed)
         self.api_key = api_key or "not-needed"
         self.timeout = timeout
 
@@ -238,7 +239,7 @@ class LMStudioProvider(LLMProvider):
             return await instructor_client.chat.completions.create(
                 model=self.model,
                 response_model=response_model,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 temperature=temperature,
             )
 

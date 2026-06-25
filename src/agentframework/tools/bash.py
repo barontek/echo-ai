@@ -4,6 +4,7 @@ import asyncio
 import os
 import platform
 import signal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -61,14 +62,14 @@ class BashTool(Tool):
                 return ToolResult(error="Command requires approval")
 
         try:
-            kwargs = dict(
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            sp_kwargs: dict[str, Any] = {
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+            }
             if not _IS_WINDOWS:
-                kwargs["preexec_fn"] = os.setsid
+                sp_kwargs["preexec_fn"] = os.setsid
 
-            proc = await asyncio.create_subprocess_shell(command, **kwargs)
+            proc = await asyncio.create_subprocess_shell(command, **sp_kwargs)
             try:
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(), timeout=self.timeout

@@ -8,7 +8,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.agentframework.web_api import (
+from ..config import load_config
+from ..constants import DEFAULT_MODEL
+from ..web_api import (
     AppState,
     WorkflowRunPayload,
     _create_runtime_agent,
@@ -34,8 +36,11 @@ async def workflow_run(
 ):
     """Run a selected workflow and return its final output."""
     if state.agent is None:
+        cfg = load_config()
+        provider = cfg.get("model", {}).get("provider", "ollama")
+        model = cfg.get("model", {}).get("name") or DEFAULT_MODEL
         state.agent = _create_runtime_agent(
-            provider="ollama", model="qwen3:4b-instruct"
+            provider=provider, model=model
         )
 
     try:

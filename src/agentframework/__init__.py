@@ -1,5 +1,16 @@
 """Agent Framework - A standalone AI agent framework."""
 
+import asyncio
+import inspect
+import sys
+
+# Python 3.14+ deprecated asyncio.iscoroutinefunction in favor of
+# inspect.iscoroutinefunction.  chromadb still uses the asyncio variant
+# at runtime (chromadb 1.5.9), so we patch it preemptively to silence
+# the DeprecationWarning.
+if sys.version_info >= (3, 14):
+    asyncio.iscoroutinefunction = inspect.iscoroutinefunction
+
 __version__ = "0.1.0"
 
 from .core import (

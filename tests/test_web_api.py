@@ -1147,7 +1147,7 @@ class TestWorkflowErrors:
     def test_workflow_run_no_agent_creates_agent_and_returns_workflow_id(self, mock_agent):
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
+        with patch("src.agentframework.routers.workflows._create_runtime_agent", return_value=mock_agent):
             response = client.post(
                 "/api/workflows/run",
                 json={"workflow_id": "research_and_summarize", "topic": "test"},

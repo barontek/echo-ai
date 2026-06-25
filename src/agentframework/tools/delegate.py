@@ -73,9 +73,12 @@ class DelegateTool(Tool):
             return ToolResult(error="Could not get LLM provider for sub-agent")
 
         # Create sub-agent config
+        from ..constants import DEFAULT_MODEL
+
+        resolved_model = sub_config.model or getattr(self.agent.config, "model", None) or DEFAULT_MODEL
         agent_config = AgentConfig(
             provider=getattr(self.agent.config, "provider", "ollama"),
-            model=sub_config.model or getattr(self.agent.config, "model", "qwen3.5:latest"),
+            model=resolved_model,
             temperature=getattr(self.agent.config, "temperature", 0.3),
             system_prompt=system_prompt,
             tools=selected_tools,

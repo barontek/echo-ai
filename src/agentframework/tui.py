@@ -141,7 +141,7 @@ class AgentDashboard(App):
 
     async def _run_agent(self, user_input: str) -> None:
         try:
-            from src.agentframework.client import (
+            from .client import (
                 EchoClient,
                 ContentEvent,
                 ThinkingEvent,

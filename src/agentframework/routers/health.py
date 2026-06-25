@@ -7,8 +7,8 @@ from datetime import datetime
 
 from fastapi import APIRouter
 
-from src.agentframework import __version__
-from src.agentframework.web_api import get_state
+from .. import __version__
+from ..web_api import get_state
 
 logger = logging.getLogger(__name__)
 

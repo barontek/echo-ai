@@ -15,21 +15,20 @@ from typing import Annotated, Any
 
 import httpx
 import uvicorn
-import os
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from src.agentframework.constants import ECHO_DATA_DIR, OLLAMA_BASE_URL, LM_STUDIO_BASE_URL, CORS_FRONTEND_PORT, CORS_ALT_FRONTEND_PORT, CORS_STREAMLIT_PORT
-from src.agentframework.core import Agent, AgentConfig, create_agent
-from src.agentframework.config import DEFAULT_SESSION_DIR, get_safety_config, get_tools, load_config
-from src.agentframework.rate_limit import RateLimiter
-from src.agentframework.web_utils import filter_messages_for_ui
-from src.agentframework.logging_utils import set_correlation_id
-from src.agentframework.core.router import SemanticRouter
-from src.agentframework.session import DBSessionModel
+from .constants import ECHO_DATA_DIR, OLLAMA_BASE_URL, LM_STUDIO_BASE_URL, CORS_FRONTEND_PORT, CORS_ALT_FRONTEND_PORT, CORS_STREAMLIT_PORT
+from .core import Agent, AgentConfig, create_agent
+from .config import DEFAULT_SESSION_DIR, get_safety_config, get_tools, load_config
+from .rate_limit import RateLimiter
+from .web_utils import filter_messages_for_ui
+from .logging_utils import set_correlation_id
+from .core.router import SemanticRouter
+from .session import DBSessionModel
 
 logger = logging.getLogger(__name__)
 
@@ -424,7 +423,7 @@ async def get_models_data(provider: str = "ollama", base_url: str | None = None)
         logger.debug("Failed to fetch %s models: %s", provider, e)
         fallback = {
             "ollama": FALLBACK_MODELS,
-            "lm_studio": ["google/gemma-4-12b-qat"],
+            "lm_studio": FALLBACK_MODELS,
             "openai": OPENAI_MODELS,
             "anthropic": ANTHROPIC_MODELS,
         }.get(provider, FALLBACK_MODELS)
@@ -447,13 +446,13 @@ def get_models_sync(provider: str = "ollama", base_url: str | None = None) -> di
 
     try:
         if provider == "ollama":
-            url = f"{base_url or 'http://localhost:11434'}/api/tags"
+            url = f"{base_url or OLLAMA_BASE_URL}/api/tags"
             response = httpx.get(url, timeout=5.0)
             response.raise_for_status()
             models = response.json().get("models", [])
             result = {"models": [m["name"] for m in models]}
         elif provider == "lm_studio":
-            url = f"{base_url or 'http://localhost:1234'}/v1/models"
+            url = f"{base_url or LM_STUDIO_BASE_URL}/v1/models"
             response = httpx.get(url, timeout=5.0)
             response.raise_for_status()
             models = response.json().get("data", [])
@@ -472,7 +471,7 @@ def get_models_sync(provider: str = "ollama", base_url: str | None = None) -> di
         logger.debug("Failed to fetch %s models: %s", provider, e)
         fallback = {
             "ollama": FALLBACK_MODELS,
-            "lm_studio": ["google/gemma-4-12b-qat"],
+            "lm_studio": FALLBACK_MODELS,
             "openai": OPENAI_MODELS,
             "anthropic": ANTHROPIC_MODELS,
         }.get(provider, FALLBACK_MODELS)
@@ -766,7 +765,7 @@ async def _generate_title_async(active_agent: "Agent") -> None:
 @app.get("/api/review")
 async def review_document():
     """Expose review recommendations for UI hints."""
-    review_path = Path("docs/WEB_UI_REVIEW.md")
+    review_path = Path(os.environ.get("ECHO_REVIEW_DOC_PATH", "docs/WEB_UI_REVIEW.md"))
     if not review_path.exists():
         return {"sections": []}
 
@@ -830,11 +829,11 @@ async def route_intent(request: RouteRequest):
 
 
 # Include routers
-from src.agentframework.routers.chat import router as chat_router  # noqa: E402
-from src.agentframework.routers.health import router as health_router  # noqa: E402
-from src.agentframework.routers.models import router as models_router  # noqa: E402
-from src.agentframework.routers.sessions import router as sessions_router  # noqa: E402
-from src.agentframework.routers.workflows import router as workflows_router  # noqa: E402
+from .routers.chat import router as chat_router  # noqa: E402
+from .routers.health import router as health_router  # noqa: E402
+from .routers.models import router as models_router  # noqa: E402
+from .routers.sessions import router as sessions_router  # noqa: E402
+from .routers.workflows import router as workflows_router  # noqa: E402
 
 app.include_router(chat_router)
 app.include_router(health_router)

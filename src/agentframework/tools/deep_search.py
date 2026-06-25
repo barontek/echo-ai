@@ -37,6 +37,7 @@ class DeepSearchTool(Tool):
             ),
         )
         self.provider = provider
+        self._llm = None
         self._safety_config = safety_config
         self._limits = limits
 
@@ -46,18 +47,21 @@ class DeepSearchTool(Tool):
         return get_search_provider(provider_type)
 
     def _get_provider(self):
-        if self.provider is None:
-            from ..providers import get_provider
-            from ..config import load_config
-            config = load_config()
-            model_cfg = config.get("model", {})
-            self.provider = get_provider(
-                name=model_cfg.get("provider", "ollama"),
-                model=model_cfg.get("name", "qwen3.5:latest"),
-                base_url=model_cfg.get("base_url"),
-                timeout=model_cfg.get("timeout", 60),
-                num_ctx=model_cfg.get("num_ctx"),
-            )
+        if self._llm is not None:
+            return self._llm
+        if self.provider is not None:
+            return self.provider
+        from ..providers import get_provider
+        from ..config import load_config
+        config = load_config()
+        model_cfg = config.get("model", {})
+        self.provider = get_provider(
+            name=model_cfg.get("provider", "ollama"),
+            model=model_cfg.get("name", ""),
+            base_url=model_cfg.get("base_url"),
+            timeout=model_cfg.get("timeout", 60),
+            num_ctx=model_cfg.get("num_ctx"),
+        )
         return self.provider
 
     async def execute(

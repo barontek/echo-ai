@@ -78,7 +78,7 @@ class LMStudioProvider(LLMProvider):
             if tools:
                 payload["tools"] = tools
 
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
                 response = await client.post(
                     f"{self.base_url}/v1/chat/completions",
                     json=payload,
@@ -141,7 +141,7 @@ class LMStudioProvider(LLMProvider):
         in_thinking = False
         tag_leftover = ""
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
             async with client.stream(
                 "POST",
                 f"{self.base_url}/v1/chat/completions",
@@ -246,7 +246,7 @@ class LMStudioProvider(LLMProvider):
     async def list_models(self) -> list[str]:
         """List available models from LM Studio via OpenAI-compatible API."""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
                 response = await client.get(f"{self.base_url}/v1/models")
                 response.raise_for_status()
                 data = response.json()

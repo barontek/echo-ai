@@ -87,7 +87,7 @@ class OllamaProvider(LLMProvider):
         self.num_ctx = num_ctx
         self.timeout = httpx.Timeout(timeout, connect=30.0)
         self.stream_timeout = httpx.Timeout(timeout * 5, connect=30.0)
-        self.client = httpx.AsyncClient(timeout=self.stream_timeout)
+        self.client = httpx.AsyncClient(timeout=self.stream_timeout, trust_env=False)
 
     def _extract_tool_calls_from_content(
         self,

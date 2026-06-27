@@ -396,7 +396,7 @@ async def get_models_data(provider: str = "ollama", base_url: str | None = None)
             return cached_data
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             if provider == "ollama":
                 url = f"{base_url or OLLAMA_BASE_URL}/api/tags"
                 response = await client.get(url, timeout=5.0)

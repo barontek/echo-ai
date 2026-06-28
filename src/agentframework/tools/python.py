@@ -49,14 +49,20 @@ class PythonTool(Tool):
             temp_path = f.name
 
         try:
+            # Isolate the environment slightly, though this isn't a true sandbox
+            safe_vars: dict[str, str] = {}
+            for key in ("PATH", "HOME", "USER", "TMPDIR", "LANG"):
+                if key in os.environ:
+                    safe_vars[key] = os.environ[key]
+            safe_vars["PYTHONUNBUFFERED"] = "1"
+
             # Use the same python executable running the agent
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 temp_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                # Isolate the environment slightly, though this isn't a true sandbox
-                env={"PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1"}
+                env=safe_vars,
             )
 
             try:
@@ -71,13 +77,13 @@ class PythonTool(Tool):
                     error=f"Execution timed out after {self.execution_timeout} seconds. Code might be stuck in an infinite loop."
                 )
 
-            stdout_str = stdout.decode().strip()
-            stderr_str = stderr.decode().strip()
+            stdout_str = stdout.decode(errors="replace")
+            stderr_str = stderr.decode(errors="replace")
 
             output = ""
-            if stdout_str:
+            if stdout_str.strip():
                 output += f"STDOUT:\n{stdout_str}\n"
-            if stderr_str:
+            if stderr_str.strip():
                 output += f"STDERR:\n{stderr_str}\n"
 
             if not output:

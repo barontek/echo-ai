@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Literal
 
-from .constants import MESSAGE_CONTENT_MAX_CHARS, THINKING_END, THINKING_START
+from .constants import MESSAGE_CONTENT_MAX_CHARS
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,8 @@ def estimate_tokens(text: str) -> int:
 
 
 def create_assistant_message(content: str, thinking: str | None = None) -> Message:
-    """Create an assistant message, wrapping content with thinking markers if provided."""
-    if thinking:
-        content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
-    return Message(role="assistant", content=content)
+    """Create an assistant message, storing thinking in a separate field."""
+    return Message(role="assistant", content=content, thinking=thinking)
 
 
 def format_messages_for_llm(
@@ -166,7 +164,8 @@ def normalize_args_for_ollama(messages: list[dict[str, Any]]) -> list[dict[str, 
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
-                    except (json.JSONDecodeError, TypeError):
+                    except (json.JSONDecodeError, TypeError) as e:
+                        logger.warning("Failed to parse tool arguments as JSON: %s", e)
                         args = {"raw": args}
                 normalized.append({**tc, "function": {**fn, "arguments": args}})
             result.append({**msg, "tool_calls": normalized})
@@ -184,15 +183,16 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
     total_tokens = 0
 
     for msg in reversed(messages):
+        msg_tokens = estimate_tokens(msg.content)
+        if total_tokens + msg_tokens > max_tokens:
+            break
+
         content = msg.content
         if msg.role == "tool" and len(content) > MESSAGE_CONTENT_MAX_CHARS:
             content = (
                 content[:MESSAGE_CONTENT_MAX_CHARS] + f"\n\n[Output truncated - was {len(content)} chars]"
             )
 
-        msg_tokens = estimate_tokens(content)
-        if total_tokens + msg_tokens > max_tokens:
-            break
         result.insert(
             0,
             Message(
@@ -209,16 +209,17 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
     if result != messages and result:
         if result[0].role == "tool":
             for i, m in enumerate(messages):
-                if m.role == "assistant" and m.tool_call_id == result[0].tool_call_id:
-                    if i > 0 and messages[i - 1].role == "user":
-                        result.insert(
-                            0,
-                            Message(
-                                role=messages[i - 1].role,
-                                content=messages[i - 1].content,
-                            ),
-                        )
-                    break
+                if m.role == "assistant" and m.tool_calls:
+                    if any(tc.get("id") == result[0].tool_call_id for tc in m.tool_calls):
+                        if i > 0 and messages[i - 1].role == "user":
+                            result.insert(
+                                0,
+                                Message(
+                                    role=messages[i - 1].role,
+                                    content=messages[i - 1].content,
+                                ),
+                            )
+                        break
 
     return result
 
@@ -291,9 +292,9 @@ async def apply_context_window(
         keep_recent_tokens = int(max_context_chars * 0.7)
         recent = trim_messages_by_tokens(working, keep_recent_tokens)
         if len(recent) < len(working):
-            all_dropped.extend(
-                working[: -len(recent)] if recent else working[:-1]
-            )
+            if not recent:
+                recent = working[-1:]  # Keep at least the most recent message
+            all_dropped.extend(working[: -len(recent)])
             working = recent
 
     # Step 2: Message-count trim with smart selection

@@ -110,8 +110,18 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
+_debug_handlers: list[logging.Handler] = []
+
+
 def configure_logging(debug_enabled: bool, debug_json: bool = False) -> None:
     """Configure logger for debug or regular operation."""
+    root = logging.getLogger()
+
+    # Remove handlers we previously added
+    for h in _debug_handlers:
+        root.removeHandler(h)
+    _debug_handlers.clear()
+
     if not debug_enabled:
         return
 
@@ -127,7 +137,6 @@ def configure_logging(debug_enabled: bool, debug_json: bool = False) -> None:
             )
         )
 
-    root = logging.getLogger()
-    root.handlers.clear()
     root.addHandler(handler)
+    _debug_handlers.append(handler)
     root.setLevel(logging.DEBUG)

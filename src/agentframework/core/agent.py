@@ -9,7 +9,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from ..constants import ECHO_DATA_DIR, THINKING_END, THINKING_START
-from ..providers import LLMProvider, get_provider, LLMToolCall, LLMResponse
+from ..providers import LLMProvider, LLMProviderProtocol, get_provider, LLMToolCall, LLMResponse
 from ..tools import Tool, ToolResult
 from ..session import SessionManager, ChangeTracker
 from ..conversation import (
@@ -74,9 +74,12 @@ def get_tool_schemas(tools: list[Tool]) -> list[dict[str, Any]]:
 def _extract_thinking(messages: list[Message]) -> str | None:
     """Extract thinking from the last assistant message in the message list."""
     for msg in reversed(messages):
-        if msg.role == "assistant" and THINKING_START in msg.content:
-            parts = msg.content.split(THINKING_END, 1)
-            return parts[0].replace(THINKING_START, "").strip()
+        if msg.role == "assistant":
+            if msg.thinking:
+                return msg.thinking
+            if THINKING_START in msg.content:
+                parts = msg.content.split(THINKING_END, 1)
+                return parts[0].replace(THINKING_START, "").strip()
     return None
 
 
@@ -86,7 +89,7 @@ class Agent:
     def __init__(
         self,
         config: AgentConfig,
-        llm_provider: LLMProvider,
+        llm_provider: LLMProvider | LLMProviderProtocol,
         session_id: str | None = None,
     ):
         self.config = config
@@ -158,8 +161,6 @@ class Agent:
 
             delegate_tool = DelegateTool(agent=self)
             self.tool_map["delegate"] = delegate_tool
-            if self.config.tools is not None:
-                self.config.tools.append(delegate_tool)
 
     async def run(self, user_input: str) -> str:
         """Run the agent with user input and return the response.
@@ -188,6 +189,9 @@ class Agent:
 
         self.messages = updated_messages
 
+        if self._pending_summary:
+            asyncio.create_task(self._background_summarize())
+
         thinking = _extract_thinking(self.messages)
         if self.session_manager:
             self.session_manager.add_message(
@@ -200,14 +204,6 @@ class Agent:
         self, user_input: str, on_chunk: Callable[[str], None] | None = None
     ) -> str:
         """Run the agent with streaming output."""
-        logger.warning(
-            "agent:trace run_streaming input=%s msgs_before=%d session=%s",
-            user_input[:30],
-            len(self.messages),
-            self.session_manager.current_session.id
-            if self.session_manager and self.session_manager.current_session
-            else None,
-        )
 
         if not self.messages:
             await self.load_persistent_memory()
@@ -219,6 +215,15 @@ class Agent:
             self.session_manager.add_message(
                 "user", user_input, timestamp=datetime.now().strftime("%H:%M")
             )
+
+        logger.warning(
+            "agent:trace run_streaming input=%s msgs_before=%d session=%s",
+            user_input[:30],
+            len(self.messages),
+            self.session_manager.current_session.id
+            if self.session_manager and self.session_manager.current_session
+            else None,
+        )
 
         response, updated_messages = await self._run_loop_streaming(
             self.messages, on_chunk
@@ -267,16 +272,19 @@ class Agent:
                 ),
                 timeout=30.0,
             )
-            raw = title_response.thinking or title_response.content
-            if THINKING_START in title_response.content:
-                after_thinking = title_response.content.split(THINKING_END, 1)[1]
-                raw = after_thinking.strip()
-            raw = re.sub(
-                rf"{re.escape(THINKING_START)}.*?{re.escape(THINKING_END)}",
-                "",
-                raw,
-                flags=re.DOTALL,
-            ).strip()
+            if title_response.thinking:
+                raw = title_response.thinking
+            else:
+                raw = title_response.content
+                if THINKING_START in raw:
+                    after_thinking = raw.split(THINKING_END, 1)[1]
+                    raw = after_thinking.strip()
+                raw = re.sub(
+                    rf"{re.escape(THINKING_START)}.*?{re.escape(THINKING_END)}",
+                    "",
+                    raw,
+                    flags=re.DOTALL,
+                ).strip()
             return raw.strip().strip('"').strip("'")
         except (asyncio.TimeoutError, Exception) as e:
             logger.debug(f"Title generation failed or timed out: {e}")
@@ -338,7 +346,7 @@ class Agent:
             request_id, current_messages[-1].content if current_messages else ""
         )
 
-        max_msgs = getattr(self.config, "max_history_messages", 20)
+        max_msgs = self.config.max_history_messages
         if self.memory_manager:
             current_messages = await self.memory_manager.summarize_if_needed(
                 agent_messages=current_messages, llm=self.llm, max_messages=max_msgs
@@ -455,7 +463,7 @@ class Agent:
                             "tool_name": msg.tool_name,
                             "arguments": msg.tool_arguments,
                             "content": msg.content,
-                            "error": None,
+                            "error": msg.error_category,
                         }
                     )
                 self.messages = list(current_messages)
@@ -575,7 +583,10 @@ class Agent:
         )
 
         if dropped:
-            self._pending_summary = dropped
+            if self._pending_summary is None:
+                self._pending_summary = dropped
+            else:
+                self._pending_summary.extend(dropped)
 
         logger.debug(
             "context_window",
@@ -653,10 +664,14 @@ class Agent:
         try:
             summary = await summarize_old_messages(dropped, self.llm)
             if summary and gen == self._session_gen:
-                # Remove the original dropped messages from self.messages by identity
-                dropped_ids = {id(m) for m in dropped}
+                # Remove the original dropped messages from self.messages by content identity
+                dropped_keys = {
+                    (m.role, m.content, m.tool_call_id, m.tool_name, m.error_category)
+                    for m in dropped
+                }
                 self.messages = [
-                    m for m in self.messages if id(m) not in dropped_ids
+                    m for m in self.messages
+                    if (m.role, m.content, m.tool_call_id, m.tool_name, m.error_category) not in dropped_keys
                 ]
 
                 summary_msg = Message(role="system", content=summary)
@@ -689,10 +704,12 @@ class Agent:
         serialized = serialize_messages(self.messages)
         existing = self.session_manager.current_session.messages
 
-        # Only sync messages if self.messages is not behind the session store.
+        # Only sync messages if self.messages is not far behind the session store.
         # When memory summarization truncates self.messages, existing has the
         # full history — overwriting would permanently delete old messages from DB.
-        if len(serialized) >= len(existing):
+        # Allow small reductions (e.g., from summarization) but guard against
+        # extreme truncation (more than 50% reduction).
+        if len(serialized) >= len(existing) // 2:
             self.session_manager.current_session.messages = serialized
 
         self.session_manager.save_session()

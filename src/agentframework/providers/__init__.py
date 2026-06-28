@@ -107,6 +107,8 @@ def get_provider(
     """Get an LLM provider by name."""
     import os
 
+    name = name.lower()
+
     if name == "anthropic":
         if not (api_key or os.getenv("ANTHROPIC_API_KEY")):
             raise ValueError(

@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { useChat } from '../context';
 
 export const Sidebar = memo(function Sidebar() {
@@ -36,6 +36,16 @@ export const Sidebar = memo(function Sidebar() {
     setSidebarOpen(false);
   };
 
+  // Close delete confirmation on Escape
+  useEffect(() => {
+    if (!deleteConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDeleteConfirm(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [deleteConfirm]);
+
   return (
     <div className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
@@ -44,15 +54,23 @@ export const Sidebar = memo(function Sidebar() {
       </div>
 
       <div className="model-selector">
-        <button className="model-button" onClick={() => setShowModelDropdown(!showModelDropdown)}>
+        <button
+          className="model-button"
+          onClick={() => setShowModelDropdown(!showModelDropdown)}
+          aria-expanded={showModelDropdown}
+          aria-haspopup="listbox"
+          aria-label="Select model"
+        >
           <span className="model-name">{currentModel}</span>
           <span className="dropdown-arrow">▼</span>
         </button>
         {showModelDropdown && (
-          <div className="model-dropdown">
+          <div className="model-dropdown" role="listbox" aria-label="Available models">
             {models.map((m) => (
               <button
                 key={m}
+                role="option"
+                aria-selected={m === currentModel}
                 className={`model-option ${m === currentModel ? 'active' : ''}`}
                 onClick={() => {
                   selectModel(m);
@@ -67,15 +85,23 @@ export const Sidebar = memo(function Sidebar() {
       </div>
 
       <div className="model-selector">
-        <button className="model-button" onClick={() => setShowProviderDropdown(!showProviderDropdown)}>
+        <button
+          className="model-button"
+          onClick={() => setShowProviderDropdown(!showProviderDropdown)}
+          aria-expanded={showProviderDropdown}
+          aria-haspopup="listbox"
+          aria-label="Select provider"
+        >
           <span className="model-name">{currentProvider}</span>
           <span className="dropdown-arrow">▼</span>
         </button>
         {showProviderDropdown && (
-          <div className="model-dropdown">
+          <div className="model-dropdown" role="listbox" aria-label="Available providers">
             {providers.map((p) => (
               <button
                 key={p}
+                role="option"
+                aria-selected={p === currentProvider}
                 className={`model-option ${p === currentProvider ? 'active' : ''}`}
                 onClick={() => {
                   selectProvider(p);
@@ -123,9 +149,9 @@ export const Sidebar = memo(function Sidebar() {
             </button>
           </div>
         ))}
-        {filteredSessions.length === 0 && sessions.length > 0 && (
+        {filteredSessions.length === 0 && (
           <div className="empty-state" style={{ padding: '20px', fontSize: '13px' }}>
-            No matching conversations
+            {searchTerm ? `No matching conversations for "${searchTerm}"` : sessions.length === 0 ? 'No conversations yet' : 'No matching conversations'}
           </div>
         )}
       </div>

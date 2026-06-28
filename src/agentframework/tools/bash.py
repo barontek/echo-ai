@@ -42,10 +42,12 @@ class BashTool(Tool):
         self.allowed_commands = allowed_commands
 
         if safety_config:
-            safety_config.allowed_commands = (
-                allowed_commands or safety_config.allowed_commands
+            merged_config = SafetyConfig(
+                **{k: v for k, v in safety_config.__dict__.items() if not k.startswith("_")}
             )
-            self.validator = SecurityValidator(safety_config)
+            if allowed_commands is not None:
+                merged_config.allowed_commands = allowed_commands
+            self.validator = SecurityValidator(merged_config)
         else:
             config = SafetyConfig(allowed_commands=allowed_commands or ["*"])
             self.validator = SecurityValidator(config)
@@ -65,6 +67,7 @@ class BashTool(Tool):
             sp_kwargs: dict[str, Any] = {
                 "stdout": asyncio.subprocess.PIPE,
                 "stderr": asyncio.subprocess.PIPE,
+                "stdin": asyncio.subprocess.DEVNULL,
             }
             if not _IS_WINDOWS:
                 sp_kwargs["preexec_fn"] = os.setsid
@@ -76,7 +79,7 @@ class BashTool(Tool):
                 )
             except asyncio.TimeoutError:
                 try:
-                    if _IS_WINDOWS:
+                    if _IS_WINDOWS or proc.pid is None:
                         proc.kill()
                     else:
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -95,8 +98,11 @@ class BashTool(Tool):
             if original_len > BASH_OUTPUT_MAX_CHARS:
                 output += f"\n\n[WARNING: Output heavily truncated (exceeded {BASH_OUTPUT_MAX_CHARS} characters)]"
 
+            combined = output
+            if err:
+                combined += "\n" + err if output else err
             if proc.returncode != 0:
-                return ToolResult(content=output + ("\n" + err if err else ""))
-            return ToolResult(content=output)
+                return ToolResult(content=combined)
+            return ToolResult(content=combined)
         except Exception as e:
             return ToolResult(error=str(e))

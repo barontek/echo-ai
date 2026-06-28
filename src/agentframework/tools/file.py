@@ -8,15 +8,18 @@ from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
 
-async def _async_read_text(path: Path) -> str:
-    """Async file read to avoid blocking the event loop."""
+MAX_READ_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+async def _async_read_text(path: Path, max_size: int = MAX_READ_SIZE) -> str:
+    """Async file read with size limit to avoid TOCTOU and OOM."""
     try:
         import aiofiles
 
         async with aiofiles.open(path, "r", encoding="utf-8") as f:
-            return await f.read()
+            return await f.read(max_size)
     except ImportError:
-        return path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")[:max_size]
 
 
 async def _async_write_text(path: Path, content: str) -> None:
@@ -65,8 +68,11 @@ class FileSystemTool(Tool):
         self.base_dir = Path(base_dir).resolve()
 
         if safety_config:
-            safety_config.workspace = str(self.base_dir)
-            self.validator = SecurityValidator(safety_config)
+            merged = SafetyConfig(
+                **{k: v for k, v in safety_config.__dict__.items() if not k.startswith("_") and k != "workspace"},
+                workspace=str(self.base_dir),
+            )
+            self.validator = SecurityValidator(merged)
         else:
             self.validator = SecurityValidator(
                 SafetyConfig(workspace=str(self.base_dir))
@@ -182,6 +188,9 @@ class WriteFileTool(FileSystemTool):
         try:
             old_content = None
             if full_path.exists():
+                max_backup_size = 10 * 1024 * 1024  # 10 MB
+                if full_path.stat().st_size > max_backup_size:
+                    return ToolResult(error=f"File too large to overwrite safely ({full_path.stat().st_size // 1024 // 1024} MB)")
                 old_content = await _async_read_text(full_path)
 
             await _async_write_text(full_path, content)

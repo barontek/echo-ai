@@ -16,7 +16,7 @@ from ..web_api import (
     _create_runtime_agent,
     get_state,
 )
-from src.workflows import get_workflow, list_workflows
+from ...workflows import get_workflow, list_workflows
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,11 @@ async def workflow_run(
 
     initial_state = {"topic": payload.topic, "agent": state.agent}
     final_state = await workflow.compile_and_run(initial_state)
-    content = final_state.get("final") or final_state.get("result") or str(final_state)
+    content = (
+        final_state["final"] if "final" in final_state and final_state["final"] is not None
+        else final_state["result"] if "result" in final_state and final_state["result"] is not None
+        else str(final_state)
+    )
 
     timestamp = datetime.now().strftime("%H:%M")
     user_content = f"[Workflow: {payload.workflow_id}] {payload.topic}"
@@ -64,6 +68,10 @@ async def workflow_run(
     state.message_history.append(
         {"role": "assistant", "content": content, "timestamp": timestamp}
     )
+
+    if state.agent and hasattr(state.agent, 'session_manager') and state.agent.session_manager:
+        if state.agent.session_manager.current_session:
+            state.agent.save_session()
 
     return {
         "workflow_id": payload.workflow_id,

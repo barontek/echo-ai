@@ -10,9 +10,20 @@ export const MessageList = memo(function MessageList() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const userScrolledUpRef = useRef(false);
+
+  const isAtBottom = () => {
+    const el = containerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  const handleScroll = () => {
+    userScrolledUpRef.current = !isAtBottom();
+  };
 
   useEffect(() => {
-    if (containerRef.current) {
+    if (!userScrolledUpRef.current && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
@@ -28,7 +39,7 @@ export const MessageList = memo(function MessageList() {
   };
 
   return (
-    <div className="message-list" ref={containerRef}>
+    <div className="message-list" ref={containerRef} onScroll={handleScroll}>
       {messages.length === 0 && !isStreaming && (
         <div className="empty-state">
           <div className="empty-logo">✦</div>
@@ -41,7 +52,7 @@ export const MessageList = memo(function MessageList() {
         const isEditing = editingIndex === idx;
 
         return (
-          <div key={`${msg.timestamp}-${idx}`} className={`message message-${msg.role}`}>
+          <div key={idx} className={`message message-${msg.role}`}>
             <div className="message-bubble">
               {isEditing && (
                 <div className="message-content">
@@ -87,7 +98,9 @@ export const MessageList = memo(function MessageList() {
                                 <div className="tool-result">
                                   <div className="tool-result-label">Result:</div>
                                   <pre className="tool-result-content">
-                                    {tc.result.content || tc.result.error || '(empty)'}
+                                    {tc.result.content !== undefined && tc.result.content !== null
+                                      ? tc.result.content
+                                      : tc.result.error || '(empty)'}
                                   </pre>
                                 </div>
                               )}
@@ -97,7 +110,7 @@ export const MessageList = memo(function MessageList() {
                       </div>
                     )}
                     {msg.error && <div className="message-error">{msg.error}</div>}
-                    {isStreaming && idx === messages.length - 1 && msg.role === 'assistant' && (
+                    {isStreaming && idx === messages.length - 1 && (
                       <div className="typing-indicator">
                         <span></span>
                         <span></span>

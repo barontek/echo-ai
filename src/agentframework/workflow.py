@@ -1,9 +1,13 @@
 """Workflow Graph Engine for Agentic State Machines."""
 
 import asyncio
+import copy
+import logging
 from typing import Any, Callable, Coroutine, AsyncGenerator, Union
 
 from .constants import WORKFLOW_MAX_ITERATIONS
+
+logger = logging.getLogger(__name__)
 
 State = dict[str, Any]
 NodeFunc = Callable[[State], Coroutine[Any, Any, State]]
@@ -85,10 +89,11 @@ class WorkflowGraph:
             raise ValueError("Entry point not set for WorkflowGraph")
 
         current_node_name: str = resume_from or self.entry_point or ""
-        state = initial_state.copy()
+        state = copy.deepcopy(initial_state)
 
         # Hard cap to prevent infinite recursive graphs
         iteration = 0
+        hit_cap = False
 
         while current_node_name != self.END and iteration < WORKFLOW_MAX_ITERATIONS:
             iteration += 1
@@ -117,31 +122,53 @@ class WorkflowGraph:
             if not edges:
                 break  # Implicit terminal end if no edges exist
 
-            edge = edges[0]
+            next_node: str | None = None
+            for edge in edges:
+                if isinstance(edge, ParallelEdge):
+                    # Execute targets concurrently
+                    coroutines = []
+                    for tgt in edge.targets:
+                        if tgt not in self.nodes:
+                            raise ValueError(f"Parallel target '{tgt}' not mapped to node list")
+                        coroutines.append(self.nodes[tgt].func(copy.deepcopy(state)))
 
-            if isinstance(edge, ParallelEdge):
-                # Execute targets concurrently
-                coroutines = []
-                # Make isolated state contexts per node branch
-                for tgt in edge.targets:
-                    if tgt not in self.nodes:
-                        raise ValueError(f"Parallel target '{tgt}' not mapped to node list")
-                    coroutines.append(self.nodes[tgt].func(state.copy()))
+                    try:
+                        results = await asyncio.gather(*coroutines, return_exceptions=True)
+                    except Interrupt:
+                        yield "__INTERRUPT__", state
+                        break
 
-                try:
-                    results = await asyncio.gather(*coroutines)
-                except Interrupt:
-                    yield "__INTERRUPT__", state
+                    good_results: list[State] = []
+                    for r in results:
+                        if isinstance(r, BaseException):
+                            logger.warning("Parallel node raised: %s", r)
+                        else:
+                            good_results.append(r)
+
+                    state = edge.reducer(good_results)
+                    next_node = edge.next_node
+                elif callable(edge.condition):
+                    candidate = edge.condition(state)
+                    if candidate:
+                        next_node = candidate
+                        break
+                else:
+                    next_node = edge.condition
                     break
 
-                state = edge.reducer(list(results))
+            if isinstance(edge, ParallelEdge):
                 current_node_name = edge.next_node
-            elif callable(edge.condition):
-                current_node_name = edge.condition(state)
+            elif next_node is not None:
+                current_node_name = next_node
             else:
-                current_node_name = edge.condition
+                break
 
-        if current_node_name == self.END or iteration >= WORKFLOW_MAX_ITERATIONS:
+        if iteration >= WORKFLOW_MAX_ITERATIONS:
+            hit_cap = True
+
+        if hit_cap:
+            yield "__MAX_ITER__", state
+        elif current_node_name == self.END:
             yield self.END, state
 
     def to_mermaid(self) -> str:
@@ -167,6 +194,10 @@ class WorkflowGraph:
     async def compile_and_run(self, initial_state: State) -> State:
         """Synchronously blocks and runs the graph until it reaches the END terminal state."""
         state = initial_state
-        async for _, s in self.run_streaming(initial_state):
+        last_node = ""
+        async for node_name, s in self.run_streaming(initial_state):
+            last_node = node_name
             state = s
+        if last_node == "__INTERRUPT__":
+            raise Interrupt("Workflow interrupted")
         return state

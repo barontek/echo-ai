@@ -14,9 +14,15 @@ export const ChatInput = memo(function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+    const el = textareaRef.current;
+    if (!el) return;
+    const prevHeight = el.style.height;
+    el.style.height = 'auto';
+    const newHeight = `${Math.min(el.scrollHeight, 120)}px`;
+    if (prevHeight !== newHeight) {
+      el.style.height = newHeight;
+    } else {
+      el.style.height = prevHeight;
     }
   }, [input]);
 

@@ -52,7 +52,7 @@ class DelegateTool(Tool):
         # Build system prompt for sub-agent
         system_prompt = (
             sub_config.system_prompt
-            or f"You are a specialized sub-agent named @{agent_name}."
+            or f"You are a specialized sub-agent named @{lookup_name}."
         )
         if sub_config.description:
             system_prompt += f"\n\n{sub_config.description}"
@@ -64,9 +64,9 @@ class DelegateTool(Tool):
         parent_llm = getattr(self.agent, "llm", None)
         provider = None
         if parent_llm:
-            from ..providers import LLMProvider
+            from ..providers import LLMProvider, LLMProviderProtocol
 
-            if isinstance(parent_llm, LLMProvider):
+            if isinstance(parent_llm, (LLMProvider, LLMProviderProtocol)):
                 provider = parent_llm
 
         if not provider:

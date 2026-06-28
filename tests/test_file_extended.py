@@ -7,7 +7,7 @@ from src.agentframework.safety import SafetyConfig
 
 # Helper to run async in non-async test
 def asyncio_run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 @pytest.fixture

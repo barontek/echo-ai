@@ -86,11 +86,17 @@ class OpenAIProvider(LLMProvider):
             tool_calls = []
             if msg.tool_calls:
                 for tc in msg.tool_calls:
+                    raw_args = tc.function.arguments
+                    if isinstance(raw_args, str):
+                        try:
+                            raw_args = json.loads(raw_args)
+                        except (json.JSONDecodeError, TypeError):
+                            raw_args = {"raw": raw_args}
                     tool_calls.append(
                         LLMToolCall(
                             id=tc.id,
                             name=tc.function.name,
-                            arguments=tc.function.arguments,
+                            arguments=raw_args,
                         )
                     )
 
@@ -101,12 +107,6 @@ class OpenAIProvider(LLMProvider):
                 content=f"OpenAI error: {str(e) or type(e).__name__}"
             )
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception(_is_retryable_exception),
-        reraise=True,
-    )
     async def chat_streaming(
         self,
         messages: list[dict[str, str]],
@@ -190,9 +190,10 @@ class OpenAIProvider(LLMProvider):
     async def list_models(self) -> list[str]:
         """List available models from OpenAI."""
         try:
+            base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
-                    "https://api.openai.com/v1/models",
+                    f"{base.rstrip('/')}/models",
                     headers={"Authorization": f"Bearer {self.api_key}"},
                 )
                 response.raise_for_status()

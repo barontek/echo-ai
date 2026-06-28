@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -15,14 +16,16 @@ def test_enforces_limit(tmp_path: Path) -> None:
     limit = 5
     window = 60
 
-    for _ in range(limit):
-        allowed, remaining = limiter.check("1.2.3.4", limit, window)
-        assert allowed is True
+    async def run():
+        for _ in range(limit):
+            allowed, remaining = await limiter.check("1.2.3.4", limit, window)
+            assert allowed is True
 
-    allowed, remaining = limiter.check("1.2.3.4", limit, window)
-    assert allowed is False
-    assert remaining == 0
+        allowed, remaining = await limiter.check("1.2.3.4", limit, window)
+        assert allowed is False
+        assert remaining == 0
 
+    asyncio.run(run())
     limiter.close()
 
 
@@ -33,18 +36,20 @@ def test_old_entries_outside_window_do_not_count(tmp_path: Path) -> None:
     limit = 3
     window = 1
 
-    for _ in range(limit):
-        limiter.check("1.2.3.4", limit, window)
+    async def run():
+        for _ in range(limit):
+            await limiter.check("1.2.3.4", limit, window)
 
-    allowed, _ = limiter.check("1.2.3.4", limit, window)
-    assert allowed is False
+        allowed, _ = await limiter.check("1.2.3.4", limit, window)
+        assert allowed is False
 
-    time.sleep(1.1)
+        time.sleep(1.1)
 
-    allowed, remaining = limiter.check("1.2.3.4", limit, window)
-    assert allowed is True
-    assert remaining == limit - 1
+        allowed, remaining = await limiter.check("1.2.3.4", limit, window)
+        assert allowed is True
+        assert remaining == limit - 1
 
+    asyncio.run(run())
     limiter.close()
 
 
@@ -55,13 +60,15 @@ def test_different_ips_independent(tmp_path: Path) -> None:
     limit = 3
     window = 60
 
-    for _ in range(limit):
-        limiter.check("1.2.3.4", limit, window)
+    async def run():
+        for _ in range(limit):
+            await limiter.check("1.2.3.4", limit, window)
 
-    allowed, remaining = limiter.check("5.6.7.8", limit, window)
-    assert allowed is True
-    assert remaining == limit - 1
+        allowed, remaining = await limiter.check("5.6.7.8", limit, window)
+        assert allowed is True
+        assert remaining == limit - 1
 
+    asyncio.run(run())
     limiter.close()
 
 
@@ -72,18 +79,23 @@ def test_state_survives_new_instance(tmp_path: Path) -> None:
     limit = 3
     window = 60
 
-    for _ in range(limit):
-        limiter1.check("1.2.3.4", limit, window)
+    async def run1():
+        for _ in range(limit):
+            await limiter1.check("1.2.3.4", limit, window)
 
+    asyncio.run(run1())
     limiter1.close()
 
     limiter2 = RateLimiter(str(db))
-    allowed, remaining = limiter2.check("1.2.3.4", limit, window)
-    assert allowed is False
-    assert remaining == 0
 
-    allowed, remaining = limiter2.check("5.6.7.8", limit, window)
-    assert allowed is True
-    assert remaining == limit - 1
+    async def run2():
+        allowed, remaining = await limiter2.check("1.2.3.4", limit, window)
+        assert allowed is False
+        assert remaining == 0
 
+        allowed, remaining = await limiter2.check("5.6.7.8", limit, window)
+        assert allowed is True
+        assert remaining == limit - 1
+
+    asyncio.run(run2())
     limiter2.close()

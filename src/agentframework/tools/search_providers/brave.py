@@ -102,15 +102,7 @@ class BraveSearchProvider(BaseSearchProvider):
         try:
             timeout = httpx.Timeout(15.0, connect=5.0, read=10.0)
 
-            params: dict[str, str | int] = {
-                "q": query,
-                "count": max_results,
-                "extra_snippets": "true",
-            }
-
             freshness = _freshness(query)
-            if freshness:
-                params["freshness"] = freshness
 
             headers = {
                 "X-Subscription-Token": self.api_key,
@@ -118,14 +110,29 @@ class BraveSearchProvider(BaseSearchProvider):
                 "Accept-Encoding": "gzip",
             }
 
-            async def _search(url: str) -> dict[str, Any]:
+            async def _search(url: str, params: dict) -> dict[str, Any]:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.get(url, headers=headers, params=params)
                     resp.raise_for_status()
                     return resp.json()
 
-            web_task = _search(WEB_SEARCH_URL)
-            news_task = _search(NEWS_SEARCH_URL)
+            # Request max_results from web; at most 2 news entries so web results dominate
+            web_params: dict[str, str | int] = {
+                "q": query,
+                "count": max_results,
+                "extra_snippets": "true",
+            }
+            news_params: dict[str, str | int] = {
+                "q": query,
+                "count": min(2, max_results),
+                "extra_snippets": "true",
+            }
+            if freshness:
+                web_params["freshness"] = freshness
+                news_params["freshness"] = freshness
+
+            web_task = _search(WEB_SEARCH_URL, web_params)
+            news_task = _search(NEWS_SEARCH_URL, news_params)
             web_data, news_data = await asyncio.gather(web_task, news_task)
 
             seen_urls: set[str] = set()
@@ -146,14 +153,7 @@ class BraveSearchProvider(BaseSearchProvider):
                     "snippet": snippet.strip(),
                 }
 
-            # News results first
-            for r in news_data.get("results", []):
-                url = r.get("url", "")
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    results.append(extract_news(r))
-
-            # Web results second (deduplicated)
+            # Web results first (primary)
             for r in web_data.get("web", {}).get("results", []):
                 url = r.get("url", "")
                 if url and url not in seen_urls:
@@ -168,6 +168,13 @@ class BraveSearchProvider(BaseSearchProvider):
                         "url": url,
                         "snippet": snippet.strip(),
                     })
+
+            # News results second (supplementary, deduplicated)
+            for r in news_data.get("results", []):
+                url = r.get("url", "")
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    results.append(extract_news(r))
 
             return results[:max_results]
         except asyncio.TimeoutError:

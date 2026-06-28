@@ -2,7 +2,7 @@
 
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-from src.workflows._agent_utils import run_with_agent
+from src.workflows._agent_utils import merge_states, run_with_agent
 
 def get_workflow() -> WorkflowGraph:
     """Return the configured pipeline template."""
@@ -37,13 +37,6 @@ def get_workflow() -> WorkflowGraph:
         state["conclusion"] = res
         return state
 
-    def reducer(states: list[dict[str, Any]]) -> dict[str, Any]:
-        """Merge drafted sections."""
-        merged = states[0].copy()
-        for s in states[1:]:
-            merged.update(s)
-        return merged
-
     async def format_newsletter(state: dict[str, Any]) -> dict[str, Any]:
         """Final output formatter applying Markdown syntax."""
         state["final"] = (
@@ -70,7 +63,7 @@ def get_workflow() -> WorkflowGraph:
     graph.add_parallel_edge(
         source="start",
         targets=["draft_intro", "draft_body", "draft_conclusion"],
-        reducer=reducer,
+        reducer=merge_states,
         next_node="format_newsletter"
     )
 

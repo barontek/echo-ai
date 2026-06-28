@@ -2,7 +2,7 @@
 
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-from src.workflows._agent_utils import run_with_agent
+from src.workflows._agent_utils import merge_states, run_with_agent
 
 def get_workflow() -> WorkflowGraph:
     """Return the configured pipeline template."""
@@ -15,26 +15,21 @@ def get_workflow() -> WorkflowGraph:
 
     async def analyze_style(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch A: Style Analysis."""
+        code_input = state.get("code_input", "")
         res = await run_with_agent(state,
-            f"Analyze the following code strictly for style, formatting, and PEP8/convention compliance. Be brief.\n\n```\n{state['code_input']}\n```"
+            f"Analyze the following code strictly for style, formatting, and PEP8/convention compliance. Be brief.\n\n```\n{code_input}\n```"
         )
         state["style_report"] = res
         return state
 
     async def analyze_bugs(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch B: Bug Analysis."""
+        code_input = state.get("code_input", "")
         res = await run_with_agent(state,
-            f"Analyze the following code strictly for logical bugs, security flaws, and runtime errors. Be brief.\n\n```\n{state['code_input']}\n```"
+            f"Analyze the following code strictly for logical bugs, security flaws, and runtime errors. Be brief.\n\n```\n{code_input}\n```"
         )
         state["bug_report"] = res
         return state
-
-    def reducer(states: list[dict[str, Any]]) -> dict[str, Any]:
-        """Merge the parallel branches back into a single state payload."""
-        merged = states[0].copy()
-        for s in states[1:]:
-            merged.update(s)
-        return merged
 
     async def format_report(state: dict[str, Any]) -> dict[str, Any]:
         """Final output formatter."""
@@ -63,7 +58,7 @@ def get_workflow() -> WorkflowGraph:
     graph.add_parallel_edge(
         source="start",
         targets=["analyze_style", "analyze_bugs"],
-        reducer=reducer,
+        reducer=merge_states,
         next_node="format_report"
     )
 

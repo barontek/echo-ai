@@ -18,9 +18,9 @@ class VectorStore:
     """A wrapper for chromadb to handle persistent document storage and semantic search."""
 
     def __init__(self, persist_directory: str | None = None, collection_name: str = "agent_memory"):
+        """Initialize the persistent Chroma client."""
         if persist_directory is None:
             persist_directory = str(ECHO_DATA_DIR / "vector")
-        """Initialize the persistent Chroma client."""
         # Ensure the directory exists
         os.makedirs(persist_directory, exist_ok=True)
 
@@ -80,7 +80,11 @@ class VectorStore:
         structured_results = []
         if results and "documents" in results and results["documents"]:
             docs = results["documents"][0]
-            metas = results["metadatas"][0] if "metadatas" in results and results["metadatas"] else [{}] * len(docs)
+            raw_metas = results["metadatas"][0] if "metadatas" in results and results.get("metadatas") else None
+            if raw_metas is None:
+                metas = [{} for _ in docs]
+            else:
+                metas = [m if m is not None else {} for m in raw_metas]
             dists = results["distances"][0] if "distances" in results and results["distances"] else [0.0] * len(docs)
 
             for doc, meta, dist in zip(docs, metas, dists):
@@ -91,6 +95,7 @@ class VectorStore:
                 })
 
         return structured_results
+
     def close(self) -> None:
         """Explicitly close the Chroma client connection."""
         if hasattr(self, "client") and self.client:

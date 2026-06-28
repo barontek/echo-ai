@@ -80,10 +80,6 @@ safety:
     - "/bin/bash -i"
   max_file_size: 10485760
   max_execution_time: 60
-  require_approval_for:
-    #- bash
-    #- write_file
-   # - memory
   # New security options
   audit_log_path: "echo-ai-audit.log"
   read_requires_approval: false

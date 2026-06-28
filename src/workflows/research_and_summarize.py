@@ -1,12 +1,13 @@
 """Research & Summarize Workflow Template."""
 
 import asyncio
+import os
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
 from src.workflows._agent_utils import run_with_agent
 
-WORKFLOW_RESEARCH_DELAY = 0.0
-WORKFLOW_FORMAT_DELAY = 0.0
+WORKFLOW_RESEARCH_DELAY = float(os.environ.get("WORKFLOW_RESEARCH_DELAY", "0"))
+WORKFLOW_FORMAT_DELAY = float(os.environ.get("WORKFLOW_FORMAT_DELAY", "0"))
 
 
 def get_workflow() -> WorkflowGraph:

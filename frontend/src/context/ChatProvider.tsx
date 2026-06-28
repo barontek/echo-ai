@@ -43,13 +43,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [isConnected, setIsConnected] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [currentThinking, setCurrentThinking] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const wsGenRef = useRef(0);
   const isReadyRef = useRef(false);
   const messageQueueRef = useRef<string[]>([]);
-  const lastSentMessageRef = useRef<string>('');
   const connectRef = useRef<() => void>(() => {});
   const reconnectDelayRef = useRef(500);
   const activeSessionIdRef = useRef(activeSessionId);
@@ -76,6 +75,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       setConnectionStatus('connecting');
 
+      const gen = ++wsGenRef.current;
       const ws = new WebSocket('/ws/chat');
       wsRef.current = ws;
 
@@ -141,6 +141,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               break;
 
             case 'content':
+              if (data.session_id && data.session_id !== activeSessionIdRef.current) break;
               debugLog('message:content', {
                 content: data.content?.substring(0, 50),
                 len: data.content?.length,
@@ -160,17 +161,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               break;
 
             case 'thinking':
+              if (data.session_id && data.session_id !== activeSessionIdRef.current) break;
               debugLog('message:thinking', data.content?.substring(0, 30));
               setIsStreaming(true);
-              // Only set currentThinking for potential UI use, but rely on messages array for display
-              setCurrentThinking(data.content || '');
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
-                  // Update existing assistant message with thinking
                   return [...prev.slice(0, -1), { ...last, thinking: data.content }];
                 }
-                // Create new assistant message with thinking
                 return [
                   ...prev,
                   { role: 'assistant', content: '', thinking: data.content, has_tools: false },
@@ -202,9 +200,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 break;
               }
               setIsStreaming(false);
-              setCurrentThinking('');
               isReadyRef.current = true;
-              lastSentMessageRef.current = '';
               // Find last assistant message and update it (not user message)
               setMessages((prev) => {
                 const lastAssistantIdx = prev.findLastIndex((m) => m.role === 'assistant');
@@ -250,9 +246,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             case 'error':
               debugLog('error', data.content);
               setIsStreaming(false);
-              setCurrentThinking('');
               isReadyRef.current = true;
-              lastSentMessageRef.current = ''; // Allow sending same message again
+              setMessages((prev) => {
+                const lastUserIdx = prev.findLastIndex((m) => m.role === 'user');
+                if (lastUserIdx < 0) return prev;
+                const lastUser = prev[lastUserIdx];
+                return [
+                  ...prev.slice(0, lastUserIdx),
+                  { ...lastUser, error: data.content || 'An error occurred' },
+                  ...prev.slice(lastUserIdx + 1),
+                ];
+              });
               break;
           }
         } catch (err) {
@@ -261,9 +265,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       };
 
       ws.onclose = (e) => {
+        if (gen !== wsGenRef.current) return; // Stale handler
         debugLog('ws:close', { code: e.code, reason: e.reason });
         setIsConnected(false);
-        wsRef.current = null;
         isReadyRef.current = false;
 
         // Auto-reconnect unless cleanly closed
@@ -276,7 +280,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           );
           debugLog('ws:reconnect:scheduled', { delay });
           setTimeout(() => {
-            if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+            if (gen === wsGenRef.current && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
               connectRef.current();
             }
           }, delay);
@@ -286,19 +290,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('[Chat] WebSocket error:', error);
-        // Schedule reconnect with exponential backoff
-        const delay = reconnectDelayRef.current;
-        reconnectDelayRef.current = Math.min(
-          Math.round(delay * (1.5 + Math.random())), // 1.5-2.5x jitter
-          MAX_RECONNECT_DELAY
-        );
-        setTimeout(() => {
-          if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            connectRef.current();
-          }
-        }, delay);
+      ws.onerror = () => {
+        if (gen !== wsGenRef.current) return; // Stale handler
+        // ws.onclose will handle reconnection; no need to schedule here
       };
     } catch (err) {
       console.error('[Chat] Failed to connect:', err);
@@ -320,14 +314,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const preview = content.substring(0, 30);
       debugLog('sendMessage:start', preview);
 
-      // Prevent duplicate sends
-      if (content === lastSentMessageRef.current) {
-        debugLog('sendMessage:blocked-duplicate', preview);
-        return;
-      }
-      lastSentMessageRef.current = content;
-      debugLog('sendMessage:allowed', preview);
-
       // Add user message immediately to UI
       const timestamp = new Date().toLocaleTimeString('en-US', {
         hour: '2-digit',
@@ -337,22 +323,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setMessages((prev) => [...prev, { role: 'user', content, timestamp }]);
 
       const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN) {
+      const payload = activeSessionId
+        ? { type: 'message', content, session_id: activeSessionId }
+        : { type: 'message', content };
+      const payloadStr = JSON.stringify(payload);
+
+      if (ws && ws.readyState === WebSocket.OPEN && isReadyRef.current) {
         debugLog('ws:send:message', content.substring(0, 30));
-        // Include session_id if we're in an active session
-        const payload = activeSessionId
-          ? { type: 'message', content, session_id: activeSessionId }
-          : { type: 'message', content };
-        ws.send(JSON.stringify(payload));
+        ws.send(payloadStr);
         setIsStreaming(true);
         isReadyRef.current = false;
       } else {
-        debugLog('ws:not-connected', { readyState: ws?.readyState });
-        // Include session_id in queued message too
-        const payload = activeSessionId
-          ? { type: 'message', content, session_id: activeSessionId }
-          : { type: 'message', content };
-        messageQueueRef.current.push(JSON.stringify(payload));
+        debugLog('ws:queue-or-reconnect', { readyState: ws?.readyState, isReady: isReadyRef.current });
+        messageQueueRef.current.push(payloadStr);
         if (!ws || ws.readyState === WebSocket.CLOSED) {
           debugLog('ws:reconnect-needed');
           connect();
@@ -368,6 +351,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     isReadyRef.current = false;
     wsRef.current?.close();
     connect();
+    // Refetch session state after reconnection
+    if (activeSessionIdRef.current) {
+      api.loadSession(activeSessionIdRef.current).then((data) => {
+        setMessages(combineAssistantMessages(data.messages));
+      }).catch(console.error);
+    }
   }, [connect]);
 
   const stopGeneration = useCallback(() => {
@@ -380,16 +369,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const editMessage = useCallback(
     (index: number, newText: string) => {
-      const msg = messages[index];
-      if (!msg) {
-        return;
-      }
-
-      // Update local state with new content
       setMessages((prev) => {
-        const newMsgs = prev.slice(0, index + 1);
-        newMsgs[index] = { ...newMsgs[index], content: newText };
-        return newMsgs;
+        if (index < 0 || index >= prev.length) return prev;
+        return prev.map((m, i) => (i === index ? { ...m, content: newText, error: undefined } : m));
       });
       setIsStreaming(true);
 
@@ -406,7 +388,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         );
       }
     },
-    [activeSessionId, messages]
+    [activeSessionId]
   );
 
   // Load initial data
@@ -426,21 +408,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         debugLog('loadData:prefs', prefsData);
         setSessions(sessionsData);
         setModels(modelsData);
-        if (prefsData.model) {
-          setCurrentModel(prefsData.model);
+
+        // Validate saved provider; fall back to first available
+        const savedProvider = prefsData.provider && providers.includes(prefsData.provider)
+          ? prefsData.provider
+          : providers[0];
+        setCurrentProvider(savedProvider);
+
+        // Validate saved model; fall back to first available model
+        const savedModel = prefsData.model && modelsData.includes(prefsData.model)
+          ? prefsData.model
+          : modelsData[0] || '';
+        setCurrentModel(savedModel);
+
+        // Persist resolved values to overwrite any stale data (e.g. "new-model" from a test)
+        if (savedProvider !== prefsData.provider || savedModel !== prefsData.model) {
+          api.setPreferences({ model: savedModel, provider: savedProvider }).catch(console.error);
         }
-        if (prefsData.provider) {
-          setCurrentProvider(prefsData.provider);
-        }
-        // Provider comes from saved preferences, not file config
-        // (the .env file may override for CLI but frontend lets user choose)
       } catch (err) {
         console.error('[Chat] Failed to load data:', err);
       }
     };
 
     loadData();
-  }, []);
+  }, [providers]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -460,8 +451,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     try {
       const { session_id } = await api.createSession();
       debugLog('createSession:done', session_id);
+      activeSessionIdRef.current = session_id;
       setActiveSessionId(session_id);
       setMessages([]);
+      messageQueueRef.current = [];
       const sessionsData = await api.getSessions();
       setSessions(sessionsData);
     } catch (err) {
@@ -471,6 +464,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const selectSession = useCallback(async (sessionId: string) => {
     debugLog('selectSession:start', sessionId);
+    activeSessionIdRef.current = sessionId;
     try {
       const data = await api.loadSession(sessionId);
       debugLog('selectSession:messages', data.messages.length);
@@ -508,9 +502,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       debugLog('selectModel', model);
       setCurrentModel(model);
       api.setPreferences({ model, provider: currentProvider }).catch(console.error);
-      reconnect();
+      // The useEffect on connect() will detect the model change and reconnect
     },
-    [reconnect, currentProvider]
+    [currentProvider]
   );
 
   const selectProvider = useCallback(
@@ -520,9 +514,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       api.setPreferences({ model: currentModel, provider }).catch(console.error);
       // Refetch models for the new provider
       api.getModels(provider).then(setModels).catch(console.error);
-      reconnect();
+      // The useEffect on connect() will detect the provider change and reconnect
     },
-    [reconnect, currentModel]
+    [currentModel]
   );
 
   const retryMessage = useCallback(
@@ -547,7 +541,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     connectionStatus,
     isConnected,
     isStreaming,
-    currentThinking,
+    currentThinking: '',
     sidebarOpen,
     setSidebarOpen,
     sendMessage,

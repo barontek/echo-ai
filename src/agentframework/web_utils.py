@@ -85,13 +85,20 @@ def _parse_tool_args(raw_args: str) -> dict[str, Any]:
         Parsed arguments dict or {"raw": raw_args} on failure.
     """
     try:
-        unescaped = raw_args.encode().decode("unicode_escape")
-        return json.loads(unescaped)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        return json.loads(raw_args)
+    except json.JSONDecodeError:
         try:
-            return json.loads(raw_args)
-        except json.JSONDecodeError:
+            unescaped = raw_args.encode().decode("unicode_escape")
+            return json.loads(unescaped)
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return {"raw": raw_args}
+
+
+def _get_msg_field(msg: Any, field: str, default: Any = "") -> Any:
+    """Get a field from a message that may be a dict or an object."""
+    if isinstance(msg, dict):
+        return msg.get(field, default)
+    return getattr(msg, field, default)
 
 
 def extract_message_fields(msg: Any) -> dict[str, Any]:
@@ -103,23 +110,12 @@ def extract_message_fields(msg: Any) -> dict[str, Any]:
     Returns:
         Dict with role, content, metadata, timestamp, thinking, tool_calls.
     """
-    role = getattr(msg, "role", msg.get("role") if isinstance(msg, dict) else "")
-    content = (
-        getattr(msg, "content", msg.get("content") if isinstance(msg, dict) else "")
-        or ""
-    )
-    metadata = getattr(
-        msg, "metadata", msg.get("metadata") if isinstance(msg, dict) else None
-    )
-    timestamp = getattr(
-        msg, "timestamp", msg.get("timestamp") if isinstance(msg, dict) else ""
-    )
-    thinking = getattr(
-        msg, "thinking", msg.get("thinking") if isinstance(msg, dict) else ""
-    )
-    tool_calls = getattr(
-        msg, "tool_calls", msg.get("tool_calls") if isinstance(msg, dict) else None
-    )
+    role = _get_msg_field(msg, "role", "")
+    content = _get_msg_field(msg, "content", "") or ""
+    metadata = _get_msg_field(msg, "metadata", None)
+    timestamp = _get_msg_field(msg, "timestamp", "")
+    thinking = _get_msg_field(msg, "thinking", "")
+    tool_calls = _get_msg_field(msg, "tool_calls", None)
 
     if metadata and isinstance(metadata, dict):
         timestamp = timestamp or metadata.get("timestamp", "")
@@ -165,22 +161,17 @@ def filter_messages_for_ui(
         if role in ("tool", "system"):
             continue
 
-        if not has_tools:
-            if role == "assistant" and not content.strip():
-                continue
+        if role == "assistant" and not content.strip() and not tool_calls:
+            continue
 
-            is_internal = any(pattern.search(content) for pattern in _INTERNAL_PATTERNS)
-            if is_internal:
-                continue
+        is_internal = any(pattern.search(content) for pattern in _INTERNAL_PATTERNS)
+        if is_internal:
+            continue
 
         display_thinking, display_content = extract_thinking_content(content)
 
         if not timestamp:
-            timestamp = (
-                default_timestamp
-                if default_timestamp
-                else datetime.now().strftime("%H:%M")
-            )
+            timestamp = default_timestamp if default_timestamp else datetime.now().strftime("%H:%M")
 
         msg_dict = {
             "role": role,
@@ -202,7 +193,7 @@ def filter_messages_for_ui(
             "tool_results",
             msg.get("tool_results") if isinstance(msg, dict) else None,
         )
-        if tool_results and not msg_dict.get("tool_calls"):
+        if tool_results:
             msg_dict["tool_results"] = tool_results
 
         filtered.append(msg_dict)

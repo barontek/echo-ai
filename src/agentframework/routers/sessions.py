@@ -217,9 +217,9 @@ async def import_session(
 @router.post("/api/sessions/purge")
 async def purge_sessions(
     state: Annotated[AppState, Depends(get_state)],
-    days: int | None = None,
+    days: int = 30,
 ):
-    """Purge old or all sessions."""
+    """Purge old sessions (older than `days` days)."""
     if not (state.agent and state.agent.session_manager):
         raise HTTPException(
             status_code=503,

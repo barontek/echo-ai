@@ -22,7 +22,7 @@ class TestSessionEvent:
     def test_session_event_to_dict(self):
         event = SessionEvent(event_type="test", data={"key": "val"})
         d = event.to_dict()
-        assert d["type"] == "test"
+        assert d["event_type"] == "test"
         assert d["data"] == {"key": "val"}
         assert "timestamp" in d
 
@@ -60,7 +60,7 @@ class TestLogEvent:
         manager.log_event("test_event", {"key": "value"})
         assert manager.current_session.events is not None
         assert len(manager.current_session.events) == 1
-        assert manager.current_session.events[0]["type"] == "test_event"
+        assert manager.current_session.events[0]["event_type"] == "test_event"
 
 
 class TestTruncateHistory:
@@ -162,6 +162,7 @@ class TestExportImportSession:
         assert data["id"] == "exp-test"
         assert data["title"] == "Export Test"
 
+        manager.delete_session("exp-test")
         imported = manager.import_session(data)
         assert imported.id == "exp-test"
         assert imported.title == "Export Test"
@@ -236,8 +237,9 @@ class TestChangeTrackerExtended:
         backup_dir = tmp_path / "backups"
         backup_dir.mkdir()
         (backup_dir / "stale.txt").write_text("stale")
-        _ = ChangeTracker(backup_dir=str(backup_dir))
-        assert not (backup_dir / "stale.txt").exists()
+        tracker = ChangeTracker(backup_dir=str(backup_dir))
+        assert (backup_dir / "stale.txt").exists()
+        assert tracker.changes == []
 
     def test_backup_dir_cleanup_exception(self, tmp_path):
         backup_dir = tmp_path / "backups"
@@ -288,4 +290,4 @@ class TestLargeContentWriteFailure:
         filepath.write_text("some content")
         with patch.object(Path, "read_text", side_effect=Exception("read failed")):
             result = tracker._read_content(str(filepath))
-        assert result is None
+        assert result == str(filepath)

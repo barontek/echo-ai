@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, Column, String, DateTime, JSON
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, text, String, DateTime, JSON
+from sqlalchemy.orm import declarative_base, sessionmaker, Mapped, mapped_column
 
 from .constants import ECHO_DATA_DIR
 
@@ -35,15 +35,16 @@ class SessionEvent:
 
     def to_dict(self) -> dict:
         return {
-            "type": self.event_type,
+            "event_type": self.event_type,
             "data": self.data,
             "timestamp": self.timestamp.isoformat(),
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "SessionEvent":
+        event_type = data.get("event_type") or data.get("type") or "unknown"
         return cls(
-            event_type=data["type"],
+            event_type=event_type,
             data=data.get("data", {}),
             timestamp=datetime.fromisoformat(data["timestamp"])
             if data.get("timestamp")
@@ -56,12 +57,12 @@ class DBSessionModel(Base):
 
     __tablename__ = "agent_sessions"
 
-    id = Column(String, primary_key=True)
-    title = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-    messages = Column(JSON, default=list)
-    session_metadata = Column(JSON, default=dict)
-    events = Column(JSON, default=list)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    messages: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    session_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    events: Mapped[list[dict]] = mapped_column(JSON, default=list)
 
 
 @dataclass
@@ -122,8 +123,6 @@ class SessionManager:
             pool_recycle=3600,
         )
         with self.engine.connect() as conn:
-            from sqlalchemy import text
-
             conn.execute(text("PRAGMA journal_mode=WAL"))
             conn.execute(text("PRAGMA synchronous=NORMAL"))
             conn.execute(text("PRAGMA busy_timeout=5000"))
@@ -271,14 +270,10 @@ class SessionManager:
                 )
                 db.add(db_session)
             else:
-                db.query(DBSessionModel).filter(DBSessionModel.id == session.id).update(
-                    {
-                        "title": session.title,
-                        "messages": session.messages,
-                        "session_metadata": session.metadata,
-                        "events": session.events or [],
-                    }
-                )
+                db_session.title = session.title
+                db_session.messages = session.messages
+                db_session.session_metadata = session.metadata
+                db_session.events = session.events or []
             db.commit()
 
     def truncate_history(self, index: int) -> None:
@@ -348,35 +343,48 @@ class SessionManager:
                 "message_added", {"role": role, "content_length": len(content)}
             )
             self.save_session()
+        else:
+            logger.warning("Cannot add message: no active session")
 
     def add_tool_results_to_last_assistant(self, tool_results: list[dict]) -> None:
         """Attach tool results to the last assistant message's tool_calls."""
         if not self.current_session or not tool_results:
             return
 
+        unmatched = list(tool_results)
+
         # Find last assistant message with tool_calls (go backwards)
         for i in range(len(self.current_session.messages) - 1, -1, -1):
+            if not unmatched:
+                break
             msg = self.current_session.messages[i]
             if msg.get("role") == "assistant" and msg.get("tool_calls"):
-                # Attach each result to its corresponding tool_call
                 tool_calls = msg["tool_calls"]
-                for result in tool_results:
+                remaining = []
+                for result in unmatched:
                     tc_id = result.get("tool_call_id")
+                    if tc_id is None:
+                        continue
+                    matched = False
                     for tc in tool_calls:
-                        # Check both new and old format for id
                         tc_id_found = tc.get("id") or tc.get("function", {}).get("id")
                         if tc_id_found == tc_id:
                             tc["result"] = {
                                 "content": result.get("content"),
                                 "error": result.get("error"),
                             }
+                            matched = True
                             break
-                self.log_event(
-                    "tool_results_attached",
-                    {"count": len(tool_results)},
-                )
-                self.save_session()
-                return
+                    if not matched:
+                        remaining.append(result)
+                unmatched = remaining
+
+        if tool_results:
+            self.log_event(
+                "tool_results_attached",
+                {"count": len(tool_results) - len(unmatched)},
+            )
+            self.save_session()
 
     def save_checkpoint(self, workflow_id: str, current_node: str, state: dict) -> None:
         """Save a state checkout for workflow graphs."""
@@ -398,6 +406,14 @@ class SessionManager:
         if self.current_session:
             return self.current_session.messages
         return []
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a single session by ID."""
+        with self.SessionLocal() as db:
+            db.query(DBSessionModel).filter(DBSessionModel.id == session_id).delete(synchronize_session=False)
+            db.commit()
+            if self.current_session and self.current_session.id == session_id:
+                self.current_session = None
 
     def purge_sessions(self, older_than_days: int | None = None) -> int:
         """Purge old sessions from the database."""
@@ -433,7 +449,7 @@ class SessionManager:
         """
         count = 0
         with self.SessionLocal() as db:
-            for db_session in db.query(DBSessionModel).all():
+            for db_session in db.query(DBSessionModel).yield_per(100):
                 messages = db_session.messages or []
                 has_user_message = any(
                     isinstance(m, dict) and m.get("role") == "user" for m in messages
@@ -464,7 +480,9 @@ class SessionManager:
         Returns:
             Dictionary with session data, or None if not found.
         """
+        previous = self.current_session
         session = self.load_session(session_id)
+        self.current_session = previous
         if not session:
             return None
 
@@ -494,6 +512,12 @@ class SessionManager:
         """
         if "id" not in data:
             raise ValueError("Missing required field: id")
+
+        # Check for duplicate
+        existing = self.load_session(data["id"])
+        self.current_session = existing  # restore if load changed it
+        if existing:
+            raise ValueError(f"Session {data['id']} already exists")
 
         import_date = datetime.now()
         if data.get("created_at"):
@@ -529,20 +553,14 @@ class ChangeTracker:
 
     LARGE_FILE_THRESHOLD = 50000
 
-    def __init__(self, backup_dir: str | None = None):
+    def __init__(self, backup_dir: str | None = None, session_id: str = "default"):
         if backup_dir is None:
             backup_dir = DEFAULT_BACKUP_DIR
         self.changes: list[dict] = []
         self.redo_stack: list[dict] = []
-        self.backup_dir = Path(backup_dir)
-        if self.backup_dir.exists():
-            for f in self.backup_dir.iterdir():
-                try:
-                    f.unlink()
-                except Exception as e:
-                    logger.debug("Failed to delete backup file %s: %s", f, e)
-        else:
-            self.backup_dir.mkdir(parents=True)
+        # Use per-session subdirectory to avoid cross-session undo corruption
+        self.backup_dir = Path(backup_dir) / session_id
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
 
     def _store_large_content(self, content: str | None) -> str | None:
         """Store content > 50K to temp file, return filepath instead of raw content."""
@@ -558,12 +576,15 @@ class ChangeTracker:
 
     def _read_content(self, content: str | None) -> str | None:
         """Read content from memory or from backup file if filepath detected."""
-        if content and Path(content).exists():
+        if content is None:
+            return None
+        content_path = Path(content)
+        if content_path.is_file() and content_path.parent == self.backup_dir:
             try:
-                return Path(content).read_text(encoding="utf-8")
+                return content_path.read_text(encoding="utf-8")
             except Exception as e:
                 logger.warning("Failed to read backup file %s: %s", content, e)
-                return None
+                return content  # Fall back to the path string
         return content
 
     def record_change(

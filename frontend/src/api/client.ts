@@ -3,7 +3,7 @@ import type { Session, Config, Message, ApiError } from '../types';
 
 const API_BASE = ''; // Use relative path - goes through Vite proxy in dev
 
-const API_TIMEOUT = parseInt(import.meta.env.VITE_API_TIMEOUT || '10000', 10);
+const API_TIMEOUT = Math.max(1000, parseInt(import.meta.env.VITE_API_TIMEOUT || '10000', 10) || 10000);
 
 class ApiClient {
   private client;
@@ -34,10 +34,6 @@ class ApiClient {
   async getConfig(): Promise<Config> {
     const res = await this.client.get<{ config: Config }>('/api/config');
     return res.data.config;
-  }
-
-  async updateConfig(provider: string, model: string, apiKey?: string): Promise<void> {
-    await this.client.post('/api/config', { provider, model, api_key: apiKey });
   }
 
   async getSessions(): Promise<Session[]> {
@@ -80,10 +76,15 @@ class ApiClient {
     await this.client.post('/api/preferences', prefs);
   }
 
-  async healthCheck(): Promise<{ status: string; version: string }> {
-    const res = await this.client.get<{ status: string; version: string }>('/health');
-    return res.data;
+  async healthCheck(): Promise<boolean> {
+    try {
+      const res = await this.client.get('/api/health');
+      return res.status === 200;
+    } catch {
+      return false;
+    }
   }
+
 }
 
 export const api = new ApiClient();

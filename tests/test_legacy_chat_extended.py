@@ -14,8 +14,8 @@ from src.agentframework.conversation import Message
 async def test_get_input_fallback():
     with (
         patch(
-            "src.agentframework.chat_runtime.prompt_session.prompt_async",
-            side_effect=Exception("Prompt fail"),
+            "src.agentframework.chat_runtime._get_prompt_session",
+            return_value=MagicMock(prompt_async=AsyncMock(side_effect=Exception("Prompt fail"))),
         ),
         patch(
             "src.agentframework.chat_runtime.asyncio.to_thread", new_callable=AsyncMock

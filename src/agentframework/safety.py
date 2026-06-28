@@ -29,9 +29,10 @@ DANGEROUS_PATTERNS = [
     (re.compile(r"mount\s+--bind"), "Bind mount"),
     (re.compile(r"chmod\s+[47]777"), "Overly permissive permissions"),
     (re.compile(r"chown\s+-R"), "Recursive ownership change"),
-    (re.compile(r"sudo\s+rm"), "sudo delete"),
+    (re.compile(r"sudo\s+rm\s+-rf\s+/"), "sudo recursive delete root"),
     (re.compile(r"sudo\s+rm\s+-rf"), "sudo recursive delete"),
     (re.compile(r"sudo\s+rm\s+/"), "sudo delete root"),
+    (re.compile(r"sudo\s+rm"), "sudo delete"),
     (re.compile(r">\s*/etc/passwd"), "Write to passwd"),
     (re.compile(r">\s*/etc/shadow"), "Write to shadow"),
     (re.compile(r"git\s+push\s+--force"), "Force push"),
@@ -78,6 +79,7 @@ SAFE_COMMANDS = {
     "pwd": [],
     "cd": [],
     "dir": [],
+    "rmdir": [],
     "type": [],
     "findstr": [],
     "icacls": [],
@@ -180,8 +182,11 @@ class SecurityValidator:
         if not path:
             return False
         try:
-            resolved = (self.workspace_path / path).resolve()
-            return resolved.is_relative_to(self.workspace_path)
+            candidate = (self.workspace_path / path).resolve()
+            ws_str = str(self.workspace_path)
+            if not ws_str.endswith(os.sep):
+                ws_str += os.sep
+            return str(candidate).startswith(ws_str) or candidate == self.workspace_path
         except (OSError, ValueError):
             return False
 
@@ -199,8 +204,9 @@ class SecurityValidator:
         """Check if path is in blocked list."""
         if not path:
             return False
+        resolved = str(Path(path).resolve())
         for pattern in self._blocked_path_patterns:
-            if pattern.match(path):
+            if pattern.match(path) or pattern.match(resolved):
                 return True
         return False
 
@@ -215,7 +221,6 @@ class SecurityValidator:
                 return False, f"Dangerous pattern detected: {reason}"
 
         import shlex
-        import re
 
         try:
             # We must break the string across bash boundary chaining loops to inspect them individually
@@ -237,12 +242,15 @@ class SecurityValidator:
                 # Example: `parts = ['X=/', 'rm', '-rf', '$X']`.
                 # We need to evaluate the execution block. The base command here is usually the first non-variable token.
                 # To be rigorous, we strip out leading variable assignments from the 'base_cmd' inspection natively.
+                # Strip leading env-var assignments (e.g. `DEBUG=1 npm start`)
+                # but keep tokens containing `=` in later positions (e.g. `sed s/foo=bar/g`)
                 executable_parts = []
+                seen_command = False
                 for p in parts:
-                    if (
-                        "=" not in p or p.startswith("-")
-                    ):  # Quick heuristic to skip env vars preceding a command (e.g. `DEBUG=1 npm start`)
-                        executable_parts.append(p)
+                    if not seen_command and "=" in p and not p.startswith("-"):
+                        continue  # Skip leading env var assignments
+                    seen_command = True
+                    executable_parts.append(p)
 
                 if not executable_parts:
                     continue  # It was purely an assignment
@@ -321,6 +329,9 @@ class SecurityValidator:
         self, content: str | None = None, path: str | None = None
     ) -> bool:
         """Check if file size is within limits."""
+        if content is None and path is None:
+            raise ValueError("Either content or path must be provided")
+
         if content and len(content.encode()) > self.config.max_file_size:
             return False
         if path:
@@ -328,7 +339,7 @@ class SecurityValidator:
                 size = Path(path).stat().st_size
                 return size <= self.config.max_file_size
             except OSError:
-                pass
+                return False  # Fail closed: can't verify, deny
         return True
 
     def requires_approval(
@@ -360,8 +371,15 @@ class SecurityValidator:
         found = []
         cmd_lower = command.lower()
         for keyword in DESTRUCTIVE_KEYWORDS:
-            if keyword in cmd_lower:
-                found.append(keyword)
+            if " " in keyword:
+                if keyword in cmd_lower:
+                    found.append(keyword)
+            elif keyword.isalnum():
+                if re.search(r"\b" + re.escape(keyword) + r"\b", cmd_lower):
+                    found.append(keyword)
+            else:
+                if keyword in cmd_lower:
+                    found.append(keyword)
         return found
 
     def log_approval(self, tool_name: str, details: str, approved: bool):
@@ -397,18 +415,17 @@ class SecurityValidator:
 
     async def get_approval_async(self, tool_name: str, details: str) -> bool:
         """Get user approval for dangerous operation (async version)."""
-        from typing import Any
+        from inspect import iscoroutinefunction
 
         if not self.requires_approval(tool_name):
             return True
 
         if self.config.async_approval_callback:
-            callback: Any = self.config.async_approval_callback
-            result = callback(tool_name, details)
-            if hasattr(result, "__await__"):
-                approved = await result
+            callback = self.config.async_approval_callback
+            if iscoroutinefunction(callback):
+                approved = await callback(tool_name, details)
             else:
-                approved = result
+                approved = callback(tool_name, details)
             self.log_approval(tool_name, details, approved)
             return approved
 

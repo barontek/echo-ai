@@ -56,7 +56,9 @@ class SafetyConfigSchema(BaseModel):
 
     workspace: str = Field(default=".", description="Allowed workspace directory")
     allow_network: bool = Field(default=False)
+    enable_domain_allowlist: bool = Field(default=False)
     allowed_domains: list[str] = Field(default_factory=list)
+    allowed_commands: list[str] = Field(default_factory=lambda: ["*"])
     blocked_commands: list[str] = Field(default_factory=list)
     max_file_size: int = Field(default=10 * 1024 * 1024, ge=0)
     max_execution_time: int = Field(default=60, ge=1, le=300)
@@ -81,6 +83,7 @@ class LimitsConfig(BaseModel):
     """Limits configuration schema."""
 
     max_web_fetch_chars: int = Field(default=15000, ge=0)
+    max_search_results: int = Field(default=5, ge=0)
     max_search_result_snippet: int = Field(default=500, ge=0)
     min_fetch_content_chars: int = Field(default=50, ge=0)
     search_result_truncate: int = Field(default=1000, ge=0)
@@ -112,6 +115,7 @@ class ObservabilityConfig(BaseModel):
 class WebConfig(BaseModel):
     """Web server configuration schema."""
 
+    api_key: str | None = Field(default=None, description="Bearer token for API authentication")
     cors_origins: list[str] = Field(default_factory=list)
     cors_allow_credentials: bool = Field(default=True)
     cors_allow_methods: list[str] = Field(default_factory=lambda: ["*"])
@@ -229,7 +233,7 @@ def _parse_value(value: str) -> Any:
     """Parse string value to appropriate type."""
     if value.lower() in ("true", "false"):
         return value.lower() == "true"
-    if value.isdigit():
+    if value.lstrip("-").isdigit():
         return int(value)
     try:
         return float(value)
@@ -263,12 +267,24 @@ def load_config(path: str | None = None) -> dict:
     """
     config_path = find_config_path(path)
     if config_path:
-        with open(config_path, encoding="utf-8") as f:
-            config = yaml.safe_load(f) or {}
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            logger.error("Failed to parse config file: %s", e)
+            config = {}
     else:
         config = {}
 
-    return apply_env_overrides(config)
+    config = apply_env_overrides(config)
+
+    # Validate through Pydantic schema to catch errors early
+    try:
+        AppConfig(**config)
+    except Exception as e:
+        logger.warning("Config validation warning: %s", e)
+
+    return config
 
 
 def get_limits_config(config: dict) -> dict:
@@ -295,17 +311,14 @@ def get_safety_config(config: dict) -> SafetyConfig:
     safety = config.get("safety", {})
     tools_config = config.get("tools", {})
 
-    validator = SecurityValidator(
-        SafetyConfig(
-            workspace=safety.get("workspace", "."),
-        )
-    )
-
     def _tool_warning(tool: str, details: str) -> str:
         """Get warning message for tool approval. Pure function, testable."""
         warning_msg = ""
         if tool == "bash":
-            destructive = validator.check_destructive_keywords(details)
+            destructive = SecurityValidator.check_destructive_keywords(
+                SecurityValidator(SafetyConfig(workspace=".")),
+                details
+            )
             if destructive:
                 warning_msg = (
                     " [red]WARNING DESTRUCTIVE keywords detected: "
@@ -343,7 +356,6 @@ def get_safety_config(config: dict) -> SafetyConfig:
 
     def approval_callback(tool: str, details: str) -> bool:
         """Request user approval for potentially dangerous operations."""
-        import asyncio
         import sys
 
         warning_msg = _tool_warning(tool, details)
@@ -353,26 +365,24 @@ def get_safety_config(config: dict) -> SafetyConfig:
 
         print("Allow? (y/N): ", end="", flush=True)
 
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        import select
 
         try:
-            response = loop.run_until_complete(
-                asyncio.wait_for(
-                    loop.run_in_executor(None, sys.stdin.readline),
-                    timeout=approval_timeout,
+            ready, _, _ = select.select([sys.stdin], [], [], approval_timeout)
+            if not ready:
+                console.print(
+                    f"[red]Approval timed out after {approval_timeout}s. Denying.[/red]"
                 )
-            )
-        except asyncio.TimeoutError:
-            console.print(
-                f"[red]Approval timed out after {approval_timeout}s. Denying.[/red]"
-            )
+                return False
+            response = sys.stdin.readline()
+        except Exception:
             return False
 
         return response.strip().lower() in ("y", "yes")
+
+    require_approval_for = safety.get("require_approval_for")
+    if require_approval_for is None:
+        require_approval_for = ["bash", "write_file", "memory"]
 
     return SafetyConfig(
         workspace=safety.get("workspace", "."),
@@ -383,9 +393,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
         allowed_domains=safety.get("allowed_domains", []),
         max_file_size=safety.get("max_file_size", 10 * 1024 * 1024),
         max_execution_time=safety.get("max_execution_time", 60),
-        require_approval_for=safety.get(
-            "require_approval_for", ["bash", "write_file", "memory"]
-        ),
+        require_approval_for=require_approval_for,
         approval_callback=approval_callback,
         audit_log_path=safety.get("audit_log_path"),
         read_requires_approval=safety.get("read_requires_approval", False),
@@ -463,8 +471,6 @@ def validate_config(config: dict) -> ConfigValidationResult:
     warnings: list[str] = []
 
     schema_result = validate_config_schema(config)
-    if not schema_result.valid:
-        return schema_result
 
     model_config = config.get("model", {})
     provider = model_config.get("provider", "ollama")
@@ -524,10 +530,13 @@ def validate_config(config: dict) -> ConfigValidationResult:
             f"max_iterations is very high ({max_iterations}) - may cause long-running agents"
         )
 
+    all_errors = list(schema_result.errors) + errors
+    all_warnings = list(schema_result.warnings) + warnings
+
     return ConfigValidationResult(
-        valid=len(errors) == 0,
-        errors=errors,
-        warnings=warnings,
+        valid=len(all_errors) == 0,
+        errors=all_errors,
+        warnings=all_warnings,
     )
 
 

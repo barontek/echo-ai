@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 import time
 from pathlib import Path
@@ -31,19 +32,21 @@ class RateLimiter:
             self._conn = conn
         return self._conn
 
-    def check(self, ip: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+    async def check(self, ip: str, limit: int, window_seconds: int) -> tuple[bool, int]:
         """Check if *ip* is within *limit* requests per *window_seconds*.
 
         Returns (allowed, remaining).
         """
+        return await asyncio.to_thread(self._check_sync, ip, limit, window_seconds)
+
+    def _check_sync(self, ip: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+        """Synchronous check implementation."""
         conn = self._ensure_conn()
         now = time.time()
         cutoff = now - window_seconds
 
-        conn.execute(
-            "DELETE FROM requests WHERE ip = ? AND ts < ?",
-            (ip, cutoff),
-        )
+        # Clean up expired rows for all IPs
+        conn.execute("DELETE FROM requests WHERE ts < ?", (cutoff,))
 
         cursor = conn.execute(
             "SELECT COUNT(*) FROM requests WHERE ip = ?",
@@ -64,6 +67,10 @@ class RateLimiter:
 
     def clear(self, ip: str | None = None) -> None:
         """Remove rate-limit entries, optionally for a single IP."""
+        self._clear_sync(ip)
+
+    def _clear_sync(self, ip: str | None = None) -> None:
+        """Synchronous clear implementation."""
         conn = self._ensure_conn()
         if ip:
             conn.execute("DELETE FROM requests WHERE ip = ?", (ip,))

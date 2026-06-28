@@ -14,7 +14,7 @@ make typecheck        # pyright src/
 make security         # pip-audit + bandit (blocked on NixOS)
 
 # Frontend
-cd frontend && npm run check        # canonical: lint + typecheck + test + build
+cd frontend && npm run typecheck && npm run lint && npm run test:run && npm run build  # canonical: typecheck + lint + test + build
 cd frontend && npm run test:run     # vitest only
 cd frontend && npm run lint
 cd frontend && npm run typecheck

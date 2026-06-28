@@ -82,7 +82,7 @@ class TestCheckFileSize:
         assert validator.check_file_size(path=str(big)) is False
 
     def test_check_file_size_path_not_found(self, validator):
-        assert validator.check_file_size(path="/nonexistent/file.txt") is True
+        assert validator.check_file_size(path="/nonexistent/file.txt") is False
 
 
 class TestRequiresApprovalEdgeCases:

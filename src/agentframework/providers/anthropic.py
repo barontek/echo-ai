@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -39,14 +40,20 @@ class AnthropicProvider(LLMProvider):
     ) -> LLMResponse:
         """Send a chat request to Anthropic."""
         try:
-            system_msg = None
+            system_parts: list[str] = []
             filtered_messages = []
 
             for msg in messages:
                 if msg.get("role") == "system":
-                    system_msg = msg["content"]
+                    system_parts.append(msg["content"])
                 else:
                     filtered_messages.append(msg)
+
+            if not filtered_messages:
+                logger.warning("All messages are system messages; cannot call Anthropic API")
+                return LLMResponse(content="")
+
+            system_msg = "\n".join(system_parts) if system_parts else None
 
             params = {
                 "model": self.model,
@@ -99,17 +106,23 @@ class AnthropicProvider(LLMProvider):
         messages: list[dict[str, str]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.3,
-        on_chunk: Any | None = None,
+        on_chunk: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         """Send a streaming chat request to Anthropic."""
-        system_msg = None
+        system_parts: list[str] = []
         filtered_messages = []
 
         for msg in messages:
             if msg.get("role") == "system":
-                system_msg = msg["content"]
+                system_parts.append(msg["content"])
             else:
                 filtered_messages.append(msg)
+
+        if not filtered_messages:
+            logger.warning("All messages are system messages; cannot call Anthropic API")
+            return LLMResponse(content="")
+
+        system_msg = "\n".join(system_parts) if system_parts else None
 
         params = {
             "model": self.model,
@@ -169,13 +182,18 @@ class AnthropicProvider(LLMProvider):
         ) as client:
             instructor_client = instructor.from_anthropic(client)
 
+            system_parts = []
             filtered_messages = []
 
             for msg in messages:
                 if msg.get("role") == "system":
-                    pass
+                    system_parts.append(msg["content"])
                 else:
                     filtered_messages.append(msg)
+
+            if system_parts:
+                system_content = "\n".join(system_parts)
+                filtered_messages.insert(0, {"role": "user", "content": f"System instructions:\n{system_content}"})
 
             params = {
                 "model": self.model,

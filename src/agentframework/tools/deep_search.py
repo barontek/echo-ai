@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -44,7 +45,10 @@ class DeepSearchTool(Tool):
     def _get_search_provider(self):
         provider_type = (self._limits or {}).get("provider", "brave")
         from .search_providers import get_search_provider
-        return get_search_provider(provider_type)
+        try:
+            return get_search_provider(provider_type)
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize search provider '{provider_type}': {e}") from e
 
     def _get_provider(self):
         if self._llm is not None:
@@ -104,9 +108,11 @@ class DeepSearchTool(Tool):
         contents = await asyncio.gather(*(fetch_with_limit(r) for r in results))
 
         def _strip_thinking(text: str) -> str:
-            if THINKING_START in text and THINKING_END in text:
-                parts = text.split(THINKING_END, 1)
-                return parts[1].strip()
+            if THINKING_START in text:
+                if THINKING_END in text:
+                    parts = text.split(THINKING_END, 1)
+                    return parts[1].strip()
+                return ""
             return text.strip()
 
         async def summarize_batch(batch: list[tuple[str, str, str]]) -> list[str]:
@@ -138,12 +144,22 @@ class DeepSearchTool(Tool):
                 result = _strip_thinking(response.content)
                 parts: list[str] = []
                 for j, (t, u, _) in enumerate(batch):
+                    marker = f"Source {j+1}:"
+                    summary_lines: list[str] = []
+                    in_source = False
                     for line in result.split("\n"):
-                        if line.strip().startswith(f"Source {j+1}:"):
-                            summary = line.split(":", 1)[1].strip()
-                            if summary != "DISCARD":
-                                parts.append(f"{t}: {u}\n{summary}")
-                            break
+                        stripped = line.strip()
+                        if stripped.startswith(f"Source {j+1}:") or stripped == marker:
+                            in_source = True
+                            summary_lines.append(stripped.split(":", 1)[1].strip())
+                        elif in_source:
+                            if re.match(r"^Source \d+:", stripped):
+                                break
+                            summary_lines.append(line)
+                    if summary_lines:
+                        summary = "\n".join(summary_lines).strip()
+                        if summary and summary != "DISCARD":
+                            parts.append(f"{t}: {u}\n{summary}")
                 return parts
             except Exception:
                 return []

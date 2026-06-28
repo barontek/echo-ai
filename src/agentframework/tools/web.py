@@ -1,6 +1,8 @@
 """Web tools for fetching and searching with network restrictions."""
 
 import asyncio
+import atexit
+import platform
 from typing import Any
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
@@ -32,17 +34,30 @@ def get_http_client() -> httpx.AsyncClient:
     """Get or create a shared HTTP client with connection pooling."""
     global _http_client
     if _http_client is None:
+        os_name = platform.system()
+        ua = (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        )
+        if os_name == "Darwin":
+            ua = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            )
+        elif os_name == "Windows":
+            ua = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            )
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(20.0, connect=10.0),
             follow_redirects=True,
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-                ),
-            },
+            limits=httpx.Limits(
+                max_keepalive_connections=10, max_connections=20
+            ),
+            headers={"User-Agent": ua},
         )
+        atexit.register(lambda: asyncio.run(close_http_client()))
     return _http_client
 
 
@@ -222,7 +237,7 @@ class WebFetchTool(Tool):
                                     content = content[:max_chars] + "\n... (truncated)"
                                 return ToolResult(content=str(content))
                 except Exception as e:
-                    logger.debug(f"Crawl4AI fetch failed, falling back to httpx: {e}")
+                    logger.warning("Crawl4AI fetch failed, falling back to httpx: %s", e)
 
             max_chars = self.limits.get("max_web_fetch_chars", 15000)
             client = get_http_client()
@@ -339,8 +354,9 @@ class WebSearchTool(Tool):
 
     async def execute(self, query: str, **kwargs) -> ToolResult:
         """Search the web with safety checks."""
-        if not self.validator.config.allow_network:
-            return ToolResult(error="Web search is disabled")
+        allowed, reason = self.validator.check_network_allowed("https://web-search")
+        if not allowed:
+            return ToolResult(error=f"Search blocked: {reason}")
 
         if self.validator.requires_approval("web_search"):
             approved = self.validator.get_approval("web_search", f"search: {query}")
@@ -371,10 +387,9 @@ class WebSearchTool(Tool):
                     formatted.append(f"{idx}. {title}: {url}\n  {snippet[:snippet_limit]}")
                 return ToolResult(content="\n\n".join(formatted))
 
-            async with AsyncWebCrawler(verbose=False) as crawler:
-                tasks = []
-                for idx, r in enumerate(results, 1):
-                    tasks.append(
+            try:
+                async with AsyncWebCrawler(verbose=False) as crawler:
+                    coros = [
                         self._fetch_search_result(
                             crawler,
                             idx,
@@ -382,24 +397,41 @@ class WebSearchTool(Tool):
                             r.get("title", ""),
                             r.get("snippet", ""),
                         )
-                    )
+                        for idx, r in enumerate(results, 1)
+                    ]
 
-                gathered_results = await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=60.0,
-                )
+                    task_objects = [asyncio.ensure_future(c) for c in coros]
+                    try:
+                        gathered_results = await asyncio.wait_for(
+                            asyncio.gather(*task_objects, return_exceptions=True),
+                            timeout=60.0,
+                        )
+                    except asyncio.TimeoutError:
+                        for t in task_objects:
+                            if not t.done():
+                                t.cancel()
+                        raise
 
-                for i, r in enumerate(gathered_results):
-                    if isinstance(r, Exception):
-                        snippet = results[i].get("snippet", "")
-                        title = results[i].get("title", "")
-                        url = results[i].get("url", "")
-                        snippet_limit = self.limits.get("max_search_result_snippet", 500)
-                        formatted.append(f"{i+1}. {title}: {url}\n  {snippet[:snippet_limit]}")
-                    else:
-                        formatted.append(r)
+                    for i, r in enumerate(gathered_results):
+                        if isinstance(r, Exception):
+                            title = results[i].get("title", "")
+                            snippet = results[i].get("snippet", "")
+                            url = results[i].get("url", "")
+                            snippet_limit = self.limits.get("max_search_result_snippet", 500)
+                            formatted.append(f"{i+1}. {title}: {url}\n  {snippet[:snippet_limit]}")
+                        else:
+                            formatted.append(r)
 
-            return ToolResult(content="\n\n".join(formatted))
+                return ToolResult(content="\n\n".join(formatted))
+            except Exception:
+                logger.warning("Crawl4AI search crawl failed, returning snippet-only results")
+                for idx, r in enumerate(results, 1):
+                    title = r.get("title", "")
+                    url = r.get("url", "")
+                    snippet = r.get("snippet", "")
+                    snippet_limit = self.limits.get("max_search_result_snippet", 500)
+                    formatted.append(f"{idx}. {title}: {url}\n  {snippet[:snippet_limit]}")
+                return ToolResult(content="\n\n".join(formatted))
         except asyncio.TimeoutError:
             return ToolResult(error="Search timed out")
         except Exception as e:

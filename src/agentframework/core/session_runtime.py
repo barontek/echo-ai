@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
+from typing import Any
 
 from ..conversation import Message
 
 
-def undo_change(change_tracker) -> str:
+def _validate_path_safe(path: str) -> bool:
+    """Basic safety check: ensure path doesn't escape via parent dir traversal."""
+    if ".." in Path(path).parts:
+        return False
+    return True
+
+
+def undo_change(change_tracker: Any) -> str:
     if not change_tracker.can_undo():
         return "Nothing to undo."
 
@@ -15,16 +24,29 @@ def undo_change(change_tracker) -> str:
     if change is None:
         return "Nothing to undo."
 
-    if change["old_content"] is not None:
+    path = change.get("path")
+    if not path:
+        return "Undo failed: no path in change record."
+    if not _validate_path_safe(path):
+        return f"Undo failed: unsafe path {path}"
+
+    old_content = change.get("old_content")
+    if old_content is not None:
         try:
-            Path(change["path"]).write_text(change["old_content"], encoding="utf-8")
-            return f"Undid write to {change['path']}"
+            Path(path).write_text(old_content, encoding="utf-8")
+            return f"Undid write to {path}"
         except Exception as e:
             return f"Undo failed: {e}"
-    return f"Undid {change['operation']} on {change['path']}"
+    else:
+        # File was newly created — undo should delete it
+        try:
+            Path(path).unlink(missing_ok=True)
+            return f"Undid creation of {path}"
+        except Exception as e:
+            return f"Undo failed: {e}"
 
 
-def redo_change(change_tracker) -> str:
+def redo_change(change_tracker: Any) -> str:
     if not change_tracker.can_redo():
         return "Nothing to redo."
 
@@ -32,45 +54,42 @@ def redo_change(change_tracker) -> str:
     if change is None:
         return "Nothing to redo."
 
-    if change["new_content"] is not None:
+    path = change.get("path")
+    if not path:
+        return "Redo failed: no path in change record."
+    if not _validate_path_safe(path):
+        return f"Redo failed: unsafe path {path}"
+
+    new_content = change.get("new_content")
+    if new_content is not None:
         try:
-            Path(change["path"]).write_text(change["new_content"], encoding="utf-8")
-            return f"Redid write to {change['path']}"
+            Path(path).write_text(new_content, encoding="utf-8")
+            return f"Redid write to {path}"
         except Exception as e:
             return f"Redo failed: {e}"
-    return f"Redid {change['operation']} on {change['path']}"
+    else:
+        # File was deleted — redo should re-delete it
+        try:
+            Path(path).unlink(missing_ok=True)
+            return f"Redid deletion of {path}"
+        except Exception as e:
+            return f"Redo failed: {e}"
+
+
+_MESSAGE_FIELDS = {f.name for f in fields(Message)}
 
 
 def serialize_messages(messages: list[Message]) -> list[dict]:
-    return [
-        {
-            "role": m.role,
-            "content": m.content,
-            "tool_calls": m.tool_calls,
-            "tool_call_id": m.tool_call_id,
-            "tool_name": m.tool_name,
-            "tool_arguments": m.tool_arguments,
-            "error_category": m.error_category,
-            "timestamp": m.timestamp,
-            "thinking": m.thinking,
-        }
-        for m in messages
-    ]
+    return [{f: getattr(m, f) for f in _MESSAGE_FIELDS} for m in messages]
 
 
 def deserialize_messages(messages: list[dict]) -> list[Message]:
-    result = []
+    result: list[Message] = []
     for m in messages:
-        msg = Message(
-            role=m["role"],
-            content=m["content"],
-            tool_calls=m.get("tool_calls"),
-            tool_call_id=m.get("tool_call_id"),
-            tool_name=m.get("tool_name"),
-            tool_arguments=m.get("tool_arguments"),
-            error_category=m.get("error_category"),
-            timestamp=m.get("timestamp"),
-            thinking=m.get("thinking"),
-        )
-        result.append(msg)
+        kwargs: dict[str, Any] = {}
+        for f in _MESSAGE_FIELDS:
+            val = m.get(f)
+            if val is not None:
+                kwargs[f] = val
+        result.append(Message(**kwargs))
     return result

@@ -134,7 +134,7 @@ async def test_web_search_tool(mock_crawler_class):
     # Test blocked
     blocked_tool = WebSearchTool(safety_config=SafetyConfig(allow_network=False))
     res_blocked = await blocked_tool.execute(query="query")
-    assert res_blocked.error and "Web search is disabled" in res_blocked.error
+    assert res_blocked.error and "Search blocked" in res_blocked.error
 
     mock_crawler = mock_crawler_class.return_value.__aenter__.return_value
 

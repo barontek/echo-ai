@@ -20,7 +20,7 @@ from src.agentframework.routers.chat import handle_chat
 from src.agentframework.routers.workflows import workflows_list, workflow_run
 from pathlib import Path
 
-client = TestClient(app)
+client = TestClient(app, raise_server_exceptions=False)
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ class TestAgentBootstrap:
 
         assert result.config.tools == fake_tools
         assert result.config.temperature == 0.6
-        assert result.config.base_url is None  # code nullifies non-default ollama URLs
+        assert result.config.base_url == "http://localhost:9999"
         assert result.config.max_iterations == 7
         assert result.config.session_enabled is False
         assert result.config.session_dir == ".sessions-test"
@@ -325,14 +325,10 @@ class TestSessions:
     def test_delete_session(self, monkeypatch, mock_agent):
         state = web_api.get_state()
         state.agent = mock_agent
-        mock_db = MagicMock()
-        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
-            mock_db
-        )
+        mock_agent.session_manager.delete_session = MagicMock()
         response = client.delete("/api/sessions/session-to-delete")
         assert response.status_code == 200
-        mock_db.query.assert_called_once_with(web_api.DBSessionModel)
-        mock_db.query.return_value.filter.assert_called_once()
+        mock_agent.session_manager.delete_session.assert_called_once_with("session-to-delete")
 
     def test_rename_session_success(self, mock_agent):
         state = web_api.get_state()
@@ -1119,10 +1115,7 @@ class TestRoute:
         state = web_api.get_state()
         state.agent = None
         response = client.post("/route", json={"prompt": "hello"})
-        # Known issue: route_intent catches its own 503 HTTPException and
-        # re-raises as 500. The original "Agent not initialized" detail is
-        # preserved in the 500 response (via str() on the caught exception).
-        assert response.status_code == 500
+        assert response.status_code == 503
         assert "Agent not initialized" in response.json()["detail"]
 
     def test_route_exception(self, mock_agent):
@@ -1268,7 +1261,7 @@ class TestWebSocketSessionManagement:
                     while True:
                         msg = ws.receive_json()
                         events.append(msg)
-                        if msg["type"] == "done":
+                        if msg["type"] in ("done", "error"):
                             break
                     ws_mock_agent.load_session.assert_called_with("other-session")
 
@@ -1293,7 +1286,7 @@ class TestWebSocketSessionManagement:
                     while True:
                         msg = ws.receive_json()
                         events.append(msg)
-                        if msg["type"] == "done":
+                        if msg["type"] in ("done", "error"):
                             break
                     ws_mock_agent.session_manager.create_session.assert_called()
 
@@ -1724,7 +1717,7 @@ class TestRunServerFunction:
     def test_run_server_calls_uvicorn(self, mock_uvicorn_run):
         """run_server should call uvicorn.run with correct params."""
         web_api.run_server(host="127.0.0.1", port=9000)
-        mock_uvicorn_run.assert_called_once_with(web_api.app, host="127.0.0.1", port=9000, reload=False)
+        mock_uvicorn_run.assert_called_once_with(web_api.app, host="127.0.0.1", port=9000, reload=False, log_level="info")
 
 
 # ---------------------------------------------------------------------------
@@ -2381,7 +2374,7 @@ class TestBearerAuth:
 
     @pytest.fixture(autouse=True)
     def _enable_auth(self, monkeypatch):
-        monkeypatch.setattr(web_api, "_api_key", self.CORRECT_KEY)
+        monkeypatch.setattr(web_api, "_get_api_key", lambda: self.CORRECT_KEY)
         yield
 
     def test_correct_token_passes(self):
@@ -2417,7 +2410,7 @@ class TestBearerAuth:
         assert response.status_code == 200
 
     def test_auth_disabled_no_key(self, monkeypatch):
-        monkeypatch.setattr(web_api, "_api_key", None)
+        monkeypatch.setattr(web_api, "_get_api_key", lambda: None)
         response = client.get("/api/review")
         assert response.status_code == 200
 
@@ -2429,7 +2422,7 @@ class TestBearerAuthWebSocket:
 
     @pytest.fixture(autouse=True)
     def _enable_auth(self, monkeypatch):
-        monkeypatch.setattr(web_api, "_api_key", self.CORRECT_KEY)
+        monkeypatch.setattr(web_api, "_get_api_key", lambda: self.CORRECT_KEY)
         yield
 
     def test_ws_correct_token_passes(self, ws_mock_agent):

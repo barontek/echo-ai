@@ -71,6 +71,8 @@ class CircuitBreaker:
         """Record a successful call."""
         if self.state == CircuitState.HALF_OPEN:
             self.success_count += 1
+            if self.half_open_calls > 0:
+                self.half_open_calls -= 1
             if self.success_count >= self.config.success_threshold:
                 self.state = CircuitState.CLOSED
                 self.failure_count = 0
@@ -78,6 +80,7 @@ class CircuitBreaker:
                 logger.info("Circuit breaker CLOSED after successful recovery")
         else:
             self.failure_count = 0
+            self.success_count = 0
 
     def _record_failure(self) -> None:
         """Record a failed call."""
@@ -85,7 +88,10 @@ class CircuitBreaker:
         self.last_failure_time = time.time()
 
         if self.state == CircuitState.HALF_OPEN:
+            if self.half_open_calls > 0:
+                self.half_open_calls -= 1
             self.state = CircuitState.OPEN
+            self.success_count = 0
             logger.warning("Circuit breaker OPEN after half-open failure")
         elif self.failure_count >= self.config.failure_threshold:
             self.state = CircuitState.OPEN

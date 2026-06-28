@@ -135,30 +135,7 @@ class EchoClient:
         def process_buffer():
             nonlocal in_thinking, buffer
             while buffer:
-                if not in_thinking:
-                    start_idx = buffer.find(THINKING_START)
-                    if start_idx != -1:
-                        if start_idx > 0:
-                            queue.put_nowait(ContentEvent(content=buffer[:start_idx]))
-                        in_thinking = True
-                        buffer = buffer[start_idx + len(THINKING_START) :]
-                    else:
-                        # Check for partial start tag at the end
-                        # A partial tag can be up to len(THINKING_START) - 1 chars
-                        partial_match = False
-                        for i in range(1, len(THINKING_START)):
-                            if buffer.endswith(THINKING_START[:i]):
-                                if len(buffer) > i:
-                                    queue.put_nowait(ContentEvent(content=buffer[:-i]))
-                                buffer = buffer[-i:]
-                                partial_match = True
-                                break
-
-                        if not partial_match:
-                            queue.put_nowait(ContentEvent(content=buffer))
-                            buffer = ""
-                        break
-                else:
+                if in_thinking:
                     end_idx = buffer.find(THINKING_END)
                     if end_idx != -1:
                         if end_idx > 0:
@@ -166,9 +143,9 @@ class EchoClient:
                         in_thinking = False
                         buffer = buffer[end_idx + len(THINKING_END) :]
                     else:
-                        # Check for partial end tag at the end
+                        # Check for partial end tag at the end (THINKING_END is longer)
                         partial_match = False
-                        for i in range(1, len(THINKING_END)):
+                        for i in range(len(THINKING_END) - 1, 0, -1):
                             if buffer.endswith(THINKING_END[:i]):
                                 if len(buffer) > i:
                                     queue.put_nowait(ThinkingEvent(content=buffer[:-i]))
@@ -180,6 +157,28 @@ class EchoClient:
                             queue.put_nowait(ThinkingEvent(content=buffer))
                             buffer = ""
                         break
+                else:
+                    start_idx = buffer.find(THINKING_START)
+                    if start_idx != -1:
+                        if start_idx > 0:
+                            queue.put_nowait(ContentEvent(content=buffer[:start_idx]))
+                        in_thinking = True
+                        buffer = buffer[start_idx + len(THINKING_START) :]
+                    else:
+                        # Check for partial start tag at the end (THINKING_START is shorter)
+                        partial_match = False
+                        for i in range(len(THINKING_START) - 1, 0, -1):
+                            if buffer.endswith(THINKING_START[:i]):
+                                if len(buffer) > i:
+                                    queue.put_nowait(ContentEvent(content=buffer[:-i]))
+                                buffer = buffer[-i:]
+                                partial_match = True
+                                break
+
+                        if not partial_match:
+                            queue.put_nowait(ContentEvent(content=buffer))
+                            buffer = ""
+                        break
 
         def on_chunk(chunk: str):
             nonlocal buffer
@@ -188,9 +187,11 @@ class EchoClient:
 
         # Background task to run agent
         async def agent_task():
+            nonlocal buffer
             try:
                 await self.agent.run_streaming(user_input, on_chunk=on_chunk)
             except Exception as e:
+                buffer = ""
                 queue.put_nowait(ErrorEvent(error=str(e)))
             finally:
                 if buffer:
@@ -200,14 +201,12 @@ class EchoClient:
                         queue.put_nowait(ContentEvent(content=buffer))
                 queue.put_nowait(None)  # Sentinel to finish
 
-        task = asyncio.create_task(agent_task())
+        asyncio.create_task(agent_task())
 
         while True:
             item = await queue.get()
             if item is None:
                 break
             if isinstance(item, ErrorEvent):
-                exc = task.exception()
-                if exc is not None:
-                    raise exc
+                continue
             yield item

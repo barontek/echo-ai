@@ -245,10 +245,29 @@ async def execute_tool_calls(
     messages: list[Message] = []
 
     if parallel:
-        results = await asyncio.gather(*[execute_and_message(tc) for tc in tool_calls])
-        for tc, (msg, elapsed) in zip(tool_calls, results):
-            messages.append(msg)
-            timings[tc.id] = elapsed
+        results = await asyncio.gather(
+            *[execute_and_message(tc) for tc in tool_calls],
+            return_exceptions=True,
+        )
+        for tc, result in zip(tool_calls, results):
+            if isinstance(result, BaseException):
+                logger.exception("Parallel tool %s failed: %s", tc.name, result)
+                err_msg = f"Tool execution failed: {result}"
+                messages.append(
+                    Message(
+                        role="tool",
+                        content=err_msg,
+                        tool_call_id=tc.id,
+                        tool_name=tc.name,
+                        tool_arguments=tc.arguments,
+                        error_category="execution_error",
+                    )
+                )
+                timings[tc.id] = 0.0
+            else:
+                msg, elapsed = result
+                messages.append(msg)
+                timings[tc.id] = elapsed
     else:
         for tc in tool_calls:
             msg, elapsed = await execute_and_message(tc)

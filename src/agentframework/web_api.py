@@ -28,7 +28,7 @@ from .rate_limit import RateLimiter
 from .web_utils import filter_messages_for_ui
 from .logging_utils import set_correlation_id
 from .core.router import SemanticRouter
-from .session import DBSessionModel
+
 
 logger = logging.getLogger(__name__)
 
@@ -164,30 +164,28 @@ async def correlation_id_middleware(request: Request, call_next):
     return response
 
 
-# API key authentication for Bearer token
-_config = load_config()
-_api_key: str | None = _config.get("web", {}).get("api_key")
-if _api_key:
-    logger.info("API key authentication is ENABLED")
-else:
-    logger.info("API key authentication is DISABLED")
-
 # Rate limiting configuration
 _rate_limiter = RateLimiter()
-_rate_limit_config = _config.get("web", {}).get("rate_limit", {})
-_RATE_LIMIT_REQUESTS = _rate_limit_config.get("requests", 60)
-_RATE_LIMIT_WINDOW = _rate_limit_config.get("window_seconds", 60)
+_rate_config = load_config().get("web", {}).get("rate_limit", {})
+_RATE_LIMIT_REQUESTS = _rate_config.get("requests", 60)
+_RATE_LIMIT_WINDOW = _rate_config.get("window_seconds", 60)
 
 
-def _check_rate_limit(client_ip: str) -> tuple[bool, int]:
+def _get_api_key() -> str | None:
+    """Load the API key from config (fresh every call)."""
+    return load_config().get("web", {}).get("api_key")
+
+
+async def _check_rate_limit(client_ip: str) -> tuple[bool, int]:
     """Check if client IP is within rate limits. Returns (allowed, remaining)."""
-    return _rate_limiter.check(client_ip, _RATE_LIMIT_REQUESTS, _RATE_LIMIT_WINDOW)
+    return await _rate_limiter.check(client_ip, _RATE_LIMIT_REQUESTS, _RATE_LIMIT_WINDOW)
 
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     """Require Bearer token on /api/* if ECHO_API_KEY is configured."""
-    if _api_key is None:
+    api_key = _get_api_key()
+    if api_key is None:
         return await call_next(request)
 
     if request.url.path in ("/health", "/health/detailed"):
@@ -202,7 +200,7 @@ async def auth_middleware(request: Request, call_next):
                 status_code=401, content={"detail": "Invalid authentication scheme"}
             )
         token = auth.removeprefix("Bearer ")
-        if token != _api_key:
+        if token != api_key:
             return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
 
     return await call_next(request)
@@ -221,7 +219,7 @@ async def rate_limit_middleware(request: Request, call_next):
     if client_ip in ("127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"):
         return await call_next(request)
 
-    allowed, remaining = _check_rate_limit(client_ip)
+    allowed, remaining = await _check_rate_limit(client_ip)
     if not allowed:
         return JSONResponse(
             status_code=429,
@@ -241,7 +239,6 @@ async def rate_limit_middleware(request: Request, call_next):
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
     """Log all HTTP requests and responses for debugging."""
-    import time
 
     # Skip logging for static files and WebSocket upgrades
     skip_paths = {"/favicon.ico", "/static", "/docs", "/openapi.json", "/redoc"}
@@ -281,12 +278,12 @@ def _extract_tool_calls_info(tool_calls: list) -> list[dict]:
 
         if isinstance(raw_args, str):
             try:
-                unescaped = raw_args.encode().decode("unicode_escape")
-                args = json.loads(unescaped)
-            except (json.JSONDecodeError, UnicodeDecodeError):
+                args = json.loads(raw_args)
+            except json.JSONDecodeError:
                 try:
-                    args = json.loads(raw_args)
-                except json.JSONDecodeError:
+                    unescaped = raw_args.encode().decode("unicode_escape")
+                    args = json.loads(unescaped)
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     args = {"raw": raw_args}
         elif isinstance(raw_args, dict):
             args = raw_args
@@ -302,7 +299,6 @@ def _extract_tool_calls_info(tool_calls: list) -> list[dict]:
 
 def _get_cors_config() -> dict:
     """Get CORS configuration from config.yaml."""
-    import os
 
     config = load_config()
     web_config = config.get("web", {})
@@ -311,7 +307,7 @@ def _get_cors_config() -> dict:
     if os.environ.get("ALLOW_ALL_ORIGINS", "").lower() in ("1", "true", "yes"):
         return {
             "origins": ["*"],
-            "credentials": cors_config.get("allow_credentials", True),
+            "credentials": False,
             "methods": cors_config.get("allow_methods", ["*"]),
             "headers": cors_config.get("allow_headers", ["*"]),
         }
@@ -551,17 +547,14 @@ def load_session_data(session_id: str, state: AppState) -> dict[str, Any]:
 def delete_session_data(session_id: str, state: AppState) -> dict[str, Any]:
     """Delete a persisted chat session."""
     active_agent = ensure_runtime_agent(state)
-    if not (active_agent and active_agent.session_manager):
-        return {"status": "ok"}
-
-    with active_agent.session_manager.SessionLocal() as db:
-        db.query(DBSessionModel).filter(DBSessionModel.id == session_id).delete()
-        db.commit()
+    if active_agent and active_agent.session_manager:
+        active_agent.session_manager.delete_session(session_id)
 
     if state.current_session_id == session_id:
         state.current_session_id = None
         state.message_history = []
-        active_agent.messages = []
+        if active_agent:
+            active_agent.messages = []
 
     return {"status": "ok"}
 
@@ -580,12 +573,7 @@ def _create_runtime_agent(
     tools = get_tools(config, safety_config)
 
     base_url = config.get("model", {}).get("base_url")
-    # Normalize base_url so env overrides (ECHO_BASE_URL) don't mix provider ports
-    if provider == "ollama" and base_url and base_url != OLLAMA_BASE_URL:
-        base_url = None  # Let OllamaProvider use its own default
-    elif provider == "lm_studio" and base_url and base_url != LM_STUDIO_BASE_URL:
-        base_url = None  # Let LM Studio provider use its own default
-    elif provider not in ("ollama", "lm_studio"):
+    if provider in ("openai", "anthropic"):
         base_url = None  # Cloud providers don't need a base URL from config
 
     agent_config = AgentConfig(
@@ -738,9 +726,17 @@ async def update_config(
     Returns:
         {"status": "ok", "config": {...}}
     """
+    old_agent = state.agent
     state.agent = _create_runtime_agent(
         config.provider, config.model, api_key=config.api_key
     )
+    if old_agent:
+        try:
+            if old_agent.session_manager:
+                old_agent.session_manager.close()
+            old_agent.close()
+        except Exception as e:
+            logger.debug(f"Error closing old agent: {e}")
     return {
         "status": "ok",
         "config": {"provider": config.provider, "model": config.model},
@@ -817,15 +813,12 @@ def get_or_create_agent(req: ChatRequest) -> Agent:
 @app.post("/route", tags=["Routing"])
 async def route_intent(request: RouteRequest):
     """Determine the optimal sub-agent for a user prompt via Semantic Routing."""
-    try:
-        state = get_state()
-        if state.agent is None:
-            raise HTTPException(status_code=503, detail="Agent not initialized")
-        router = SemanticRouter(state.agent)
-        target = await router.route(request.prompt)
-        return {"target_agent": target}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    state = get_state()
+    if state.agent is None:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    router = SemanticRouter(state.agent)
+    target = await router.route(request.prompt)
+    return {"target_agent": target}
 
 
 # Include routers
@@ -844,7 +837,7 @@ app.include_router(workflows_router)
 
 def run_server(host: str = "0.0.0.0", port: int = DEFAULT_WEB_PORT):
     """Run the FastAPI server."""
-    uvicorn.run(app, host=host, port=port, reload=False)
+    uvicorn.run(app, host=host, port=port, reload=False, log_level="info")
 
 
 if __name__ == "__main__":

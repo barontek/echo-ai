@@ -1,5 +1,6 @@
 """Bootstrap utilities for initializing the agent environment."""
 
+import atexit
 import os
 import sys
 
@@ -37,24 +38,31 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
     validation_result = validate_config(config)
     log_config_validation(validation_result)
 
+    agent_cfg = config.get("agent", {})
+    if not isinstance(agent_cfg, dict):
+        agent_cfg = {}
+    model_cfg = config.get("model", {})
+    if not isinstance(model_cfg, dict):
+        model_cfg = {}
+
     session_enabled = (
         True
         if force_session_enabled
-        else config.get("agent", {}).get("session_enabled", True)
+        else agent_cfg.get("session_enabled", True)
     )
 
     agent_config = AgentConfig(
-        provider=config.get("model", {}).get("provider", "ollama"),
-        model=config.get("model", {}).get("name", ""),
-        temperature=config.get("model", {}).get("temperature", 0.3),
-        timeout=config.get("model", {}).get("timeout", 60),
-        max_iterations=config.get("agent", {}).get("max_iterations", 50),
-        system_prompt=config.get("agent", {}).get("system_prompt", ""),
+        provider=model_cfg.get("provider", "ollama"),
+        model=model_cfg.get("name", ""),
+        temperature=model_cfg.get("temperature", 0.3),
+        timeout=model_cfg.get("timeout", 60),
+        max_iterations=agent_cfg.get("max_iterations", 50),
+        system_prompt=agent_cfg.get("system_prompt", ""),
         tools=get_tools(config, safety_config),
-        base_url=config.get("model", {}).get("base_url"),
+        base_url=model_cfg.get("base_url"),
         session_enabled=session_enabled,
-        session_dir=config.get("agent", {}).get("session_dir", DEFAULT_SESSION_DIR),
-        num_ctx=config.get("model", {}).get("num_ctx"),
+        session_dir=agent_cfg.get("session_dir", DEFAULT_SESSION_DIR),
+        num_ctx=model_cfg.get("num_ctx"),
     )
 
     workspace = safety_config.workspace or "."
@@ -128,12 +136,13 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
                         console.print(
                             f"[dim]Observability: OTLP exporter enabled ({otlp_endpoint})[/dim]"
                         )
-                    except (ImportError, Exception) as e:
+                    except Exception as e:
                         console.print(
                             f"[yellow]Warning: Could not initialize OTLP exporter: {e}[/yellow]"
                         )
 
                 trace.set_tracer_provider(provider)
+                atexit.register(provider.shutdown)
 
             agent.add_callback(OpenTelemetryCallback())
             console.print("[dim]Observability: OpenTelemetry enabled[/dim]")

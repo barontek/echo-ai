@@ -116,8 +116,13 @@ class MemoryManager:
 
         try:
             # We explicitly bypass tools for the summarizer loop
-            response = await llm.chat(messages=llm_messages, tools=[], temperature=0.1)
-            new_summary = response.content or ""
+            response = await llm.chat(messages=llm_messages, tools=None, temperature=0.1)
+            if hasattr(response, "content"):
+                new_summary = response.content or ""
+            elif isinstance(response, str):
+                new_summary = response
+            else:
+                new_summary = str(response)
 
             if new_summary:
                 # Store the rolled summary into the persistent SQLite blob

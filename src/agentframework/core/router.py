@@ -159,7 +159,7 @@ class SemanticRouter:
                 return agent_name
 
             for kw in keywords:
-                if re.search(rf"\b{re.escape(kw)}\b", prompt_lower):
+                if re.search(rf"\b{re.escape(kw)}\b", prompt_lower) or kw in prompt_lower:
                     logger.debug(
                         f"Heuristic matched agent '{agent_name}' via exact keyword '{kw}'"
                     )
@@ -188,13 +188,17 @@ class SemanticRouter:
             "Your job is to analyze the user's query and select the single most appropriate "
             "specialized sub-agent from the registry below to handle it.\n\n"
             "### Available Agents\n"
-            f"{''.join(agent_descriptions)}\n"  # nosec B608
+             f"{''.join(agent_descriptions)}\n"
             "- **default**: Use this agent ONLY if the query is a generic conversation "
             "or does not strictly fit any of the specialized profiles above.\n\n"
             "Return the exact name of the chosen agent and your reasoning."
         )
 
         try:
+            if self.agent.llm is None:
+                logger.error("No LLM provider available for routing; falling back to default.")
+                return "default"
+
             # We use the raw LLM provider with extract_structured to avoid messing up the chat history
             messages = [
                 {"role": "system", "content": system_prompt},

@@ -431,6 +431,7 @@ class TestSessionImportExport:
 
         mgr2 = SessionManager(str(manager.session_dir))
         try:
+            mgr2.delete_session("export_me")
             imported = mgr2.import_session(data)
             assert imported.id == "export_me"
             assert imported.title == "Export Test"

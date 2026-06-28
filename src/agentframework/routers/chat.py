@@ -193,9 +193,10 @@ async def websocket_chat(websocket: WebSocket):
         return
 
     wapi = _get_web_api()
-    if wapi._api_key:
+    api_key = wapi._get_api_key()
+    if api_key:
         auth = websocket.headers.get("authorization", "")
-        if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != wapi._api_key:
+        if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != api_key:
             await websocket.close(code=4001, reason="Unauthorized: invalid or missing API key")
             return
 
@@ -205,6 +206,7 @@ async def websocket_chat(websocket: WebSocket):
         await websocket.send_json(
             {"type": "error", "content": "Server not initialized"}
         )
+        await websocket.close(code=1011, reason="Server not initialized")
         return
 
     _ws_message_history: list[dict[str, Any]] = []
@@ -290,17 +292,19 @@ async def websocket_chat(websocket: WebSocket):
             if stop_requested:
                 raise asyncio.CancelledError()
 
-            # Extract any thinking tail before __THINKING_END__ so it goes
-            # to thinking_content, not accumulated_content (fixes the bug
-            # where "tail.__THINKING_END__\n\nresponse" leaked the tail
-            # into the response box).
-            thinking_tail = ""
-            if THINKING_END in chunk:
-                thinking_tail, chunk = chunk.split(THINKING_END, 1)
-                in_thinking = False
+            # Process markers in order of appearance within the chunk.
+            # Search for THINKING_END first so it takes priority when both
+            # markers match at the same position (THINKING_START is a prefix
+            # of THINKING_END, e.g. "__THINKING__" matches in "__THINKING_END__").
+            end_pos = chunk.find(THINKING_END)
+            start_pos = chunk.find(THINKING_START)
+            # When both match at the same position, THINKING_END wins
+            if start_pos >= 0 and start_pos == end_pos:
+                start_pos = -1
 
-            if THINKING_START in chunk:
-                before, chunk = chunk.split(THINKING_START, 1)
+            if start_pos >= 0 and (end_pos < 0 or start_pos < end_pos):
+                # THINKING_START appears first — split there
+                before, rest = chunk.split(THINKING_START, 1)
                 if not in_thinking and before:
                     accumulated_content += before
                     with contextlib.suppress(asyncio.QueueFull):
@@ -309,24 +313,54 @@ async def websocket_chat(websocket: WebSocket):
                         )
                 in_thinking = True
 
-            # Incorporate any thinking tail that was split from a
-            # __THINKING_END__ boundary, then route the rest.
-            if thinking_tail:
-                thinking_content += thinking_tail
+                # Now check for THINKING_END in the rest
+                if THINKING_END in rest:
+                    thinking_tail, content_rest = rest.split(THINKING_END, 1)
+                    in_thinking = False
+                    if thinking_tail:
+                        thinking_content += thinking_tail
+                        with contextlib.suppress(asyncio.QueueFull):
+                            send_queue.put_nowait(
+                                {"type": "thinking", "content": thinking_content}
+                            )
+                    accumulated_content += content_rest
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "content", "content": accumulated_content}
+                        )
+                else:
+                    thinking_content += rest
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "thinking", "content": thinking_content}
+                        )
+            elif end_pos >= 0 and (start_pos < 0 or end_pos < start_pos):
+                # THINKING_END appears first or only THINKING_END
+                thinking_tail, content_rest = chunk.split(THINKING_END, 1)
+                in_thinking = False
+                if thinking_tail:
+                    thinking_content += thinking_tail
+                    with contextlib.suppress(asyncio.QueueFull):
+                        send_queue.put_nowait(
+                            {"type": "thinking", "content": thinking_content}
+                        )
+                accumulated_content += content_rest
+                with contextlib.suppress(asyncio.QueueFull):
+                    send_queue.put_nowait(
+                        {"type": "content", "content": accumulated_content}
+                    )
+            elif in_thinking:
+                thinking_content += chunk
                 with contextlib.suppress(asyncio.QueueFull):
                     send_queue.put_nowait(
                         {"type": "thinking", "content": thinking_content}
                     )
-
-            if in_thinking:
-                thinking_content += chunk
-                payload = {"type": "thinking", "content": thinking_content}
             else:
                 accumulated_content += chunk
-                payload = {"type": "content", "content": accumulated_content}
-
-            with contextlib.suppress(asyncio.QueueFull):
-                send_queue.put_nowait(payload)
+                with contextlib.suppress(asyncio.QueueFull):
+                    send_queue.put_nowait(
+                        {"type": "content", "content": accumulated_content}
+                    )
 
         has_tools = False
         tool_calls_info = []
@@ -544,21 +578,27 @@ async def websocket_chat(websocket: WebSocket):
                     )
                     continue
 
-                target_msg = session.messages[edit_index]
+                # Frontend excludes system message from its array, but session includes it
+                # So frontend index 0 = session index 1, frontend index N = session index N+1
+                target_index = edit_index + 1
+                target_msg = session.messages[target_index]
+
+                if target_msg.get("role") != "user":
+                    await websocket.send_json(
+                        {"type": "error", "content": "Can only edit user messages"}
+                    )
+                    continue
+
                 logger.debug(
                     "ws:edit:target_msg",
                     extra={
                         "target_msg": target_msg,
                         "role": target_msg.get("role"),
                         "edit_index": edit_index,
+                        "target_index": target_index,
                         "session_messages": session.messages,
                     },
                 )
-
-                # Frontend excludes system message from its array, but session includes it
-                # So frontend index 0 = session index 1, frontend index N = session index N+1
-                target_index = edit_index + 1
-                target_msg = session.messages[target_index]
 
                 if not edit_content:
                     await websocket.send_json(
@@ -576,26 +616,18 @@ async def websocket_chat(websocket: WebSocket):
                     },
                 )
 
-                # Load session and update the target message with new content
+                # Load session and truncate everything at and after target_index
+                # run_agent will add the new user message
                 active_agent.session_manager.current_session = session
 
-                session.messages[target_index] = {
-                    "role": "user",
-                    "content": edit_content,
-                    "timestamp": session.messages[target_index].get(
-                        "timestamp", datetime.now().strftime("%H:%M")
-                    ),
-                }
-
-                # Truncate everything at and after target_index
-                # This removes the old user message so run_agent can add it fresh
                 active_agent.session_manager.truncate_history(target_index)
 
                 # Deserialize session messages to agent messages
                 active_agent.messages = deserialize_messages(session.messages)
 
                 # Also update local message_history to match the truncated session
-                _ws_message_history[:] = _ws_message_history[:target_index]
+                # _ws_message_history has no system message, so use edit_index
+                _ws_message_history[:] = _ws_message_history[:edit_index]
 
                 # Truncate any existing streaming task and run agent with new prompt
                 if streaming_task and not streaming_task.done():
@@ -613,6 +645,7 @@ async def websocket_chat(websocket: WebSocket):
 
                 # Load the session if session_id is provided
                 if message.session_id and active_agent.session_manager:
+                    prev_msg_count = len(active_agent.messages)
                     active_agent.messages = []
                     active_agent._pending_summary = None
                     prev_session_id = (
@@ -620,7 +653,6 @@ async def websocket_chat(websocket: WebSocket):
                         if active_agent.session_manager.current_session
                         else None
                     )
-                    prev_msg_count = len(active_agent.messages)
                     load_result = active_agent.load_session(message.session_id)
                     if load_result.startswith("Session not found"):
                         logger.warning(
@@ -632,6 +664,10 @@ async def websocket_chat(websocket: WebSocket):
                         )
                         active_agent.messages = []
                         load_result = active_agent.load_session(message.session_id)
+                        if not load_result or load_result.startswith("Session not found"):
+                            logger.error("Failed to load newly created session: %s", message.session_id)
+                            await websocket.send_json({"type": "error", "content": "Failed to create session"})
+                            continue
                     logger.warning(
                         "ws:trace load_session"
                         " requested=%s prev_session=%s prev_msgs=%d"

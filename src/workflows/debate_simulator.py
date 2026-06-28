@@ -2,7 +2,7 @@
 
 from typing import Any
 from src.agentframework.workflow import WorkflowGraph
-from src.workflows._agent_utils import run_with_agent
+from src.workflows._agent_utils import merge_states, run_with_agent
 
 
 def get_workflow() -> WorkflowGraph:
@@ -16,37 +16,24 @@ def get_workflow() -> WorkflowGraph:
 
     async def argue_pro(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch: Pro-argument persona."""
-        sys_prompt = {
-            "role": "system",
-            "content": "You are a staunch advocate supporting the topic. You must fiercely argue in favor of it.",
-        }
+        sys_prompt = "You are a staunch advocate supporting the topic. You must fiercely argue in favor of it."
         # Run explicitly with system message overriding standard behavior
         res = await run_with_agent(state,
             f"Construct a compelling 3-sentence argument in FAVOR of this topic: {state['topic']}",
-            system_injection=sys_prompt["content"],
+            system_injection=sys_prompt,
         )
         state["pro_argument"] = res
         return state
 
     async def argue_con(state: dict[str, Any]) -> dict[str, Any]:
         """Parallel Branch: Anti-argument persona."""
-        sys_prompt = {
-            "role": "system",
-            "content": "You are a staunch critic opposing the topic. You must fiercely argue against it.",
-        }
+        sys_prompt = "You are a staunch critic opposing the topic. You must fiercely argue against it."
         res = await run_with_agent(state,
             f"Construct a compelling 3-sentence argument AGAINST this topic: {state['topic']}",
-            system_injection=sys_prompt["content"],
+            system_injection=sys_prompt,
         )
         state["con_argument"] = res
         return state
-
-    def reducer(states: list[dict[str, Any]]) -> dict[str, Any]:
-        """Squash responses."""
-        merged = states[0].copy()
-        for s in states[1:]:
-            merged.update(s)
-        return merged
 
     async def judge(state: dict[str, Any]) -> dict[str, Any]:
         """Sequential Node: Impartial arbiter evaluates arguments."""
@@ -78,7 +65,7 @@ def get_workflow() -> WorkflowGraph:
     graph.add_parallel_edge(
         source="start",
         targets=["argue_pro", "argue_con"],
-        reducer=reducer,
+        reducer=merge_states,
         next_node="judge",
     )
 

@@ -364,19 +364,21 @@ def ensure_runtime_agent(state: AppState) -> Agent | None:
 
     If no agent exists yet, tries to create one from saved preferences
     so that session listing works before the first WebSocket connection.
+    The agent will be replaced when the frontend connects with real credentials.
     """
     if state.agent is None:
         prefs = _load_preferences()
         model = prefs.get("model", "")
         provider = prefs.get("provider", "ollama")
-        if model:
-            try:
-                state.agent = _create_runtime_agent(
-                    provider=provider, model=model
-                )
-                logger.info("Created agent from saved preferences: %s / %s", provider, model)
-            except Exception as e:
-                logger.debug("Could not create agent from preferences: %s", e)
+        if not model:
+            model = "llama3.2:latest"
+        try:
+            state.agent = _create_runtime_agent(
+                provider=provider, model=model
+            )
+            logger.info("Created runtime agent: %s / %s", provider, model)
+        except Exception as e:
+            logger.debug("Could not create runtime agent: %s", e)
     return state.agent
 
 

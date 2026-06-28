@@ -74,7 +74,7 @@
           version = "0.0.0";
           src = ./frontend;
 
-          npmDepsHash = "sha256-x4KWVs8Fm8l6LANPr135X/AzucDFDsIxf9PUqI85n4k=";
+          npmDepsHash = "sha256-gLPK9CBv0UBORgYPsgWertCfvBaEk/xP2W5WqbzB8JM=";
 
           npmBuildScript = "build";
 

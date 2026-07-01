@@ -1,7 +1,6 @@
 """Web tools for fetching and searching with network restrictions."""
 
 import asyncio
-import atexit
 import platform
 from typing import Any
 from bs4 import BeautifulSoup
@@ -57,7 +56,6 @@ def get_http_client() -> httpx.AsyncClient:
             ),
             headers={"User-Agent": ua},
         )
-        atexit.register(lambda: asyncio.run(close_http_client()))
     return _http_client
 
 

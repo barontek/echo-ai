@@ -25,6 +25,7 @@ from .constants import ECHO_DATA_DIR, OLLAMA_BASE_URL, LM_STUDIO_BASE_URL, CORS_
 from .core import Agent, AgentConfig, create_agent
 from .config import DEFAULT_SESSION_DIR, get_safety_config, get_tools, load_config
 from .rate_limit import RateLimiter
+from .tools.web import close_http_client
 from .web_utils import filter_messages_for_ui
 from .logging_utils import set_correlation_id
 from .core.router import SemanticRouter
@@ -102,6 +103,9 @@ async def lifespan(app: FastAPI):
     # Agent creation is deferred — the frontend sends model/provider via WebSocket
     yield
     logger.info("Shutting down Echo AI...")
+
+    # Close shared HTTP client
+    await close_http_client()
 
     # Clean up rate limiter
     _rate_limiter.close()

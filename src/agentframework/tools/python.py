@@ -37,7 +37,7 @@ class PythonTool(Tool):
     async def execute(self, code: str, **kwargs) -> ToolResult:
         """Execute the provided Python code."""
         if self.validator.requires_approval("python_execute"):
-            approved = self.validator.get_approval(
+            approved = await self.validator.get_approval_async(
                 "python_execute", f"\n```python\n{code}\n```\n"
             )
             if not approved:

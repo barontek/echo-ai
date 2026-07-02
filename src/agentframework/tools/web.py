@@ -174,7 +174,7 @@ class WebFetchTool(Tool):
             return ToolResult(error=f"Network blocked: {reason}")
 
         if self.validator.requires_approval("web_fetch"):
-            approved = self.validator.get_approval("web_fetch", f"fetch: {url}")
+            approved = await self.validator.get_approval_async("web_fetch", f"fetch: {url}")
             if not approved:
                 return ToolResult(error="Web fetch requires approval")
 
@@ -357,7 +357,7 @@ class WebSearchTool(Tool):
             return ToolResult(error=f"Search blocked: {reason}")
 
         if self.validator.requires_approval("web_search"):
-            approved = self.validator.get_approval("web_search", f"search: {query}")
+            approved = await self.validator.get_approval_async("web_search", f"search: {query}")
             if not approved:
                 return ToolResult(error="Web search requires approval")
 

@@ -6,14 +6,17 @@ import asyncio
 import contextlib
 import json
 import logging
+import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from ..config import get_safety_config, load_config as _load_config
 from ..constants import THINKING_END, THINKING_START
 from ..core.session_runtime import deserialize_messages
+from ..safety import SafetyConfig
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +216,7 @@ async def websocket_chat(websocket: WebSocket):
     active_agent: _get_web_api().Agent | None = None  # type: ignore[valid-type]
     streaming_task: asyncio.Task | None = None
     stop_requested = False
+    pending_approvals: dict[str, asyncio.Future[bool]] = {}
 
     async def send_keepalive() -> None:
         try:
@@ -477,11 +481,45 @@ async def websocket_chat(websocket: WebSocket):
         # 1. Wait for config
         raw_config = await websocket.receive_text()
         config = _get_web_api().WsConfigPayload.model_validate_json(raw_config)
+
+        # Build async approval callback that sends requests to the frontend
+        async def ws_approval_callback(tool_name: str, details: str) -> bool:
+            request_id = uuid.uuid4().hex[:12]
+            future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+            pending_approvals[request_id] = future
+
+            try:
+                await websocket.send_json({
+                    "type": "approval_request",
+                    "request_id": request_id,
+                    "tool_name": tool_name,
+                    "arguments": details,
+                })
+                return await asyncio.wait_for(future, timeout=120.0)
+            except asyncio.TimeoutError:
+                return False
+            except WebSocketDisconnect:
+                return False
+            finally:
+                pending_approvals.pop(request_id, None)
+
+        base_conf = _load_config()
+        base_safety = get_safety_config(base_conf)
+        base_dict = {
+            k: v for k, v in base_safety.__dict__.items()
+            if not k.startswith("_") and k != "async_approval_callback"
+        }
+        ws_safety_config = SafetyConfig(
+            **base_dict,
+            async_approval_callback=ws_approval_callback,
+        )
+
         active_agent = _get_web_api()._create_runtime_agent(
             config.provider,
             config.model,
             api_key=config.api_key,
             session_id=config.session_id,
+            safety_config_override=ws_safety_config,
         )
         # Store in global state so REST endpoints (sessions, config) use the same agent
         wapi = _get_web_api()
@@ -516,7 +554,17 @@ async def websocket_chat(websocket: WebSocket):
         # 2. Continuous message loop
         while True:
             raw_message = await websocket.receive_text()
-            message = _get_web_api().WsMessagePayload.model_validate_json(raw_message)
+            data = json.loads(raw_message)
+
+            # Handle approval responses before validating as chat message
+            if data.get("type") == "approval_response":
+                request_id = data.get("request_id")
+                approved = data.get("approved", False)
+                if request_id and request_id in pending_approvals:
+                    pending_approvals[request_id].set_result(approved)
+                continue
+
+            message = _get_web_api().WsMessagePayload.model_validate(data)
 
             if message.type == "pong":
                 continue
@@ -709,6 +757,11 @@ async def websocket_chat(websocket: WebSocket):
                 }
             )
     finally:
+        # Cancel any pending approval requests (deny by default)
+        for future in pending_approvals.values():
+            if not future.done():
+                future.cancel()
+        pending_approvals.clear()
         if streaming_task and not streaming_task.done():
             streaming_task.cancel()
         keepalive_task.cancel()

@@ -4,7 +4,7 @@ model:
   # name: ""  # Model selected from frontend UI - leave empty to let the frontend choose
   # For ollama, optionally specify base_url (default: http://localhost:11434)
   base_url: http://localhost:11434
-  temperature: 0.1  # Low temperature for strict JSON tool calling
+  temperature: 0.3  # Moderate temperature balances creativity with tool call reliability
   timeout: 300  # HTTP timeout in seconds (default: 60)
   num_ctx: 32768  # Context window size for Ollama
 

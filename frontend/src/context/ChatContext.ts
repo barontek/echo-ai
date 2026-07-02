@@ -1,5 +1,5 @@
 import { createContext, type Context } from 'react';
-import type { ToolCall } from '../types';
+import type { ApprovalRequest, ToolCall } from '../types';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -35,6 +35,8 @@ export interface ChatContextValue {
   selectModel: (model: string) => void;
   selectProvider: (provider: string) => void;
   reconnect: () => void;
+  pendingApproval: ApprovalRequest | null;
+  resolveApproval: (requestId: string, approved: boolean) => void;
 }
 
 export const ChatContext: Context<ChatContextValue | null> = createContext<ChatContextValue | null>(

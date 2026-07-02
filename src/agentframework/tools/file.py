@@ -118,7 +118,7 @@ class ReadFileTool(FileSystemTool):
             pass
 
         if self.validator.requires_approval("read_file", path=str(full_path)):
-            approved = self.validator.get_approval(
+            approved = await self.validator.get_approval_async(
                 "read_file", f"read: {path}{file_size_info}"
             )
             if not approved:
@@ -179,7 +179,7 @@ class WriteFileTool(FileSystemTool):
         if self.validator.requires_approval(
             "write_file", path=str(full_path), content=content
         ):
-            approved = self.validator.get_approval(
+            approved = await self.validator.get_approval_async(
                 "write_file", f"write: {path} - {file_status}"
             )
             if not approved:

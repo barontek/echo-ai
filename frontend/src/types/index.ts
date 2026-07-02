@@ -32,8 +32,15 @@ export interface Config {
   session_enabled: boolean;
 }
 
+export interface ApprovalRequest {
+  type: 'approval_request';
+  request_id: string;
+  tool_name: string;
+  arguments: string;
+}
+
 export interface StreamEvent {
-  type: 'ready' | 'message' | 'content' | 'thinking' | 'done' | 'error' | 'pong' | 'session_start';
+  type: 'ready' | 'message' | 'content' | 'thinking' | 'done' | 'error' | 'pong' | 'session_start' | 'approval_request';
   content?: string;
   thinking?: string;
   has_tools?: boolean;
@@ -42,6 +49,9 @@ export interface StreamEvent {
   title?: string;
   timestamp?: string;
   role?: string;
+  request_id?: string;
+  tool_name?: string;
+  arguments?: string;
 }
 
 export interface ApiError {

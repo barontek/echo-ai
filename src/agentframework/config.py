@@ -241,6 +241,17 @@ def _parse_value(value: str) -> Any:
         return value
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Deep merge two dicts. override values win. Lists are fully replaced."""
+    merged = base.copy()
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def find_config_path(path: str | None = None) -> Path | None:
     """Find configuration path from explicit path or common locations."""
     if path is not None:
@@ -262,10 +273,14 @@ def find_config_path(path: str | None = None) -> Path | None:
 def load_config(path: str | None = None) -> dict:
     """Load configuration from YAML file or return empty config.
 
-    Environment variables can override config file values.
+    If an explicit path is given, only that file is loaded.
+    Otherwise loads from the first-found location (project config),
+    then deep-merges ~/.echo-ai/config.yaml on top as personal overrides.
+    Environment variables override everything.
     See apply_env_overrides() for supported variables.
     """
-    config_path = find_config_path(path)
+    config_path = find_config_path(path) if path is None else Path(path) if Path(path).exists() else None
+
     if config_path:
         try:
             with open(config_path, encoding="utf-8") as f:
@@ -275,6 +290,18 @@ def load_config(path: str | None = None) -> dict:
             config = {}
     else:
         config = {}
+
+    # Deep-merge personal config on top if no explicit path was given
+    if path is None:
+        personal_path = Path(DEFAULT_CONFIG_PATH)
+        if personal_path.exists() and personal_path != config_path:
+            try:
+                with open(personal_path, encoding="utf-8") as f:
+                    personal_config = yaml.safe_load(f) or {}
+                config = _deep_merge(config, personal_config)
+                logger.debug("Merged personal config from %s", personal_path)
+            except yaml.YAMLError as e:
+                logger.error("Failed to parse personal config: %s", e)
 
     config = apply_env_overrides(config)
 

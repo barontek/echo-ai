@@ -22,12 +22,15 @@ def test_find_config_path_not_found():
 
 def test_load_config_empty():
     with patch("src.agentframework.config.find_config_path", return_value=None):
-        with patch.dict(
-            "os.environ",
-            {k: v for k, v in __import__("os").environ.items() if not k.startswith("ECHO_")},
-            clear=True,
+        with patch(
+            "src.agentframework.config.DEFAULT_CONFIG_PATH", "/nonexistent/.echo-ai/config.yaml"
         ):
-            assert load_config() == {}
+            with patch.dict(
+                "os.environ",
+                {k: v for k, v in __import__("os").environ.items() if not k.startswith("ECHO_")},
+                clear=True,
+            ):
+                assert load_config() == {}
 
 
 def test_load_config_valid():
@@ -36,12 +39,15 @@ def test_load_config_valid():
         "src.agentframework.config.find_config_path", return_value=Path("config.yaml")
     ):
         with patch("builtins.open", mock_open(read_data=content)):
-            with patch.dict(
-                "os.environ",
-                {k: v for k, v in __import__("os").environ.items() if not k.startswith("ECHO_")},
-                clear=True,
+            with patch(
+                "src.agentframework.config.DEFAULT_CONFIG_PATH", "/nonexistent/.echo-ai/config.yaml"
             ):
-                assert load_config() == {"test": "value"}
+                with patch.dict(
+                    "os.environ",
+                    {k: v for k, v in __import__("os").environ.items() if not k.startswith("ECHO_")},
+                    clear=True,
+                ):
+                    assert load_config() == {"test": "value"}
 
 
 def test_get_safety_config_defaults():

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { ChatContext, type ChatContextValue, type ConnectionStatus } from './ChatContext';
 import { api } from '../api/client';
-import type { StreamEvent } from '../types';
+import type { ApprovalRequest, StreamEvent } from '../types';
 
 const DEBUG = import.meta.env.DEV;
 
@@ -44,6 +44,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRequest | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const wsGenRef = useRef(0);
@@ -118,6 +119,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               if (data.session_id) {
                 setActiveSessionId(data.session_id);
                 api.getSessions().then(setSessions).catch(console.error);
+              }
+              break;
+
+            case 'approval_request':
+              debugLog('approval_request', { tool_name: data.tool_name, request_id: data.request_id });
+              setIsStreaming(false);
+              if (data.request_id && data.tool_name) {
+                setPendingApproval({
+                  type: 'approval_request',
+                  request_id: data.request_id,
+                  tool_name: data.tool_name,
+                  arguments: data.arguments || '',
+                });
               }
               break;
 
@@ -367,6 +381,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const resolveApproval = useCallback(
+    (requestId: string, approved: boolean) => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'approval_response', request_id: requestId, approved }));
+      }
+      setPendingApproval(null);
+    },
+    []
+  );
+
   const editMessage = useCallback(
     (index: number, newText: string) => {
       setMessages((prev) => {
@@ -554,6 +579,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     selectModel,
     selectProvider,
     reconnect,
+    pendingApproval,
+    resolveApproval,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

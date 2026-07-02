@@ -1,10 +1,11 @@
 import { ChatProvider } from './context';
-import { Header, Sidebar, MessageList, ChatInput } from './components';
+import { ApprovalDialog, Header, Sidebar, MessageList, ChatInput } from './components';
 import './App.css';
 
 function App() {
   return (
     <ChatProvider>
+      <ApprovalDialog />
       <div className="app">
         <Sidebar />
         <div className="main-content">

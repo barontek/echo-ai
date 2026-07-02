@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from .constants import ECHO_DATA_DIR, OLLAMA_BASE_URL, LM_STUDIO_BASE_URL, CORS_FRONTEND_PORT, CORS_ALT_FRONTEND_PORT, CORS_STREAMLIT_PORT
 from .core import Agent, AgentConfig, create_agent
 from .config import DEFAULT_SESSION_DIR, get_safety_config, get_tools, load_config
+from .safety import SafetyConfig
 from .rate_limit import RateLimiter
 from .tools.web import close_http_client
 from .web_utils import filter_messages_for_ui
@@ -570,12 +571,13 @@ def _create_runtime_agent(
     model: str,
     api_key: str | None = None,
     session_id: str | None = None,
+    safety_config_override: SafetyConfig | None = None,
 ) -> Agent:
     """Create an agent for the web UI with the same tool config as CLI."""
     if not model:
         raise ValueError("Model name is required. Select a model from the frontend UI.")
     config = load_config()
-    safety_config = get_safety_config(config)
+    safety_config = safety_config_override or get_safety_config(config)
     tools = get_tools(config, safety_config)
 
     base_url = config.get("model", {}).get("base_url")

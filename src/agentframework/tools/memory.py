@@ -339,7 +339,7 @@ class MemoryTool(Tool):
             # Request approval before deleting
             preview = "\n".join(f"[{cat}] {cont}" for _, cont, cat in rows)
             if self.validator.requires_approval("memory"):
-                approved = self.validator.get_approval(
+                approved = await self.validator.get_approval_async(
                     "memory", f"Delete {len(rows)} memory(s):\n{preview}"
                 )
                 if not approved:
@@ -390,7 +390,7 @@ class MemoryTool(Tool):
                 else "all categories"
             )
             if self.validator.requires_approval("memory"):
-                approved = self.validator.get_approval(
+                approved = await self.validator.get_approval_async(
                     "memory", f"Clear {count} memory(s) from {scope}"
                 )
                 if not approved:

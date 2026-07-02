@@ -39,7 +39,7 @@ class SQLiteQueryTool(Tool):
     async def execute(self, db_path: str, query: str, **kwargs) -> ToolResult:
         """Execute the SQLite query."""
         if self.validator.requires_approval("sqlite_query"):
-            approved = self.validator.get_approval(
+            approved = await self.validator.get_approval_async(
                 "sqlite_query", f"Querying {db_path}:\n{query}"
             )
             if not approved:

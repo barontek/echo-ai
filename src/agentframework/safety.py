@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ class SafetyConfig:
         default_factory=lambda: ["bash", "write_file", "memory"]
     )
     approval_callback: Optional[Callable[[str, str], bool]] = None
-    async_approval_callback: Optional[Callable[[str, str], bool]] = None
+    async_approval_callback: Optional[Callable[[str, str], Any]] = None
     audit_log_path: Optional[str] = None
     read_requires_approval: bool = False
     read_size_threshold: int = 100 * 1024

@@ -62,7 +62,7 @@ class RESTAPITool(Tool):
             return ToolResult(error=f"Network blocked: {reason}")
 
         if method != "GET" and self.validator.requires_approval("rest_api"):
-            approved = self.validator.get_approval(
+            approved = await self.validator.get_approval_async(
                 "rest_api", f"API {method} to {url}\nBody: {json_body}"
             )
             if not approved:

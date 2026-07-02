@@ -59,7 +59,7 @@ class BashTool(Tool):
             return ToolResult(error=f"Command blocked: {reason}")
 
         if self.validator.requires_approval("bash"):
-            approved = self.validator.get_approval("bash", command)
+            approved = await self.validator.get_approval_async("bash", command)
             if not approved:
                 return ToolResult(error="Command requires approval")
 

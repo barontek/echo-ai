@@ -203,7 +203,7 @@
             fi
 
             echo "Syncing backend dependencies..."
-            uv sync --extra dev --extra otel --extra ui --extra vector-db --extra web-scraping
+            uv sync --extra dev --extra otel --extra ui --extra web-scraping
 
             echo ""
             echo "Agent Framework dev environment ready"

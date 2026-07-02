@@ -86,7 +86,7 @@ fi
 
 if [ ! -d .venv ]; then
     echo "[mac] Running uv sync to create .venv and install dependencies..."
-    uv sync --extra dev --extra otel --extra ui --extra vector-db --extra web-scraping
+    uv sync --extra dev --extra otel --extra ui --extra web-scraping
 fi
 
 if [ ! -d frontend/node_modules ]; then

@@ -13,7 +13,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
-from .. import web_api as _web_api
 from .. import web_models
 from ..config import get_safety_config, load_config as _load_config
 from ..constants import THINKING_END, THINKING_START
@@ -95,6 +94,7 @@ async def chat(
 async def handle_chat(request: ChatRequest):
     """Synchronous chat endpoint."""
     try:
+        from .. import web_api as _web_api
         agent = _web_api.get_or_create_agent(request)
         response = await agent.run(request.prompt)
         session_id = None
@@ -116,6 +116,7 @@ async def stream_chat(
     model: str = "",
 ):
     """Server-Sent Events (SSE) streaming endpoint."""
+    from .. import web_api as _web_api
     req = ChatRequest(
         prompt=prompt, session_id=session_id, provider=provider, model=model
     )
@@ -196,6 +197,8 @@ async def websocket_chat(websocket: WebSocket):
     ws.send(JSON.stringify({type: 'message', content: 'Hi!'}));
     ```
     """
+    from .. import web_api as _web_api
+
     scheme = websocket.scope.get("scheme", "ws")
     if scheme == "http":
         await websocket.close(code=4001, reason="HTTPS/WSS required")

@@ -8,7 +8,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import web_api as _web_api
 from ..config import load_config
 from ..constants import DEFAULT_MODEL
 from ..web_models import (
@@ -35,6 +34,7 @@ async def workflow_run(
     state: Annotated[AppState, Depends(get_state)],
 ):
     """Run a selected workflow and return its final output."""
+    from .. import web_api as _web_api
     if state.agent is None:
         cfg = load_config()
         provider = cfg.get("model", {}).get("provider", "ollama")

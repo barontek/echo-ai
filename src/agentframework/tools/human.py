@@ -27,7 +27,7 @@ class AskUserTool(Tool):
             console.print(f"[bold yellow]Agent Question:[/bold yellow] {question}")
 
             # Use to_thread to avoid blocking the async event loop with standard input
-            answer = await asyncio.to_thread(input, "\n[bold green]Your Answer:[/bold green] ")
+            answer = await asyncio.to_thread(input, "\nYour Answer: ")
         except ImportError:
             # Fallback for headless or non-rich environments
             print(f"\nAGENT QUESTION: {question}")

@@ -123,6 +123,7 @@ class WorkflowGraph:
                 break  # Implicit terminal end if no edges exist
 
             next_node: str | None = None
+            interrupted = False
             for edge in edges:
                 if isinstance(edge, ParallelEdge):
                     # Execute targets concurrently
@@ -132,21 +133,24 @@ class WorkflowGraph:
                             raise ValueError(f"Parallel target '{tgt}' not mapped to node list")
                         coroutines.append(self.nodes[tgt].func(copy.deepcopy(state)))
 
-                    try:
-                        results = await asyncio.gather(*coroutines, return_exceptions=True)
-                    except Interrupt:
-                        yield "__INTERRUPT__", state
-                        break
+                    results = await asyncio.gather(*coroutines, return_exceptions=True)
 
                     good_results: list[State] = []
                     for r in results:
-                        if isinstance(r, BaseException):
+                        if isinstance(r, Interrupt):
+                            yield "__INTERRUPT__", state
+                            interrupted = True
+                            break
+                        elif isinstance(r, BaseException):
                             logger.warning("Parallel node raised: %s", r)
                         else:
                             good_results.append(r)
+                    if interrupted:
+                        break
 
                     state = edge.reducer(good_results)
                     next_node = edge.next_node
+                    break
                 elif callable(edge.condition):
                     candidate = edge.condition(state)
                     if candidate:
@@ -156,6 +160,8 @@ class WorkflowGraph:
                     next_node = edge.condition
                     break
 
+            if interrupted:
+                break
             if isinstance(edge, ParallelEdge):
                 current_node_name = edge.next_node
             elif next_node is not None:

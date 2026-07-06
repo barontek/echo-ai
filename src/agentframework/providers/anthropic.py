@@ -19,6 +19,13 @@ from . import LLMProvider, LLMResponse, LLMToolCall
 logger = logging.getLogger(__name__)
 
 
+def _anthropic_error_response(retry_state) -> LLMResponse:
+    """Return an LLMResponse with the error after all retries are exhausted."""
+    exc = retry_state.outcome.exception()
+    logger.error("Anthropic chat failed after retries: %s", exc)
+    return LLMResponse(content=f"Anthropic error: {exc}")
+
+
 class AnthropicProvider(LLMProvider):
     """Anthropic Claude provider."""
 
@@ -30,7 +37,7 @@ class AnthropicProvider(LLMProvider):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True,
+        retry_error_callback=_anthropic_error_response,
     )
     async def chat(
         self,
@@ -39,62 +46,56 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> LLMResponse:
         """Send a chat request to Anthropic."""
-        try:
-            system_parts: list[str] = []
-            filtered_messages = []
+        system_parts: list[str] = []
+        filtered_messages = []
 
-            for msg in messages:
-                if msg.get("role") == "system":
-                    system_parts.append(msg["content"])
-                else:
-                    filtered_messages.append(msg)
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_parts.append(msg["content"])
+            else:
+                filtered_messages.append(msg)
 
-            if not filtered_messages:
-                logger.warning("All messages are system messages; cannot call Anthropic API")
-                return LLMResponse(content="")
+        if not filtered_messages:
+            logger.warning("All messages are system messages; cannot call Anthropic API")
+            return LLMResponse(content="")
 
-            system_msg = "\n".join(system_parts) if system_parts else None
+        system_msg = "\n".join(system_parts) if system_parts else None
 
-            params = {
-                "model": self.model,
-                "max_tokens": DEFAULT_MAX_TOKENS,
-                "messages": filtered_messages,
-                "temperature": temperature,
-            }
+        params = {
+            "model": self.model,
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "messages": filtered_messages,
+            "temperature": temperature,
+        }
 
-            if system_msg:
-                params["system"] = system_msg
+        if system_msg:
+            params["system"] = system_msg
 
-            if tools:
-                params["tools"] = tools
+        if tools:
+            params["tools"] = tools
 
-            async with AsyncAnthropic(
-                api_key=self.api_key,
-                timeout=self.timeout,
-            ) as client:
-                response = await client.messages.create(**params)
+        async with AsyncAnthropic(
+            api_key=self.api_key,
+            timeout=self.timeout,
+        ) as client:
+            response = await client.messages.create(**params)
 
-            content = ""
-            tool_calls = []
+        content = ""
+        tool_calls = []
 
-            for block in response.content:
-                if block.type == "text":
-                    content += block.text
-                elif block.type == "tool_use":
-                    tool_calls.append(
-                        LLMToolCall(
-                            id=block.id,
-                            name=block.name,
-                            arguments=block.input,
-                        )
+        for block in response.content:
+            if block.type == "text":
+                content += block.text
+            elif block.type == "tool_use":
+                tool_calls.append(
+                    LLMToolCall(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input,
                     )
+                )
 
-            return LLMResponse(content=content, tool_calls=tool_calls)
-        except Exception as e:
-            logger.error("Anthropic chat failed: %s", e)
-            return LLMResponse(
-                content=f"Anthropic error: {str(e) or type(e).__name__}"
-            )
+        return LLMResponse(content=content, tool_calls=tool_calls)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -166,7 +167,7 @@ class AnthropicProvider(LLMProvider):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True,
+        retry_error_callback=_anthropic_error_response,
     )
     async def extract_structured(
         self,
@@ -191,10 +192,6 @@ class AnthropicProvider(LLMProvider):
                 else:
                     filtered_messages.append(msg)
 
-            if system_parts:
-                system_content = "\n".join(system_parts)
-                filtered_messages.insert(0, {"role": "user", "content": f"System instructions:\n{system_content}"})
-
             params = {
                 "model": self.model,
                 "max_tokens": DEFAULT_MAX_TOKENS,
@@ -203,7 +200,7 @@ class AnthropicProvider(LLMProvider):
                 "response_model": response_model,
             }
 
-            # NOTE: Not all anthropic versions in instructor might natively accept "system" as kwargs in completions
-            # Instructor documentation notes passing it within messages normally is fine.
+            if system_parts:
+                params["system"] = "\n".join(system_parts)
 
             return await instructor_client.chat.completions.create(**params)

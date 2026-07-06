@@ -13,29 +13,31 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from .. import web_api as _web_api
+from .. import web_models
 from ..config import get_safety_config, load_config as _load_config
 from ..constants import THINKING_END, THINKING_START
+from ..core import Agent
 from ..core.session_runtime import deserialize_messages
 from ..safety import SafetyConfig
+from ..web_models import (
+    AppState,
+    ChatPayload,
+    ChatRequest,
+    WsConfigPayload,
+    WsMessagePayload,
+    get_state,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Chat"])
 
-# Lazy import to avoid circular dependency with web_api
-_web_api = None
-def _get_web_api():
-    global _web_api
-    if _web_api is None:
-        from .. import web_api as _web_api_module
-        _web_api = _web_api_module
-    return _web_api
-
 
 @router.post("/api/chat")
 async def chat(
-    message: _get_web_api().ChatPayload,  # type: ignore[valid-type]
-    state: Annotated[_get_web_api().AppState, Depends(_get_web_api().get_state)],  # type: ignore[valid-type]
+    message: ChatPayload,
+    state: Annotated[AppState, Depends(get_state)],
 ):
     """Non-streaming chat endpoint.
 
@@ -90,10 +92,10 @@ async def chat(
 
 
 @router.post("/chat")
-async def handle_chat(request: _get_web_api().ChatRequest):  # type: ignore[valid-type]
+async def handle_chat(request: ChatRequest):
     """Synchronous chat endpoint."""
     try:
-        agent = _get_web_api().get_or_create_agent(request)
+        agent = _web_api.get_or_create_agent(request)
         response = await agent.run(request.prompt)
         session_id = None
         if agent.session_manager and agent.session_manager.current_session:
@@ -114,10 +116,10 @@ async def stream_chat(
     model: str = "",
 ):
     """Server-Sent Events (SSE) streaming endpoint."""
-    req = _get_web_api().ChatRequest(
+    req = ChatRequest(
         prompt=prompt, session_id=session_id, provider=provider, model=model
     )
-    agent = _get_web_api().get_or_create_agent(req)
+    agent = _web_api.get_or_create_agent(req)
 
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -130,14 +132,18 @@ async def stream_chat(
         finally:
             await queue.put(None)
 
-    asyncio.create_task(chat_runner())
+    task = asyncio.create_task(chat_runner())
 
     async def event_generator():
-        while True:
-            chunk = await queue.get()
-            if chunk is None:
-                break
-            yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -195,8 +201,7 @@ async def websocket_chat(websocket: WebSocket):
         await websocket.close(code=4001, reason="HTTPS/WSS required")
         return
 
-    wapi = _get_web_api()
-    api_key = wapi._get_api_key()
+    api_key = _web_api._get_api_key()
     if api_key:
         auth = websocket.headers.get("authorization", "")
         if not auth.startswith("Bearer ") or auth.removeprefix("Bearer ") != api_key:
@@ -205,7 +210,7 @@ async def websocket_chat(websocket: WebSocket):
 
     await websocket.accept()
 
-    if _get_web_api()._state is None:
+    if web_models._state is None:
         await websocket.send_json(
             {"type": "error", "content": "Server not initialized"}
         )
@@ -213,10 +218,11 @@ async def websocket_chat(websocket: WebSocket):
         return
 
     _ws_message_history: list[dict[str, Any]] = []
-    active_agent: _get_web_api().Agent | None = None  # type: ignore[valid-type]
+    active_agent: Agent | None = None
     streaming_task: asyncio.Task | None = None
     stop_requested = False
     pending_approvals: dict[str, asyncio.Future[bool]] = {}
+    bg_tasks: set[asyncio.Task] = set()
 
     async def send_keepalive() -> None:
         try:
@@ -391,7 +397,7 @@ async def websocket_chat(websocket: WebSocket):
                 tc = getattr(msg, "tool_calls", None)
                 if tc:
                     has_tools = True
-                    tool_calls_info.extend(_get_web_api()._extract_tool_calls_info(tc))
+                    tool_calls_info.extend(_web_api._extract_tool_calls_info(tc))
 
             if not accumulated_content:
                 # All streamed content went to thinking (no __THINKING_END__ seen).
@@ -475,12 +481,14 @@ async def websocket_chat(websocket: WebSocket):
             and active_agent.session_manager.current_session
             and not active_agent.session_manager.current_session.title
         ):
-            asyncio.create_task(_get_web_api()._generate_title_async(active_agent))
+            t = asyncio.create_task(_web_api._generate_title_async(active_agent))
+            bg_tasks.add(t)
+            t.add_done_callback(bg_tasks.discard)
 
     try:
         # 1. Wait for config
         raw_config = await websocket.receive_text()
-        config = _get_web_api().WsConfigPayload.model_validate_json(raw_config)
+        config = WsConfigPayload.model_validate_json(raw_config)
 
         # Build async approval callback that sends requests to the frontend
         async def ws_approval_callback(tool_name: str, details: str) -> bool:
@@ -514,7 +522,7 @@ async def websocket_chat(websocket: WebSocket):
             async_approval_callback=ws_approval_callback,
         )
 
-        active_agent = _get_web_api()._create_runtime_agent(
+        active_agent = _web_api._create_runtime_agent(
             config.provider,
             config.model,
             api_key=config.api_key,
@@ -522,9 +530,8 @@ async def websocket_chat(websocket: WebSocket):
             safety_config_override=ws_safety_config,
         )
         # Store in global state so REST endpoints (sessions, config) use the same agent
-        wapi = _get_web_api()
-        if wapi._state is not None:
-            wapi._state.agent = active_agent
+        if web_models._state is not None:
+            web_models._state.agent = active_agent
         assert active_agent is not None
         # Trigger auto-title if needed
         if (
@@ -564,7 +571,7 @@ async def websocket_chat(websocket: WebSocket):
                     pending_approvals[request_id].set_result(approved)
                 continue
 
-            message = _get_web_api().WsMessagePayload.model_validate(data)
+            message = WsMessagePayload.model_validate(data)
 
             if message.type == "pong":
                 continue
@@ -764,6 +771,10 @@ async def websocket_chat(websocket: WebSocket):
         pending_approvals.clear()
         if streaming_task and not streaming_task.done():
             streaming_task.cancel()
+        for t in list(bg_tasks):
+            if not t.done():
+                t.cancel()
+        bg_tasks.clear()
         keepalive_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await keepalive_task

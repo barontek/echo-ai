@@ -1,5 +1,6 @@
 """Vector database abstraction for semantic memory."""
 
+import asyncio
 import os
 import uuid
 import logging
@@ -19,6 +20,7 @@ class VectorStore:
 
     def __init__(self, persist_directory: str | None = None, collection_name: str = "agent_memory"):
         """Initialize the persistent Chroma client."""
+        self._lock = asyncio.Lock()
         if persist_directory is None:
             persist_directory = str(ECHO_DATA_DIR / "vector")
         # Ensure the directory exists
@@ -40,7 +42,7 @@ class VectorStore:
             logger.error("Failed to initialize chromadb: %s", e)
             self.collection = None
 
-    def add_documents(self, documents: list[str], metadatas: list[dict[str, Any]] | None = None, ids: list[str] | None = None) -> list[str]:
+    async def add_documents(self, documents: list[str], metadatas: list[dict[str, Any]] | None = None, ids: list[str] | None = None) -> list[str]:
         """Ingest new documents into the vector space.
 
         Returns the list of generated or provided UUIDs.
@@ -59,22 +61,24 @@ class VectorStore:
             cleaned_meta = {k: v for k, v in meta.items() if isinstance(v, (str, int, float, bool))}
             cleaned_metadatas.append(cleaned_meta)
 
-        self.collection.add(
-            ids=ids,
-            documents=documents,
-            metadatas=cleaned_metadatas,  # type: ignore
-        )
+        async with self._lock:
+            self.collection.add(
+                ids=ids,
+                documents=documents,
+                metadatas=cleaned_metadatas,  # type: ignore
+            )
         return ids
 
-    def search(self, query: str, n_results: int = 5) -> list[dict[str, Any]]:
+    async def search(self, query: str, n_results: int = 5) -> list[dict[str, Any]]:
         """Perform a semantic search against the loaded documents."""
         if not self.collection:
             raise RuntimeError("Vector database is not initialized.")
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=n_results
-        )
+        async with self._lock:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=n_results
+            )
 
         # Zip documents, metadatas, and distances into a unified structure
         structured_results = []

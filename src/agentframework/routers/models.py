@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Query
 
-from ..web_api import get_models_data
+from .. import web_api as _web_api
 
 logger = logging.getLogger(__name__)
 
@@ -16,4 +16,4 @@ router = APIRouter(tags=["Models"])
 @router.get("/api/models")
 async def list_models(provider: str = Query("ollama", description="Provider to list models for")):
     """List available models for the given provider."""
-    return await get_models_data(provider=provider)
+    return await _web_api.get_models_data(provider=provider)

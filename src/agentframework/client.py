@@ -201,12 +201,14 @@ class EchoClient:
                         queue.put_nowait(ContentEvent(content=buffer))
                 queue.put_nowait(None)  # Sentinel to finish
 
-        asyncio.create_task(agent_task())
+        task = asyncio.create_task(agent_task())
 
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            if isinstance(item, ErrorEvent):
-                continue
-            yield item
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield item
+        finally:
+            if not task.done():
+                task.cancel()

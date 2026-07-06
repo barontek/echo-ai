@@ -40,36 +40,45 @@ class RateLimiter:
         return await asyncio.to_thread(self._check_sync, ip, limit, window_seconds)
 
     def _check_sync(self, ip: str, limit: int, window_seconds: int) -> tuple[bool, int]:
-        """Synchronous check implementation."""
+        """Synchronous check implementation with atomic insert."""
         conn = self._ensure_conn()
         now = time.time()
         cutoff = now - window_seconds
 
-        # Clean up expired rows for all IPs
-        conn.execute("DELETE FROM requests WHERE ts < ?", (cutoff,))
+        # Use IMMEDIATE transaction to prevent concurrent writes
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Clean up expired rows for all IPs
+            conn.execute("DELETE FROM requests WHERE ts < ?", (cutoff,))
 
-        cursor = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE ip = ?",
-            (ip,),
-        )
-        count = cursor.fetchone()[0]
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM requests WHERE ip = ?",
+                (ip,),
+            )
+            count = cursor.fetchone()[0]
 
-        if count >= limit:
+            if count >= limit:
+                conn.commit()
+                return False, 0
+
+            conn.execute(
+                "INSERT INTO requests (ip, ts) VALUES (?, ?)",
+                (ip, now),
+            )
             conn.commit()
-            return False, 0
-
-        conn.execute(
-            "INSERT INTO requests (ip, ts) VALUES (?, ?)",
-            (ip, now),
-        )
-        conn.commit()
-        return True, limit - count - 1
+            return True, limit - count - 1
+        except Exception:
+            conn.rollback()
+            raise
 
     def clear(self, ip: str | None = None) -> None:
         """Remove rate-limit entries, optionally for a single IP."""
-        self._clear_sync(ip)
-
-    def _clear_sync(self, ip: str | None = None) -> None:
+        conn = self._ensure_conn()
+        if ip:
+            conn.execute("DELETE FROM requests WHERE ip = ?", (ip,))
+        else:
+            conn.execute("DELETE FROM requests")
+        conn.commit()
         """Synchronous clear implementation."""
         conn = self._ensure_conn()
         if ip:

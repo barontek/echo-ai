@@ -1,11 +1,19 @@
 """Tool for querying local SQLite databases."""
 
+import re
 import sqlite3
 import os
 from pydantic import BaseModel, Field
 
 from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
+
+
+def _strip_sql_comments(sql: str) -> str:
+    """Remove SQL line comments (--) and block comments (/* */)."""
+    sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)
+    sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
+    return sql
 
 
 class SQLiteQueryParams(BaseModel):
@@ -48,11 +56,14 @@ class SQLiteQueryTool(Tool):
         if not os.path.exists(db_path):
             return ToolResult(error=f"Database file not found: {db_path}")
 
-        # Basic guardrail against destructive queries
-        query_upper = query.upper().strip()
-        forbidden = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "REPLACE"]
-        if any(query_upper.startswith(f) for f in forbidden):
-            return ToolResult(error="Only read-only SELECT queries are permitted.")
+        # Allowlist-based guardrail against destructive queries
+        stripped = _strip_sql_comments(query).strip()
+        if not stripped:
+            return ToolResult(error="Empty query after stripping comments.")
+        first_word = stripped.upper().split(None, 1)[0]
+        allowed_prefixes = {"SELECT", "WITH", "EXPLAIN"}
+        if first_word not in allowed_prefixes:
+            return ToolResult(error="Only read-only SELECT/WITH queries are permitted.")
 
         conn = None
         try:
@@ -113,7 +124,7 @@ class SQLiteSchemaTool(Tool):
 
         conn = None
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
             cursor = conn.cursor()
 
             # Fetch table names
@@ -126,7 +137,8 @@ class SQLiteSchemaTool(Tool):
             output = "Database Schema:\n\n"
 
             for table in tables:
-                cursor.execute(f"PRAGMA table_info({table});")
+                safe_table = table.replace('"', '""')
+                cursor.execute(f'PRAGMA table_info("{safe_table}");')
                 columns = cursor.fetchall()
 
                 output += f"### Table: {table}\n"

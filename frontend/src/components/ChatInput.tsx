@@ -16,14 +16,8 @@ export const ChatInput = memo(function ChatInput({
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    const prevHeight = el.style.height;
     el.style.height = 'auto';
-    const newHeight = `${Math.min(el.scrollHeight, 120)}px`;
-    if (prevHeight !== newHeight) {
-      el.style.height = newHeight;
-    } else {
-      el.style.height = prevHeight;
-    }
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [input]);
 
   const disabled = !isConnected;
@@ -72,6 +66,7 @@ export const ChatInput = memo(function ChatInput({
             className="icon-button"
             onClick={stopGeneration}
             title="Stop generation"
+            aria-label="Stop generation"
           >
             <Square size={18} fill="currentColor" />
           </button>

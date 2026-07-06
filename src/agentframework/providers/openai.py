@@ -19,6 +19,13 @@ from . import LLMProvider, LLMResponse, LLMToolCall
 logger = logging.getLogger(__name__)
 
 
+def _openai_error_response(retry_state) -> LLMResponse:
+    """Return an LLMResponse with the error after all retries are exhausted."""
+    exc = retry_state.outcome.exception()
+    logger.error("OpenAI request failed after retries: %s", exc)
+    return LLMResponse(content=f"OpenAI error: {exc}")
+
+
 def _is_retryable_exception(exception: BaseException) -> bool:
     """Check if exception is retryable (network or rate limit)."""
     error_str = str(exception).lower()
@@ -55,7 +62,7 @@ class OpenAIProvider(LLMProvider):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception(_is_retryable_exception),
-        reraise=True,
+        retry_error_callback=_openai_error_response,
     )
     async def chat(
         self,
@@ -64,49 +71,49 @@ class OpenAIProvider(LLMProvider):
         temperature: float = 0.3,
     ) -> LLMResponse:
         """Send a chat request to OpenAI."""
-        try:
-            params = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": temperature,
-            }
+        params = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+        }
 
-            if tools:
-                params["tools"] = tools
+        if tools:
+            params["tools"] = tools
 
-            async with AsyncOpenAI(
-                api_key=self.api_key,
-                timeout=self.timeout,
-            ) as client:
-                response = await client.chat.completions.create(**params)
+        async with AsyncOpenAI(
+            api_key=self.api_key,
+            timeout=self.timeout,
+        ) as client:
+            response = await client.chat.completions.create(**params)
 
-            msg = response.choices[0].message
-            content = msg.content or ""
+        msg = response.choices[0].message
+        content = msg.content or ""
 
-            tool_calls = []
-            if msg.tool_calls:
-                for tc in msg.tool_calls:
-                    raw_args = tc.function.arguments
-                    if isinstance(raw_args, str):
-                        try:
-                            raw_args = json.loads(raw_args)
-                        except (json.JSONDecodeError, TypeError):
-                            raw_args = {"raw": raw_args}
-                    tool_calls.append(
-                        LLMToolCall(
-                            id=tc.id,
-                            name=tc.function.name,
-                            arguments=raw_args,
-                        )
+        tool_calls = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                raw_args = tc.function.arguments
+                if isinstance(raw_args, str):
+                    try:
+                        raw_args = json.loads(raw_args)
+                    except (json.JSONDecodeError, TypeError):
+                        raw_args = {"raw": raw_args}
+                tool_calls.append(
+                    LLMToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=raw_args,
                     )
+                )
 
-            return LLMResponse(content=content, tool_calls=tool_calls)
-        except Exception as e:
-            logger.error("OpenAI chat failed: %s", e)
-            return LLMResponse(
-                content=f"OpenAI error: {str(e) or type(e).__name__}"
-            )
+        return LLMResponse(content=content, tool_calls=tool_calls)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception(_is_retryable_exception),
+        retry_error_callback=_openai_error_response,
+    )
     async def chat_streaming(
         self,
         messages: list[dict[str, str]],
@@ -165,7 +172,7 @@ class OpenAIProvider(LLMProvider):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception(_is_retryable_exception),
-        reraise=True,
+        retry_error_callback=_openai_error_response,
     )
     async def extract_structured(
         self,

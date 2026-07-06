@@ -48,7 +48,7 @@ class TestWebSocketConcurrency:
         # This tests the agent can handle concurrent requests
         # We mock the agent to avoid actual LLM calls
 
-        with patch("src.agentframework.web_api._state") as mock_state:
+        with patch("src.agentframework.web_models._state") as mock_state:
             mock_agent = MagicMock()
             mock_agent.run_streaming = AsyncMock(return_value="test response")
             mock_state.agent = mock_agent

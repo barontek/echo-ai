@@ -27,7 +27,7 @@ class SemanticSearchTool(Tool):
 
     async def execute(self, query: str, n_results: int = 5) -> ToolResult:
         try:
-            results = self.vector_store.search(query=query, n_results=n_results)
+            results = await self.vector_store.search(query=query, n_results=n_results)
             if not results:
                 return ToolResult(content="No semantic matches found in vector memory.")
 
@@ -54,7 +54,7 @@ class DocumentIngestionTool(Tool):
 
     async def execute(self, document: str, metadata: dict[str, Any]) -> ToolResult:
         try:
-            ids = self.vector_store.add_documents([document], [metadata])
+            ids = await self.vector_store.add_documents([document], [metadata])
             return ToolResult(content=f"Successfully ingested document. Vector UUID: {ids[0]}")
         except Exception as e:
             return ToolResult(error=str(e))

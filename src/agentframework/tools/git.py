@@ -3,6 +3,7 @@
 import asyncio
 import os
 import platform
+import shlex
 
 from pydantic import BaseModel
 
@@ -84,9 +85,9 @@ class GitTool(Tool):
         if command == "commit":
             base_cmd += " --allow-empty-message"
 
-        # Add any user-provided args
+        # Add any user-provided args (sanitized to prevent injection)
         if args:
-            base_cmd += f" {args}"
+            base_cmd += " " + " ".join(shlex.quote(a) for a in shlex.split(args))
 
         return base_cmd.strip()
 

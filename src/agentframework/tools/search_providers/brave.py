@@ -9,6 +9,15 @@ import httpx
 
 from .base import BaseSearchProvider
 
+_brave_client: httpx.AsyncClient | None = None
+
+
+def _get_brave_client() -> httpx.AsyncClient:
+    global _brave_client
+    if _brave_client is None:
+        _brave_client = httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0, read=10.0))
+    return _brave_client
+
 logger = logging.getLogger(__name__)
 
 MONTH_NAMES = {
@@ -100,8 +109,6 @@ class BraveSearchProvider(BaseSearchProvider):
 
     async def search(self, query: str, max_results: int = 5) -> list[dict[str, Any]]:
         try:
-            timeout = httpx.Timeout(15.0, connect=5.0, read=10.0)
-
             freshness = _freshness(query)
 
             headers = {
@@ -110,11 +117,12 @@ class BraveSearchProvider(BaseSearchProvider):
                 "Accept-Encoding": "gzip",
             }
 
+            client = _get_brave_client()
+
             async def _search(url: str, params: dict) -> dict[str, Any]:
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.get(url, headers=headers, params=params)
-                    resp.raise_for_status()
-                    return resp.json()
+                resp = await client.get(url, headers=headers, params=params)
+                resp.raise_for_status()
+                return resp.json()
 
             # Request max_results from web; at most 2 news entries so web results dominate
             web_params: dict[str, str | int] = {
@@ -133,7 +141,18 @@ class BraveSearchProvider(BaseSearchProvider):
 
             web_task = _search(WEB_SEARCH_URL, web_params)
             news_task = _search(NEWS_SEARCH_URL, news_params)
-            web_data, news_data = await asyncio.gather(web_task, news_task)
+            web_result, news_result = await asyncio.gather(web_task, news_task, return_exceptions=True)
+
+            if isinstance(web_result, BaseException):
+                logger.warning("Brave web search failed: %s", web_result)
+                web_data = {}
+            else:
+                web_data = web_result
+            if isinstance(news_result, BaseException):
+                logger.warning("Brave news search failed: %s", news_result)
+                news_data = {}
+            else:
+                news_data = news_result
 
             seen_urls: set[str] = set()
             results: list[dict[str, Any]] = []

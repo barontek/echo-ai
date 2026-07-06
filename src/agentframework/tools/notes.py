@@ -117,11 +117,12 @@ class PersonalNotesTool(Tool):
             query_lower = query.lower()
 
             for note_file in self.notes_dir.glob("*.md"):
-                content = note_file.read_text(encoding="utf-8").lower()
-                if query_lower in content:
-                    # Show matching snippet
+                content = note_file.read_text(encoding="utf-8")
+                content_lower = content.lower()
+                if query_lower in content_lower:
+                    # Show matching snippet with original case preserved
                     lines = content.split("\n")
-                    matches = [line for line in lines if query_lower in line]
+                    matches = [line for line in lines if query_lower in line.lower()]
                     if matches:
                         results.append(f"## {note_file.stem}")
                         for match in matches[:3]:

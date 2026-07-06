@@ -249,31 +249,22 @@ class SessionManager:
             return session
 
     def save_session(self, session: Session | None = None) -> None:
-        """Save the current session properties to the DB."""
+        """Save the current session properties to the DB (upsert)."""
         if session is None:
             session = self.current_session
         if session is None:
             return
 
         with self.SessionLocal() as db:
-            db_session = (
-                db.query(DBSessionModel).filter(DBSessionModel.id == session.id).first()
+            db_session = DBSessionModel(
+                id=session.id,
+                title=session.title,
+                created_at=session.created_at,
+                messages=session.messages,
+                session_metadata=session.metadata,
+                events=session.events or [],
             )
-            if not db_session:
-                db_session = DBSessionModel(
-                    id=session.id,
-                    title=session.title,
-                    created_at=session.created_at,
-                    messages=session.messages,
-                    session_metadata=session.metadata,
-                    events=session.events or [],
-                )
-                db.add(db_session)
-            else:
-                db_session.title = session.title
-                db_session.messages = session.messages
-                db_session.session_metadata = session.metadata
-                db_session.events = session.events or []
+            db.merge(db_session)
             db.commit()
 
     def truncate_history(self, index: int) -> None:
@@ -447,7 +438,7 @@ class SessionManager:
         Returns:
             Number of sessions deleted.
         """
-        count = 0
+        to_delete: list[str] = []
         with self.SessionLocal() as db:
             for db_session in db.query(DBSessionModel).yield_per(100):
                 messages = db_session.messages or []
@@ -455,10 +446,12 @@ class SessionManager:
                     isinstance(m, dict) and m.get("role") == "user" for m in messages
                 )
                 if not has_user_message:
-                    db.delete(db_session)
-                    count += 1
+                    to_delete.append(db_session.id)
 
+            for sid in to_delete:
+                db.query(DBSessionModel).filter(DBSessionModel.id == sid).delete()
             db.commit()
+            count = len(to_delete)
 
             if self.current_session:
                 exists = (

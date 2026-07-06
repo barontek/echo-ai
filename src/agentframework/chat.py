@@ -134,8 +134,8 @@ def main():
     except KeyboardInterrupt:
         try:
             agent.save_session()
-        except OSError:
-            pass
+        except OSError as e:
+            console.print(f"\n[dim]Chat could not be saved: {e}[/dim]")
         console.print("\n[dim]Chat saved. Goodbye![/dim]")
 
 

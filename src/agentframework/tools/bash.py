@@ -102,7 +102,7 @@ class BashTool(Tool):
             if err:
                 combined += "\n" + err if output else err
             if proc.returncode != 0:
-                return ToolResult(content=combined)
+                return ToolResult(content=combined, error=f"Exit code {proc.returncode}")
             return ToolResult(content=combined)
         except Exception as e:
             return ToolResult(error=str(e))

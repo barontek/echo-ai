@@ -6,15 +6,12 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from .. import web_api as _web_api
 from ..session import DBSessionModel
-from ..web_api import (
+from ..web_models import (
     AppState,
     SessionRenamePayload,
-    create_session_data,
-    delete_session_data,
-    get_sessions_data,
     get_state,
-    load_session_data,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +36,7 @@ async def list_sessions(
     """
     if state.agent and state.agent.session_manager:
         state.agent.session_manager.purge_empty_sessions()
-    return get_sessions_data(state)
+    return _web_api.get_sessions_data(state)
 
 
 @router.post("/api/sessions")
@@ -54,7 +51,7 @@ async def create_session(
     Returns:
         {"session_id": "20260319_143052", "title": null}
     """
-    return create_session_data(state)
+    return _web_api.create_session_data(state)
 
 
 @router.get("/api/sessions/{session_id}")
@@ -80,7 +77,7 @@ async def load_session(
     Note:
         Messages are filtered for UI rendering (tool messages removed, thinking extracted)
     """
-    return load_session_data(session_id, state)
+    return _web_api.load_session_data(session_id, state)
 
 
 @router.delete("/api/sessions/{session_id}")
@@ -98,7 +95,7 @@ async def delete_session(
     Returns:
         {"status": "ok"}
     """
-    return delete_session_data(session_id, state)
+    return _web_api.delete_session_data(session_id, state)
 
 
 @router.post("/api/sessions/rename")

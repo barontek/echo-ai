@@ -42,7 +42,7 @@ async def test_notes_tool(temp_notes_dir):
     # Test Search
     res_search = await tool.execute("search_notes", query="world")
     assert "test" in res_search.content
-    assert "world" in res_search.content
+    assert "World" in res_search.content
 
     # Test Search empty
     res_search_empty = await tool.execute("search_notes", query="xyzzy")

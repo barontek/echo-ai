@@ -51,6 +51,7 @@ def get_http_client() -> httpx.AsyncClient:
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(20.0, connect=10.0),
             follow_redirects=True,
+            max_redirects=5,
             limits=httpx.Limits(
                 max_keepalive_connections=10, max_connections=20
             ),
@@ -218,7 +219,7 @@ class WebFetchTool(Tool):
 
                             if content:
                                 content = re.sub(
-                                    r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+                                    r"https?://(?:[a-zA-Z0-9]|[$-@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
                                     "",
                                     content,
                                 )
@@ -241,6 +242,11 @@ class WebFetchTool(Tool):
             client = get_http_client()
             response = await client.get(url)
             response.raise_for_status()
+            # Validate final URL after redirects to prevent SSRF
+            if str(response.url) != url:
+                allowed, reason = self.validator.check_network_allowed(str(response.url))
+                if not allowed:
+                    return ToolResult(error=f"Redirect target blocked: {reason}")
             content = html_to_markdown(response.text, max_length=max_chars)
             return ToolResult(content=content)
         except Exception as e:

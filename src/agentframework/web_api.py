@@ -9,7 +9,6 @@ import logging
 import os
 import time
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -19,7 +18,6 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import BaseModel, Field
 
 from .constants import ECHO_DATA_DIR, OLLAMA_BASE_URL, LM_STUDIO_BASE_URL, CORS_FRONTEND_PORT, CORS_ALT_FRONTEND_PORT, CORS_STREAMLIT_PORT
 from .core import Agent, AgentConfig, create_agent
@@ -30,6 +28,15 @@ from .tools.web import close_http_client
 from .web_utils import filter_messages_for_ui
 from .logging_utils import set_correlation_id
 from .core.router import SemanticRouter
+from . import web_models
+from .web_models import (
+    AppState,
+    ChatRequest,
+    ConfigPayload,
+    PreferencesPayload,
+    RouteRequest,
+    get_state,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -55,8 +62,8 @@ def _load_preferences() -> dict[str, str]:
     if _PREFERENCES_PATH.exists():
         try:
             return json.loads(_PREFERENCES_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+            logger.debug("Failed to load preferences: %s", e)
     return {}
 
 
@@ -65,32 +72,9 @@ def _save_preferences(prefs: dict[str, str]) -> None:
     _PREFERENCES_PATH.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
 
 
-@dataclass
-class AppState:
-    """Application state with dependency injection support."""
-
-    agent: Agent | None = None
-    current_session_id: str | None = None
-    message_history: list[dict[str, Any]] = field(default_factory=list)
-
-
-# Module-level state container (initialized on startup)
-_state: AppState | None = None
-
-
-def get_state() -> AppState:
-    """Dependency to get the application state."""
-    global _state
-    if _state is None:
-        _state = AppState()
-        # Agent creation is deferred until the frontend sends a model via WebSocket
-    return _state
-
-
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown."""
-    global _state
 
     logger.info("=" * 50)
     logger.info("  Echo AI - Starting up...")
@@ -100,7 +84,7 @@ async def lifespan(app: FastAPI):
     logger.info("  Model: selected from frontend UI")
     logger.info("=" * 50)
 
-    _state = AppState()
+    web_models._state = AppState()
     # Agent creation is deferred — the frontend sends model/provider via WebSocket
     yield
     logger.info("Shutting down Echo AI...")
@@ -112,19 +96,19 @@ async def lifespan(app: FastAPI):
     _rate_limiter.close()
 
     # Close agent and cleanup resources
-    if _state and _state.agent:
+    if web_models._state and web_models._state.agent:
         try:
-            if _state.agent.session_manager:
-                _state.agent.session_manager.close()
+            if web_models._state.agent.session_manager:
+                web_models._state.agent.session_manager.close()
         except Exception as e:
             logger.debug(f"Error closing session manager: {e}")
 
         try:
-            _state.agent.close()
+            web_models._state.agent.close()
         except Exception as e:
             logger.debug(f"Error closing agent: {e}")
 
-    _state = None
+    web_models._state = None
     logger.info("Shutdown complete")
 
 
@@ -328,8 +312,8 @@ def _get_cors_config() -> dict:
             f"http://{local_ip}:{DEFAULT_WEB_PORT}",
             f"http://{local_ip}:{CORS_ALT_FRONTEND_PORT}",
         ]
-    except Exception:
-        pass
+    except (OSError, socket.gaierror) as e:
+        logger.debug("Could not resolve local network origins: %s", e)
 
     default_origins = [
         f"http://localhost:{CORS_FRONTEND_PORT}",
@@ -613,43 +597,7 @@ def _create_runtime_agent(
     return create_agent(agent_config, api_key=api_key, session_id=session_id)
 
 
-class ConfigPayload(BaseModel):
-    provider: str = "ollama"
-    model: str = ""
-    api_key: str | None = None
 
-
-class PreferencesPayload(BaseModel):
-    model: str
-    provider: str | None = None
-
-
-class ChatPayload(BaseModel):
-    content: str = Field(default="", min_length=1)
-
-
-class SessionRenamePayload(BaseModel):
-    session_id: str
-    new_title: str = Field(min_length=1)
-
-
-class WsConfigPayload(BaseModel):
-    provider: str = "ollama"
-    model: str = Field(min_length=1, description="Model name, required for agent creation")
-    api_key: str | None = None
-    session_id: str | None = None
-
-
-class WsMessagePayload(BaseModel):
-    type: str | None = None
-    content: str | None = None
-    session_id: str | None = None
-    index: int | None = None
-
-
-class WorkflowRunPayload(BaseModel):
-    workflow_id: str = Field(min_length=1)
-    topic: str = Field(min_length=1)
 
 
 @app.get("/", include_in_schema=False)
@@ -781,35 +729,20 @@ async def review_document():
     return {"sections": sections}
 
 
-class ChatRequest(BaseModel):
-    session_id: str | None = None
-    prompt: str
-    provider: str = "ollama"
-    model: str = ""
-    api_key: str | None = None
-    stream: bool = False
-
-
-class RouteRequest(BaseModel):
-    prompt: str
-
-
 def get_or_create_agent(req: ChatRequest) -> Agent:
     """Retrieve an existing agent for a session or create a new one."""
-    global _state  # noqa: F821 - global statement
-    if _state is None:
-        _state = AppState()
-    if _state.agent is None:
+    state = get_state()
+    if state.agent is None:
         if not req.model:
             raise HTTPException(
                 status_code=400,
                 detail="Model name is required. Select a model from the frontend UI.",
             )
-        _state.agent = _create_runtime_agent(
+        state.agent = _create_runtime_agent(
             provider=req.provider, model=req.model, api_key=req.api_key
         )
 
-    agent = _state.agent
+    agent = state.agent
     if req.session_id and agent.session_manager:
         existing = agent.session_manager.load_session(req.session_id)
         if not existing:
@@ -829,7 +762,6 @@ async def route_intent(request: RouteRequest):
     return {"target_agent": target}
 
 
-# Include routers
 from .routers.chat import router as chat_router  # noqa: E402
 from .routers.health import router as health_router  # noqa: E402
 from .routers.models import router as models_router  # noqa: E402

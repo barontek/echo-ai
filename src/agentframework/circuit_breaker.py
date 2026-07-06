@@ -1,5 +1,6 @@
 """Circuit breaker pattern for resilient provider calls."""
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -45,6 +46,7 @@ class CircuitBreaker:
     success_count: int = field(default=0)
     last_failure_time: float = field(default=0)
     half_open_calls: int = field(default=0)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     def _should_attempt(self) -> bool:
         """Check if a request should be attempted."""
@@ -95,7 +97,7 @@ class CircuitBreaker:
             logger.warning("Circuit breaker OPEN after half-open failure")
         elif self.failure_count >= self.config.failure_threshold:
             self.state = CircuitState.OPEN
-            logger.warning(f"Circuit breaker OPEN after {self.failure_count} failures")
+            logger.warning("Circuit breaker OPEN after %s failures", self.failure_count)
 
     async def call(
         self,
@@ -104,20 +106,23 @@ class CircuitBreaker:
         **kwargs: Any,
     ) -> Any:
         """Execute a function with circuit breaker protection."""
-        if not self._should_attempt():
-            raise CircuitBreakerOpenError(
-                f"Circuit breaker is {self.state.value}, request rejected"
-            )
+        async with self._lock:
+            if not self._should_attempt():
+                raise CircuitBreakerOpenError(
+                    f"Circuit breaker is {self.state.value}, request rejected"
+                )
 
         try:
             result = func(*args, **kwargs)
             if hasattr(result, "__await__"):
                 result = await result
-            self._record_success()
+            async with self._lock:
+                self._record_success()
             return result
         except Exception as e:
-            self._record_failure()
-            raise e
+            async with self._lock:
+                self._record_failure()
+            raise
 
     def reset(self) -> None:
         """Reset the circuit breaker to closed state."""

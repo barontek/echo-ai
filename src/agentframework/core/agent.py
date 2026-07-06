@@ -109,6 +109,7 @@ class Agent:
         self.sub_agents: dict[str, SubAgentConfig] = {}
         self._pending_summary: list[Message] | None = None
         self._session_gen = 0
+        self._background_tasks: set[asyncio.Task] = set()
 
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
@@ -190,7 +191,9 @@ class Agent:
         self.messages = updated_messages
 
         if self._pending_summary:
-            asyncio.create_task(self._background_summarize())
+            task = asyncio.create_task(self._background_summarize())
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
         thinking = _extract_thinking(self.messages)
         if self.session_manager:
@@ -232,7 +235,9 @@ class Agent:
         self.messages = updated_messages
 
         if self._pending_summary:
-            asyncio.create_task(self._background_summarize())
+            task = asyncio.create_task(self._background_summarize())
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
         thinking = _extract_thinking(self.messages)
         if self.session_manager:
@@ -384,7 +389,9 @@ class Agent:
                     current_messages.append(assistant_msg)
 
                     if self._pending_summary:
-                        asyncio.create_task(self._background_summarize())
+                        task = asyncio.create_task(self._background_summarize())
+                        self._background_tasks.add(task)
+                        task.add_done_callback(self._background_tasks.discard)
 
                     if self.session_manager:
                         self.session_manager.add_message(
@@ -414,7 +421,9 @@ class Agent:
                 current_messages.append(assistant_msg)
 
                 if self._pending_summary:
-                    asyncio.create_task(self._background_summarize())
+                    task = asyncio.create_task(self._background_summarize())
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._background_tasks.discard)
 
                 return final_content, current_messages
 
@@ -584,9 +593,9 @@ class Agent:
 
         if dropped:
             if self._pending_summary is None:
-                self._pending_summary = dropped
+                self._pending_summary = list(dropped)
             else:
-                self._pending_summary.extend(dropped)
+                self._pending_summary = list(self._pending_summary) + list(dropped)
 
         logger.debug(
             "context_window",
@@ -664,14 +673,12 @@ class Agent:
         try:
             summary = await summarize_old_messages(dropped, self.llm)
             if summary and gen == self._session_gen:
-                # Remove the original dropped messages from self.messages by content identity
-                dropped_keys = {
-                    (m.role, m.content, m.tool_call_id, m.tool_name, m.error_category)
-                    for m in dropped
-                }
+                # Remove dropped messages by object identity to avoid removing
+                # distinct messages with identical content
+                dropped_set = frozenset(id(m) for m in dropped)
                 self.messages = [
                     m for m in self.messages
-                    if (m.role, m.content, m.tool_call_id, m.tool_name, m.error_category) not in dropped_keys
+                    if id(m) not in dropped_set
                 ]
 
                 summary_msg = Message(role="system", content=summary)
@@ -711,6 +718,11 @@ class Agent:
         # extreme truncation (more than 50% reduction).
         if len(serialized) >= len(existing) // 2:
             self.session_manager.current_session.messages = serialized
+        else:
+            logger.warning(
+                "Session save skipped: serialized messages (%d) < half of existing (%d)",
+                len(serialized), len(existing),
+            )
 
         self.session_manager.save_session()
         return f"Session saved: {self.session_manager.current_session.id}"
@@ -761,6 +773,12 @@ class Agent:
 
     def close(self) -> None:
         """Close the agent and its associated managers."""
+        # Cancel any pending background tasks
+        for task in list(self._background_tasks):
+            if not task.done():
+                task.cancel()
+        self._background_tasks.clear()
+
         if self.session_manager:
             self.session_manager.close()
         if hasattr(self, "llm"):

@@ -18,6 +18,13 @@ from ..conversation import normalize_args_for_ollama
 
 logger = logging.getLogger(__name__)
 
+
+def _ollama_error_response(retry_state) -> LLMResponse:
+    """Return an LLMResponse with the error after all retries are exhausted."""
+    exc = retry_state.outcome.exception()
+    logger.error("Ollama request failed after retries: %s", exc)
+    return LLMResponse(content="An internal error occurred while processing your request.")
+
 COMMON_TOOL_NAMES = frozenset(
     [
         "bash",
@@ -100,7 +107,10 @@ class OllamaProvider(LLMProvider):
             for tc in native_tool_calls:
                 args = tc.get("function", {}).get("arguments", {})
                 if isinstance(args, str):
-                    args = json.loads(args)
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {"raw": args}
                 tool_calls.append(
                     LLMToolCall(
                         id=tc.get("id", ""),
@@ -119,10 +129,10 @@ class OllamaProvider(LLMProvider):
         matches = re.findall(pattern, content, re.DOTALL)
         extraction_method = "markdown block"
 
-        # Also try to find plain JSON tool calls ({"name": "...", "arguments": ...})
+            # Also try to find plain JSON tool calls ({"name": "...", "arguments": ...})
         if not matches:
-            pattern = r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\}|null)\s*\}'
-            matches = re.findall(pattern, content)
+            pattern = r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{.*\}|null)\s*\}'
+            matches = re.findall(pattern, content, re.DOTALL)
             extraction_method = "plain JSON"
 
         # Also try to find tool name followed by JSON arguments (e.g. "web_search{\"query\": \"test\"}")
@@ -193,7 +203,7 @@ class OllamaProvider(LLMProvider):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True,
+        retry_error_callback=_ollama_error_response,
     )
     async def chat(
         self,
@@ -223,75 +233,62 @@ class OllamaProvider(LLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        try:
-            logger.debug(
-                "ollama_chat_request",
-                extra={
-                    "model": self.model,
-                    "message_count": len(messages),
-                    "tools": [t["function"]["name"] for t in tools] if tools else [],
-                },
-            )
+        logger.debug(
+            "ollama_chat_request",
+            extra={
+                "model": self.model,
+                "message_count": len(messages),
+                "tools": [t["function"]["name"] for t in tools] if tools else [],
+            },
+        )
 
-            response = await self.client.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                headers=headers,
-                timeout=self.timeout,  # Configurable timeout for non-streaming requests
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await self.client.post(
+            f"{self.base_url}/api/chat",
+            json=payload,
+            headers=headers,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
 
-            content = data.get("message", {}).get("content", "")
-            thinking = data.get("message", {}).get("thinking", "")
+        content = data.get("message", {}).get("content", "")
+        thinking = data.get("message", {}).get("thinking", "")
 
-            # FIX: Translate inline <think> tags for models that put thoughts in content
-            if "<think>" in content:
-                content = content.replace("<think>", THINKING_START + "\n")
-                content = content.replace("</think>", "\n" + THINKING_END)
+        if "<think>" in content:
+            content = content.replace("<think>", THINKING_START + "\n")
+            content = content.replace("</think>", "\n" + THINKING_END)
 
-            if thinking and THINKING_START not in content:
-                content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
-            tool_calls = []
+        if thinking and THINKING_START not in content:
+            content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
+        tool_calls = []
 
-            if "tool_calls" in data.get("message", {}):
-                for tc in data["message"]["tool_calls"]:
-                    args = tc.get("function", {}).get("arguments", {})
-                    if isinstance(args, str):
-                        args = json.loads(args)
-                    tool_calls.append(
-                        LLMToolCall(
-                            id=tc.get("id", ""),
-                            name=tc.get("function", {}).get("name", ""),
-                            arguments=args,
-                        )
+        if "tool_calls" in data.get("message", {}):
+            for tc in data["message"]["tool_calls"]:
+                args = tc.get("function", {}).get("arguments", {})
+                if isinstance(args, str):
+                    args = json.loads(args)
+                tool_calls.append(
+                    LLMToolCall(
+                        id=tc.get("id", ""),
+                        name=tc.get("function", {}).get("name", ""),
+                        arguments=args,
                     )
+                )
 
-            # Also check content for markdown tool calls (qwen2.5-coder style)
-            if content and not tool_calls:
-                extracted = self._extract_tool_calls_from_content(content)
-                if extracted:
-                    tool_calls = extracted
-                    # If we extracted tool calls, clear the content since it was just the tool call
-                    content = ""
+        if content and not tool_calls:
+            extracted = self._extract_tool_calls_from_content(content)
+            if extracted:
+                tool_calls = extracted
+                content = ""
 
-            return LLMResponse(
-                content=content, thinking=thinking, tool_calls=tool_calls
-            )
-
-        except httpx.HTTPStatusError as e:
-            logger.warning("Ollama HTTP error: %s", e.response.status_code)
-            return LLMResponse(content=f"HTTP error: {e.response.status_code}")
-        except Exception as e:
-            logger.error("Ollama chat failed: %s", e)
-            return LLMResponse(
-                content="An internal error occurred while processing your request."
-            )
+        return LLMResponse(
+            content=content, thinking=thinking, tool_calls=tool_calls
+        )
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True,
+        retry_error_callback=_ollama_error_response,
     )
     async def chat_streaming(
         self,
@@ -525,19 +522,14 @@ class OllamaProvider(LLMProvider):
                 content=content, thinking=thinking, tool_calls=tool_calls
             )
 
-        except httpx.HTTPStatusError as e:
-            logger.warning("Ollama streaming HTTP error: %s", e.response.status_code)
-            return LLMResponse(content=f"HTTP error: {e.response.status_code}")
         except Exception as e:
             logger.error("Ollama streaming failed: %s", e)
-            return LLMResponse(
-                content="An internal error occurred while processing your request."
-            )
+            raise
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True,
+        retry_error_callback=_ollama_error_response,
     )
     async def extract_structured(
         self,

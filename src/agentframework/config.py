@@ -358,8 +358,8 @@ def get_safety_config(config: dict) -> SafetyConfig:
                 file_path = Path(path_str)
                 if file_path.exists():
                     warning_msg = " [red]WARNING File exists - will overwrite![/red]"
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("Could not check write_file path: %s", e)
         elif tool == "read_file":
             try:
                 path_str = details.replace("read: ", "")
@@ -371,8 +371,8 @@ def get_safety_config(config: dict) -> SafetyConfig:
                         warning_msg = (
                             f" [yellow]WARNING Large file ({size // 1024} KB)[/yellow]"
                         )
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("Could not check read_file path: %s", e)
         elif tool == "memory":
             warning_msg = (
                 " [red]WARNING This will permanently delete stored memories![/red]"

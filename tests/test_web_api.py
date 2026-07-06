@@ -16,6 +16,7 @@ from starlette.requests import Request
 from starlette.websockets import WebSocketDisconnect
 from src.agentframework.web_api import app
 import src.agentframework.web_api as web_api
+import src.agentframework.web_models as web_models
 from src.agentframework.routers.chat import handle_chat
 from src.agentframework.routers.workflows import workflows_list, workflow_run
 from pathlib import Path
@@ -639,7 +640,7 @@ class TestWorkflows:
             lambda _workflow_id: FakeWorkflow(),
         )
 
-        payload = web_api.WorkflowRunPayload(
+        payload = web_models.WorkflowRunPayload(
             workflow_id="research_and_summarize", topic="hello"
         )
         result = await workflow_run(payload, state)
@@ -1140,7 +1141,7 @@ class TestWorkflowErrors:
     def test_workflow_run_no_agent_creates_agent_and_returns_workflow_id(self, mock_agent):
         state = web_api.get_state()
         state.agent = None
-        with patch("src.agentframework.routers.workflows._create_runtime_agent", return_value=mock_agent):
+        with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
             response = client.post(
                 "/api/workflows/run",
                 json={"workflow_id": "research_and_summarize", "topic": "test"},
@@ -1627,7 +1628,7 @@ class TestCorsConfig:
     def test_cors_socket_error_falls_back(self, monkeypatch):
         """When socket.gethostbyname fails, local_network_origins should be empty."""
         def raiser(*args):
-            raise Exception("DNS resolution failed")
+            raise OSError("DNS resolution failed")
         monkeypatch.setattr("socket.gethostbyname", raiser)
         config = web_api._get_cors_config()
         # Should include default origins even without local network origins
@@ -2046,16 +2047,16 @@ class TestGetOrCreateAgentPaths:
 
     def test_get_or_create_agent_state_none(self, mock_agent):
         """When _state is None, get_or_create_agent creates new state."""
-        saved_state = web_api._state
-        web_api._state = None
+        saved_state = web_models._state
+        web_models._state = None
         try:
             with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
                 req = web_api.ChatRequest(prompt="hello", model="qwen3:4b-instruct")
                 result = web_api.get_or_create_agent(req)
             assert result is mock_agent
-            assert web_api._state is not None
+            assert web_models._state is not None
         finally:
-            web_api._state = saved_state
+            web_models._state = saved_state
 
     def test_get_or_create_agent_agent_none(self, mock_agent):
         """When _state.agent is None, get_or_create_agent creates new agent."""
@@ -2115,7 +2116,7 @@ class TestWebSocketStateNone:
             mock_create.return_value = mock_agent
             with TestClient(app) as tc:
                 # _state is now set by lifespan. Reset it to None.
-                web_api._state = None
+                web_models._state = None
                 try:
                     with tc.websocket_connect("/ws/chat") as ws:
                         ws.send_text(json.dumps({"provider": "ollama", "model": "m"}))
@@ -2123,7 +2124,7 @@ class TestWebSocketStateNone:
                         assert err["type"] == "error"
                         assert err["content"] == "Server not initialized"
                 finally:
-                    web_api.get_state()  # re-init state
+                    web_models.get_state()  # re-init state
 
 
 class TestWebSocketFallbackThinkingTail:
@@ -2194,14 +2195,14 @@ class TestWebSocketMainLoopErrors:
 class TestDeferredInit:
     def test_get_state_deferred_init_failure(self):
         """When _create_runtime_agent raises in get_state, error is logged."""
-        saved_state = web_api._state
-        web_api._state = None
+        saved_state = web_models._state
+        web_models._state = None
         try:
             with patch.object(web_api, "_create_runtime_agent", side_effect=Exception("Ollama down")):
                 state = web_api.get_state()
             assert state.agent is None
         finally:
-            web_api._state = saved_state
+            web_models._state = saved_state
 
 
 # ---------------------------------------------------------------------------

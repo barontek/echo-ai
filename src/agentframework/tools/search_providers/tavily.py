@@ -1,6 +1,9 @@
-import ast
+import asyncio
+import json
 import os
 from typing import Any
+
+import httpx
 
 from .base import BaseSearchProvider
 
@@ -16,7 +19,7 @@ def _get_tavily_domains() -> list[str]:
     raw = os.environ.get("TAVILY_INCLUDE_DOMAINS", "")
     if raw:
         try:
-            parsed = ast.literal_eval(raw)
+            parsed = json.loads(raw)
             if isinstance(parsed, list):
                 return parsed
         except (ValueError, SyntaxError):
@@ -44,38 +47,40 @@ class TavilyProvider(BaseSearchProvider):
             List of dicts with {title, url, snippet}
         """
         try:
-            from tavily import TavilyClient
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                for time_range in ("day", "week"):
+                    payload = {
+                        "api_key": self.api_key,
+                        "query": query,
+                        "search_depth": "advanced",
+                        "topic": "news",
+                        "time_range": time_range,
+                        "max_results": max_results,
+                        "include_answer": False,
+                        "include_raw_content": False,
+                        "include_images": False,
+                        "include_domains": _get_tavily_domains(),
+                    }
+                    resp = await client.post(
+                        "https://api.tavily.com/search",
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    response = resp.json()
 
-            client = TavilyClient(api_key=self.api_key)
+                    results: list[dict[str, Any]] = response.get("results", [])
+                    results = [r for r in results if r.get("score", 0) > 0.2]
 
-            for time_range in ("day", "week"):
-                response = client.search(
-                    query=query,
-                    search_depth="advanced",
-                    topic="news",
-                    time_range=time_range,
-                    max_results=max_results,
-                    include_answer=False,
-                    include_raw_content=False,
-                    include_images=False,
-                    include_domains=_get_tavily_domains(),
-                    exact_match=True,
-                    chunks_per_source="auto",
-                )
+                    if results:
+                        break
 
-                results: list[dict[str, Any]] = response.get("results", [])
-                results = [r for r in results if r.get("score", 0) > 0.2]
-
-                if results:
-                    break
-
-            return [
-                {
-                    "title": r.get("title", ""),
-                    "url": r.get("url", ""),
-                    "snippet": r.get("content") or r.get("snippet", ""),
-                }
-                for r in results
-            ]
+                return [
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "snippet": r.get("content") or r.get("snippet", ""),
+                    }
+                    for r in results
+                ]
         except Exception as e:
             raise RuntimeError(f"Tavily search failed: {e}") from e

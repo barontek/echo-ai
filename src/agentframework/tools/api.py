@@ -57,6 +57,10 @@ class RESTAPITool(Tool):
         if method not in ("GET", "POST", "PUT", "DELETE", "PATCH"):
             return ToolResult(error=f"Unsupported HTTP method: {method}")
 
+        # Validate URL scheme
+        if not url.lower().startswith(("http://", "https://")):
+            return ToolResult(error="Only http and https URLs are allowed")
+
         allowed, reason = self.validator.check_network_allowed(url)
         if not allowed:
             return ToolResult(error=f"Network blocked: {reason}")
@@ -78,6 +82,11 @@ class RESTAPITool(Tool):
                 params=query_params,
             )
             response = await client.send(req)
+            # Validate final URL after redirects to prevent SSRF
+            if str(response.url) != url:
+                allowed, reason = self.validator.check_network_allowed(str(response.url))
+                if not allowed:
+                    return ToolResult(error=f"Redirect target blocked: {reason}")
 
             content = f"Status Code: {response.status_code}\n\n"
 

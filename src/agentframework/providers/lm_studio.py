@@ -18,6 +18,13 @@ from ..constants import LM_STUDIO_BASE_URL, THINKING_END, THINKING_START
 logger = logging.getLogger(__name__)
 
 
+def _lm_studio_error_response(retry_state) -> LLMResponse:
+    """Return an LLMResponse with the error after all retries are exhausted."""
+    exc = retry_state.outcome.exception()
+    logger.error("LM Studio request failed after retries: %s", exc)
+    return LLMResponse(content=f"LM Studio error: {exc}")
+
+
 def _is_retryable_exception(exception: BaseException) -> bool:
     error_str = str(exception).lower()
     type_name = type(exception).__name__.lower()
@@ -61,7 +68,7 @@ class LMStudioProvider(LLMProvider):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception(_is_retryable_exception),
-        reraise=True,
+        retry_error_callback=_lm_studio_error_response,
     )
     async def chat(
         self,
@@ -69,56 +76,50 @@ class LMStudioProvider(LLMProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.3,
     ) -> LLMResponse:
-        try:
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if tools:
-                payload["tools"] = tools
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if tools:
+            payload["tools"] = tools
 
-            async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
-                response = await client.post(
-                    f"{self.base_url}/v1/chat/completions",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                data = response.json()
-
-            choice = data["choices"][0]
-            msg = choice.get("message", {})
-            content = msg.get("content", "") or ""
-
-            tool_calls = []
-            for tc in msg.get("tool_calls", []):
-                args = {}
-                try:
-                    if tc.get("function", {}).get("arguments"):
-                        args = json.loads(tc["function"]["arguments"])
-                except json.JSONDecodeError:
-                    pass
-                tool_calls.append(
-                    LLMToolCall(
-                        id=tc.get("id", ""),
-                        name=tc.get("function", {}).get("name", ""),
-                        arguments=args,
-                    )
-                )
-
-            return LLMResponse(content=content, tool_calls=tool_calls)
-        except Exception as e:
-            logger.error("LM Studio chat failed: %s", e)
-            return LLMResponse(
-                content=f"LM Studio error: {str(e) or type(e).__name__}"
+        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
+            response = await client.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers={"Content-Type": "application/json"},
             )
+            response.raise_for_status()
+            data = response.json()
+
+        choice = data["choices"][0]
+        msg = choice.get("message", {})
+        content = msg.get("content", "") or ""
+
+        tool_calls = []
+        for tc in msg.get("tool_calls", []):
+            args = {}
+            try:
+                if tc.get("function", {}).get("arguments"):
+                    args = json.loads(tc["function"]["arguments"])
+            except json.JSONDecodeError as e:
+                logger.debug("Failed to parse tool call arguments JSON: %s", e)
+            tool_calls.append(
+                LLMToolCall(
+                    id=tc.get("id", ""),
+                    name=tc.get("function", {}).get("name", ""),
+                    arguments=args,
+                )
+            )
+
+        return LLMResponse(content=content, tool_calls=tool_calls)
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception(_is_retryable_exception),
-        reraise=True,
+        retry_error_callback=_lm_studio_error_response,
     )
     async def chat_streaming(
         self,
@@ -185,12 +186,20 @@ class LMStudioProvider(LLMProvider):
                                 tag_leftover = text[pos:]
                                 text = text[:pos]
                                 break
-                        if in_thinking and on_chunk:
-                            on_chunk(THINKING_END)
-                        in_thinking = False
+                        if in_thinking:
+                            if on_chunk:
+                                on_chunk(THINKING_END)
+                            in_thinking = False
                         content += text
                         if on_chunk:
                             on_chunk(text)
+
+                    # Emit THINKING_END if thinking finished and we got tool calls
+                    if not text and delta.get("tool_calls") and in_thinking:
+                        if on_chunk:
+                            on_chunk(THINKING_END)
+                        in_thinking = False
+
                     for tc_delta in delta.get("tool_calls", []):
                         idx = tc_delta.get("index", 0)
                         while len(tool_calls) <= idx:
@@ -217,7 +226,7 @@ class LMStudioProvider(LLMProvider):
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception(_is_retryable_exception),
-        reraise=True,
+        retry_error_callback=_lm_studio_error_response,
     )
     async def extract_structured(
         self,

@@ -11,6 +11,7 @@ export const MessageList = memo(function MessageList() {
   const [editText, setEditText] = useState('');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const userScrolledUpRef = useRef(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isAtBottom = () => {
     const el = containerRef.current;
@@ -50,9 +51,10 @@ export const MessageList = memo(function MessageList() {
 
       {messages.map((msg, idx) => {
         const isEditing = editingIndex === idx;
+        const msgKey = msg.timestamp ? `${msg.role}-${msg.timestamp}-${idx}` : `msg-${idx}`;
 
         return (
-          <div key={idx} className={`message message-${msg.role}`}>
+          <div key={msgKey} className={`message message-${msg.role}`}>
             <div className="message-bubble">
               {isEditing && (
                 <div className="message-content">
@@ -124,13 +126,18 @@ export const MessageList = memo(function MessageList() {
                       <button
                         className="icon-button"
                         onClick={() => {
+                          const doCopy = () => {
+                            setCopiedIndex(idx);
+                            if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+                            copyTimeoutRef.current = setTimeout(() => {
+                              setCopiedIndex(null);
+                              copyTimeoutRef.current = null;
+                            }, 2000);
+                          };
                           if (navigator.clipboard) {
                             navigator.clipboard
                               .writeText(msg.content)
-                              .then(() => {
-                                setCopiedIndex(idx);
-                                setTimeout(() => setCopiedIndex(null), 2000);
-                              })
+                              .then(doCopy)
                               .catch((err) => {
                                 console.error('Copy failed:', err);
                               });
@@ -143,8 +150,7 @@ export const MessageList = memo(function MessageList() {
                             textarea.select();
                             try {
                               document.execCommand('copy');
-                              setCopiedIndex(idx);
-                              setTimeout(() => setCopiedIndex(null), 2000);
+                              doCopy();
                             } catch (err) {
                               console.error('Copy failed:', err);
                             }

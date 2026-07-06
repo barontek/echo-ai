@@ -178,11 +178,21 @@ class SecurityValidator:
         ]
 
     def check_path_traversal(self, path: str) -> bool:
-        """Check for path traversal attempts."""
+        """Check for path traversal attempts.
+
+        Rejects '..' traversals and non-workspace absolute paths.
+        Resolves symlinks to prevent symlink-based escape.
+        """
         if not path:
             return False
+        p = Path(path)
+        if ".." in p.parts:
+            return False
         try:
-            candidate = (self.workspace_path / path).resolve()
+            if p.is_absolute():
+                candidate = p.resolve()
+            else:
+                candidate = (self.workspace_path / path).resolve()
             ws_str = str(self.workspace_path)
             if not ws_str.endswith(os.sep):
                 ws_str += os.sep
@@ -257,18 +267,13 @@ class SecurityValidator:
 
                 base_cmd = executable_parts[0]
 
-                # Check blocked commands - compile regex patterns natively
+                # Check blocked commands using fnmatch (avoids ReDoS from user-controlled regex)
                 if self.config.blocked_commands:
                     for blocked in self.config.blocked_commands:
                         if not isinstance(blocked, str):
                             continue
-                        try:
-                            if re.search(blocked, base_cmd):
-                                return False, f"Command '{base_cmd}' is blocked"
-                        except re.error:
-                            # Fall back to fnmatch for simple patterns
-                            if fnmatch.fnmatch(base_cmd, blocked):
-                                return False, f"Command '{base_cmd}' is blocked"
+                        if fnmatch.fnmatch(base_cmd, blocked):
+                            return False, f"Command '{base_cmd}' is blocked"
 
                 # Check allowed commands
                 allowed = self.config.allowed_commands
@@ -307,9 +312,9 @@ class SecurityValidator:
         if not self.config.enable_domain_allowlist:
             return True, "OK"
 
-        # Domain allowlist is enabled - check against allowed_domains
+        # Domain allowlist is enabled but empty - deny everything
         if not self.config.allowed_domains:
-            return True, "OK"
+            return False, "Domain allowlist is enabled but empty — no domains allowed"
 
         from urllib.parse import urlparse
 

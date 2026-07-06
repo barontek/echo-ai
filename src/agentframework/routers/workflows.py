@@ -8,15 +8,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from .. import web_api as _web_api
 from ..config import load_config
 from ..constants import DEFAULT_MODEL
-from ..web_api import (
+from ..web_models import (
     AppState,
     WorkflowRunPayload,
-    _create_runtime_agent,
     get_state,
 )
-from ...workflows import get_workflow, list_workflows
+from workflows import get_workflow, list_workflows
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ async def workflow_run(
         cfg = load_config()
         provider = cfg.get("model", {}).get("provider", "ollama")
         model = cfg.get("model", {}).get("name") or DEFAULT_MODEL
-        state.agent = _create_runtime_agent(
+        state.agent = _web_api._create_runtime_agent(
             provider=provider, model=model
         )
 

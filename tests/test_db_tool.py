@@ -42,7 +42,7 @@ async def test_sqlite_query_select(query_tool, test_db):
 async def test_sqlite_query_destructive(query_tool, test_db):
     res = await query_tool.execute(db_path=test_db, query="DROP TABLE users")
     assert res.error
-    assert "read-only SELECT queries are permitted" in res.error
+    assert "read-only SELECT/WITH queries are permitted" in res.error
 
 @pytest.mark.asyncio
 async def test_sqlite_query_missing_db(query_tool):

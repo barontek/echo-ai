@@ -354,7 +354,8 @@ class TestPurgeEmpty:
 
         count = manager.purge_empty_sessions()
         assert count == 0
-        assert len(manager.list_sessions()) == 2
+        sessions, total = manager.list_sessions()
+        assert len(sessions) == 2
 
     def test_purge_empty_resets_current_if_deleted(self, manager):
         manager.create_session(session_id="empty_to_delete")

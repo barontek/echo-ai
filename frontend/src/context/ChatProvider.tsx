@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { ChatContext, type ChatContextValue, type ConnectionStatus } from './ChatContext';
 import { api } from '../api/client';
 import type { ApprovalRequest, StreamEvent } from '../types';
@@ -81,6 +81,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (gen !== wsGenRef.current) return; // Stale handler
         debugLog('ws:open');
         reconnectDelayRef.current = 500;
         setIsConnected(true);
@@ -137,21 +138,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
             case 'message':
               debugLog('message:user', data.content?.substring(0, 30));
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                // Skip if last message is already the same (optimistic add)
-                if (last?.role === 'user' && last.content === data.content) {
-                  return prev;
-                }
-                return [
-                  ...prev,
-                  {
-                    role: 'user',
-                    content: data.content || '',
-                    timestamp: data.timestamp,
-                  },
-                ];
-              });
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: 'user',
+                  content: data.content || '',
+                  timestamp: data.timestamp,
+                },
+              ]);
               break;
 
             case 'content':
@@ -555,7 +549,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [messages, sendMessage]
   );
 
-  const value: ChatContextValue = {
+  const value = useMemo<ChatContextValue>(() => ({
     sessions,
     activeSessionId,
     currentModel,
@@ -581,7 +575,31 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     reconnect,
     pendingApproval,
     resolveApproval,
-  };
+  }), [
+    sessions,
+    activeSessionId,
+    currentModel,
+    currentProvider,
+    models,
+    providers,
+    messages,
+    connectionStatus,
+    isConnected,
+    isStreaming,
+    sidebarOpen,
+    sendMessage,
+    stopGeneration,
+    editMessage,
+    retryMessage,
+    createSession,
+    selectSession,
+    deleteSession,
+    selectModel,
+    selectProvider,
+    reconnect,
+    pendingApproval,
+    resolveApproval,
+  ]);
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }

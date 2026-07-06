@@ -10,6 +10,7 @@ Supports Prometheus export format.
 """
 
 import time
+import threading
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 
@@ -21,14 +22,17 @@ class Counter:
     name: str
     value: int = 0
     labels: dict[str, str] = field(default_factory=dict)
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
 
     def inc(self, amount: int = 1):
         """Increment the counter."""
-        self.value += amount
+        with self._lock:
+            self.value += amount
 
     def reset(self):
         """Reset the counter."""
-        self.value = 0
+        with self._lock:
+            self.value = 0
 
 
 @dataclass
@@ -38,20 +42,24 @@ class Histogram:
     name: str
     values: list[float] = field(default_factory=list)
     labels: dict[str, str] = field(default_factory=dict)
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
 
     def observe(self, value: float):
         """Record an observation."""
-        self.values.append(value)
+        with self._lock:
+            self.values.append(value)
 
     @property
     def count(self) -> int:
         """Number of observations."""
-        return len(self.values)
+        with self._lock:
+            return len(self.values)
 
     @property
     def sum(self) -> float:
         """Sum of all observations."""
-        return sum(self.values)
+        with self._lock:
+            return sum(self.values)
 
     @property
     def avg(self) -> float:
@@ -60,13 +68,15 @@ class Histogram:
 
     def reset(self):
         """Reset the histogram."""
-        self.values.clear()
+        with self._lock:
+            self.values.clear()
 
 
 class Metrics:
     """Simple metrics collector for the agent framework."""
 
     def __init__(self):
+        self._lock = threading.RLock()
         self._counters: dict[str, Counter] = {}
         self._histograms: dict[str, Histogram] = {}
         self._gauges: dict[str, float] = {}
@@ -74,21 +84,24 @@ class Metrics:
     def counter(self, name: str, labels: dict[str, str] | None = None) -> Counter:
         """Get or create a counter."""
         key = self._make_key(name, labels)
-        if key not in self._counters:
-            self._counters[key] = Counter(name=name, labels=labels or {})
-        return self._counters[key]
+        with self._lock:
+            if key not in self._counters:
+                self._counters[key] = Counter(name=name, labels=labels or {})
+            return self._counters[key]
 
     def histogram(self, name: str, labels: dict[str, str] | None = None) -> Histogram:
         """Get or create a histogram."""
         key = self._make_key(name, labels)
-        if key not in self._histograms:
-            self._histograms[key] = Histogram(name=name, labels=labels or {})
-        return self._histograms[key]
+        with self._lock:
+            if key not in self._histograms:
+                self._histograms[key] = Histogram(name=name, labels=labels or {})
+            return self._histograms[key]
 
     def gauge(self, name: str, value: float, labels: dict[str, str] | None = None):
         """Set a gauge value."""
         key = self._make_key(name, labels)
-        self._gauges[key] = value
+        with self._lock:
+            self._gauges[key] = value
 
     def inc_counter(
         self, name: str, amount: int = 1, labels: dict[str, str] | None = None
@@ -121,16 +134,20 @@ class Metrics:
 
     def get_all(self) -> dict[str, dict]:
         """Get all metrics as a dictionary."""
-        result = {}
+        with self._lock:
+            counters_snapshot = dict(self._counters)
+            histograms_snapshot = dict(self._histograms)
+            gauges_snapshot = dict(self._gauges)
 
-        for key, counter in self._counters.items():
+        result = {}
+        for key, counter in counters_snapshot.items():
             result[f"counter:{key}"] = {
                 "name": counter.name,
                 "value": counter.value,
                 "labels": counter.labels,
             }
 
-        for key, histogram in self._histograms.items():
+        for key, histogram in histograms_snapshot.items():
             result[f"histogram:{key}"] = {
                 "name": histogram.name,
                 "count": histogram.count,
@@ -139,16 +156,20 @@ class Metrics:
                 "labels": histogram.labels,
             }
 
-        for key, value in self._gauges.items():
+        for key, value in gauges_snapshot.items():
             result[f"gauge:{key}"] = {"value": value}
 
         return result
 
     def export_prometheus(self) -> str:
         """Export metrics in Prometheus format."""
-        lines = []
+        with self._lock:
+            counters_snapshot = dict(self._counters)
+            histograms_snapshot = dict(self._histograms)
+            gauges_snapshot = dict(self._gauges)
 
-        for key, counter in self._counters.items():
+        lines = []
+        for key, counter in counters_snapshot.items():
             labels_str = (
                 ",".join(f'{k}="{v}"' for k, v in counter.labels.items())
                 if counter.labels
@@ -160,7 +181,7 @@ class Metrics:
             else:
                 lines.append(f"{name} {counter.value}")
 
-        for key, histogram in self._histograms.items():
+        for key, histogram in histograms_snapshot.items():
             labels_str = (
                 ",".join(f'{k}="{v}"' for k, v in histogram.labels.items())
                 if histogram.labels
@@ -175,7 +196,7 @@ class Metrics:
                 lines.append(f"{name}_count {histogram.count}")
                 lines.append(f"{name}_sum {histogram.sum}")
 
-        for key, value in self._gauges.items():
+        for key, value in gauges_snapshot.items():
             labels_start = key.find("{")
             if labels_start != -1:
                 name = key[:labels_start].replace("-", "_").replace(".", "_")

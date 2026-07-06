@@ -2,6 +2,7 @@
 
 ## ⚠️ Never Reference Deleted Modules
 - **sentry** (`src/agentframework/sentry.py`, `@sentry/react`) — removed entirely. Do not import or reference it.
+- **nicegui** (`src/agentframework/ui_nicegui/`) — removed entirely. Do not import or reference it.
 
 ## Commands
 

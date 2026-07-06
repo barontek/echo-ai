@@ -90,7 +90,7 @@ case $MODE in
         .venv/bin/python -m src.agentframework.tui
         ;;
     *)
-        echo "Usage: ./run.sh [nicegui|dev|web|api|chat|tui|--docker]"
+        echo "Usage: ./run.sh [dev|web|api|chat|tui|--docker]"
         exit 1
         ;;
 esac

@@ -183,15 +183,30 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
     total_tokens = 0
 
     for msg in reversed(messages):
-        msg_tokens = estimate_tokens(msg.content)
-        if total_tokens + msg_tokens > max_tokens:
-            break
-
         content = msg.content
         if msg.role == "tool" and len(content) > MESSAGE_CONTENT_MAX_CHARS:
             content = (
                 content[:MESSAGE_CONTENT_MAX_CHARS] + f"\n\n[Output truncated - was {len(content)} chars]"
             )
+
+        msg_tokens = estimate_tokens(msg.content)
+        if total_tokens + msg_tokens > max_tokens:
+            if not result:
+                # Most recent message alone exceeds max_tokens — include it
+                # anyway (possibly truncated) so it's not silently dropped.
+                result.insert(
+                    0,
+                    Message(
+                        role=msg.role,
+                        content=content,
+                        tool_call_id=msg.tool_call_id,
+                        tool_name=msg.tool_name,
+                        tool_arguments=msg.tool_arguments,
+                        error_category=msg.error_category,
+                    ),
+                )
+                total_tokens += msg_tokens
+            break
 
         result.insert(
             0,
@@ -209,8 +224,12 @@ def trim_messages_by_tokens(messages: list[Message], max_tokens: int) -> list[Me
     if result != messages and result:
         if result[0].role == "tool":
             for i, m in enumerate(messages):
-                if m.role == "assistant" and m.tool_calls:
-                    if any(tc.get("id") == result[0].tool_call_id for tc in m.tool_calls):
+                if m.role == "assistant" and (m.tool_calls or m.tool_call_id):
+                    id_match = result[0].tool_call_id
+                    if (
+                        (m.tool_calls and any(tc.get("id") == id_match for tc in m.tool_calls))
+                        or m.tool_call_id == id_match
+                    ):
                         if i > 0 and messages[i - 1].role == "user":
                             result.insert(
                                 0,

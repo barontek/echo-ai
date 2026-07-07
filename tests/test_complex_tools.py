@@ -71,9 +71,10 @@ async def test_web_fetch_tool(mock_crawler_class, mock_httpx_get):
 
     # Mock httpx response
     class MockHttpxResponse:
-        def __init__(self, status_code, text=""):
+        def __init__(self, status_code, text="", url=""):
             self.status_code = status_code
             self.text = text
+            self.url = url
 
         def raise_for_status(self):
             import httpx
@@ -87,8 +88,8 @@ async def test_web_fetch_tool(mock_crawler_class, mock_httpx_get):
 
     async def mock_httpx_get_fn(url, **kwargs):
         if "error.com" in url:
-            return MockHttpxResponse(404)
-        return MockHttpxResponse(200, "Fallback content")
+            return MockHttpxResponse(404, url=url)
+        return MockHttpxResponse(200, "Fallback content", url=url)
 
     mock_httpx_get.side_effect = mock_httpx_get_fn
 

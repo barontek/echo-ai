@@ -33,10 +33,10 @@ vi.stubGlobal('WebSocket', vi.fn(() => ({
   send: vi.fn(),
   close: vi.fn(),
   readyState: 1,
-  set onopen(fn) { setTimeout(fn, 0); },
-  set onmessage(_fn) {},
-  set onclose(_fn) {},
-  set onerror(_fn) {},
+  set onopen(fn: () => void) { setTimeout(fn, 0); },
+  set onmessage(_fn: ((event: MessageEvent) => void) | null) {},
+  set onclose(_fn: ((event: CloseEvent) => void) | null) {},
+  set onerror(_fn: ((event: Event) => void) | null) {},
 })));
 
 describe('Components', () => {

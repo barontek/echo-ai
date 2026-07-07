@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 from . import LLMProvider, LLMResponse, LLMToolCall
-from ..constants import LM_STUDIO_BASE_URL, THINKING_END, THINKING_START
+from ..constants import LM_STUDIO_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +139,7 @@ class LMStudioProvider(LLMProvider):
 
         content = ""
         tool_calls: list[LLMToolCall] = []
-        in_thinking = False
-        tag_leftover = ""
+        thinking_open = False
 
         async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
             async with client.stream(
@@ -167,38 +166,28 @@ class LMStudioProvider(LLMProvider):
 
                     reasoning = delta.get("reasoning_content")
                     if reasoning:
-                        if not in_thinking and on_chunk:
-                            on_chunk(THINKING_START)
-                        in_thinking = True
-                        if on_chunk:
-                            on_chunk(reasoning)
+                        if thinking_open:
+                            content += reasoning
+                            if on_chunk:
+                                on_chunk(reasoning)
+                        else:
+                            open_tag = "<think>\n" + reasoning
+                            content += open_tag
+                            if on_chunk:
+                                on_chunk(open_tag)
+                            thinking_open = True
 
                     text = delta.get("content")
                     if text:
-                        # Handle <think> tags that may be split across chunks
-                        text = tag_leftover + text
-                        tag_leftover = ""
-                        if "<think>" in text or "</think>" in text:
-                            text = text.replace("<think>", THINKING_START).replace("</think>", THINKING_END)
-                        for tag_start in ("<think", "</thin"):
-                            pos = text.rfind(tag_start)
-                            if pos != -1 and pos >= len(text) - len(tag_start):
-                                tag_leftover = text[pos:]
-                                text = text[:pos]
-                                break
-                        if in_thinking:
+                        if thinking_open:
+                            close_tag = "\n</think>\n\n"
+                            content += close_tag
                             if on_chunk:
-                                on_chunk(THINKING_END)
-                            in_thinking = False
+                                on_chunk(close_tag)
+                            thinking_open = False
                         content += text
                         if on_chunk:
                             on_chunk(text)
-
-                    # Emit THINKING_END if thinking finished and we got tool calls
-                    if not text and delta.get("tool_calls") and in_thinking:
-                        if on_chunk:
-                            on_chunk(THINKING_END)
-                        in_thinking = False
 
                     for tc_delta in delta.get("tool_calls", []):
                         idx = tc_delta.get("index", 0)
@@ -216,6 +205,12 @@ class LMStudioProvider(LLMProvider):
                             except (json.JSONDecodeError, TypeError):
                                 args = {"raw": tc_data["arguments"]}
                             tool_calls[idx].arguments = args
+
+        if thinking_open:
+            close_tag = "</think>"
+            content += close_tag
+            if on_chunk:
+                on_chunk(close_tag)
 
         return LLMResponse(
             content=content,

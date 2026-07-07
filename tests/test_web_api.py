@@ -409,7 +409,11 @@ class TestWebSocket:
         with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
             mock_agent = MagicMock()
             mock_agent.session_manager = None
-            mock_agent.run_streaming = AsyncMock(return_value="Hello")
+            async def mock_stream(prompt, on_chunk=None):
+                if on_chunk:
+                    on_chunk("Hello")
+                return "Hello"
+            mock_agent.run_streaming = AsyncMock(side_effect=mock_stream)
             mock_agent.messages = []
             mock_create.return_value = mock_agent
 
@@ -427,9 +431,14 @@ class TestWebSocket:
                 assert msg1["type"] == "message"
                 assert msg1["content"] == "Hi"
 
+                # content
                 msg2 = websocket.receive_json()
-                assert msg2["type"] == "done"
+                assert msg2["type"] == "content"
                 assert msg2["content"] == "Hello"
+
+                msg3 = websocket.receive_json()
+                assert msg3["type"] == "done"
+                assert msg3["content"] == "Hello"
 
     def test_chat_websocket_thinking_markers_produce_thinking_events(self):
         with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
@@ -438,9 +447,9 @@ class TestWebSocket:
 
             async def mock_run_streaming(prompt, on_chunk=None):
                 if on_chunk:
-                    on_chunk("__THINKING__")
+                    on_chunk("<think>")
                     on_chunk("I am thinking...")
-                    on_chunk("__THINKING_END__")
+                    on_chunk("</think>")
                     on_chunk("I have thought.")
                 return "Result"
 
@@ -459,34 +468,32 @@ class TestWebSocket:
                 )
                 websocket.receive_json()  # message echo
 
-                t1 = websocket.receive_json()
-                assert t1["type"] == "thinking"
-                t2 = websocket.receive_json()
-                assert t2["type"] == "thinking"
-                assert t2["content"] == "I am thinking..."
-
+                # All events are now "content" with raw <think> tags
                 c1 = websocket.receive_json()
                 assert c1["type"] == "content"
                 c2 = websocket.receive_json()
                 assert c2["type"] == "content"
-                assert "thought" in c2["content"]
+                c3 = websocket.receive_json()
+                assert c3["type"] == "content"
+                c4 = websocket.receive_json()
+                assert c4["type"] == "content"
 
                 d1 = websocket.receive_json()
                 assert d1["type"] == "done"
-                assert d1["thinking"] == "I am thinking..."
+                assert "<think>" in d1["content"] or "I am thinking" in d1["content"]
 
     def test_chat_websocket_unclosed_thinking(self):
-        """Model opens __THINKING__ but never closes it (no </think>)."""
+        """Model opens <think> but never closes it (no </think>)."""
         with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
             mock_agent = MagicMock()
             mock_agent.session_manager = None
 
             async def mock_run_streaming(prompt, on_chunk=None):
                 if on_chunk:
-                    on_chunk("__THINKING__")
+                    on_chunk("<think>")
                     on_chunk("I am thinking all the way through and never stop...")
                     on_chunk("still thinking, no end in sight")
-                return "__THINKING__\nI am thinking all the way through and never stop...\nstill thinking, no end in sight"
+                return "<think>\nI am thinking all the way through and never stop...\nstill thinking, no end in sight"
 
             mock_agent.run_streaming = mock_run_streaming
             mock_agent.messages = []
@@ -503,37 +510,28 @@ class TestWebSocket:
                 )
                 websocket.receive_json()  # message echo
 
-                t1 = websocket.receive_json()
-                assert t1["type"] == "thinking"
-                t2 = websocket.receive_json()
-                assert t2["type"] == "thinking"
-                assert "never stop" in t2["content"]
-                t3 = websocket.receive_json()
-                assert t3["type"] == "thinking"
-                assert "no end in sight" in t3["content"]
-
-                # Fallback handler closes thinking and sends the stripped content
-                t_close = websocket.receive_json()
-                assert t_close["type"] == "thinking"
-                c_fallback = websocket.receive_json()
-                assert c_fallback["type"] == "content"
-                assert "__THINKING__" not in c_fallback["content"]
+                # All events are "content" — raw tags pass through
+                c1 = websocket.receive_json()
+                assert c1["type"] == "content"
+                c2 = websocket.receive_json()
+                assert c2["type"] == "content"
+                c3 = websocket.receive_json()
+                assert c3["type"] == "content"
 
                 d1 = websocket.receive_json()
                 assert d1["type"] == "done"
-                assert "never stop" in d1["thinking"]  # All thinking preserved
-                assert "__THINKING__" not in d1["content"]  # Marker cleaned
+                assert "<think>" in d1["content"]
 
     def test_chat_websocket_thinking_tail_in_same_chunk(self):
-        """Tail of thinking text and __THINKING_END__ in the same chunk."""
+        """Tail of thinking text and </think> in the same chunk."""
         with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
             mock_agent = MagicMock()
             mock_agent.session_manager = None
 
             async def mock_run_streaming(prompt, on_chunk=None):
                 if on_chunk:
-                    on_chunk("__THINKING__I think therefore")
-                    on_chunk(" I am.__THINKING_END__\n\nHere is my final answer.")
+                    on_chunk("<think>I think therefore")
+                    on_chunk(" I am.</think>\n\nHere is my final answer.")
                 return "Result"
 
             mock_agent.run_streaming = mock_run_streaming
@@ -551,23 +549,18 @@ class TestWebSocket:
                 )
                 websocket.receive_json()  # message echo
 
-                t1 = websocket.receive_json()
-                assert t1["type"] == "thinking"
-
-                # Second chunk: thinking_tail " I am." is flushed via queue
-                # THEN the remaining content is routed as content
-                t2 = websocket.receive_json()
-                assert t2["type"] == "thinking"
-                assert t2["content"] == "I think therefore I am."
-
+                # All events are "content" — raw <think> tags pass through
                 c1 = websocket.receive_json()
                 assert c1["type"] == "content"
-                assert "final answer" in c1["content"]
+                assert "<think>" in c1["content"]
+
+                c2 = websocket.receive_json()
+                assert c2["type"] == "content"
+                assert "final answer" in c2["content"]
 
                 d1 = websocket.receive_json()
                 assert d1["type"] == "done"
-                assert d1["thinking"] == "I think therefore I am."
-                assert "__THINKING__" not in d1["content"]
+                assert "<think>" in d1["content"]
 
     def test_chat_websocket_stop_preserves_partial_content(self):
         with patch("src.agentframework.web_api._create_runtime_agent") as mock_create:
@@ -1915,12 +1908,12 @@ class TestWebSocketDisconnectPaths:
                     ws.close()
 
     def test_websocket_thinking_start_with_before_text(self, ws_mock_agent):
-        """on_chunk with text before __THINKING__ marker in same chunk."""
+        """on_chunk with text before <think> marker in same chunk."""
         async def thinking_with_before(prompt, on_chunk=None):
             if on_chunk:
-                on_chunk("intro before__THINKING__")
+                on_chunk("intro before<think>")
                 on_chunk("inner thought")
-                on_chunk("__THINKING_END__")
+                on_chunk("</think>")
                 on_chunk("final text")
             return "Result"
 
@@ -1939,7 +1932,6 @@ class TestWebSocketDisconnectPaths:
                             done = msg
                             break
                     assert "intro before" in done["content"]
-                    assert done["thinking"] == "inner thought"
 
     def test_websocket_on_chunk_after_stop_requested(self, ws_mock_agent):
         """on_chunk raises CancelledError when stop_requested is True."""
@@ -2006,13 +1998,13 @@ class TestWebSocketDisconnectPaths:
                     ws.close()
 
     def test_websocket_stop_during_thinking_start_before(self, ws_mock_agent):
-        """on_chunk handles text before __THINKING__ marker."""
+        """on_chunk handles text before <think> marker."""
         async def thinking_with_before(prompt, on_chunk=None):
             if on_chunk:
                 on_chunk("intro text")
-                on_chunk("__THINKING__")
+                on_chunk("<think>")
                 on_chunk("inner thought")
-                on_chunk("__THINKING_END__")
+                on_chunk("</think>")
                 on_chunk("final text")
             return "Result"
 
@@ -2031,10 +2023,10 @@ class TestWebSocketDisconnectPaths:
                         events.append(msg)
                         if msg["type"] == "done":
                             break
-                    # Should have content + thinking events
+                    # All events are content type (no separate thinking events)
                     types = [e["type"] for e in events]
-                    assert "thinking" in types
                     assert "content" in types
+                    assert "thinking" not in types
 
 
 # ---------------------------------------------------------------------------
@@ -2128,12 +2120,14 @@ class TestWebSocketStateNone:
 
 
 class TestWebSocketFallbackThinkingTail:
-    """Cover the fallback THINKING_START/END split in run_agent."""
+    """Cover the fallback <think>/</think> split in run_agent."""
 
     def test_fallback_thinking_tail_split(self, ws_mock_agent):
-        """When accumulated_content is empty and response has THINKING markers, fallback splits them."""
+        """When content has <think>/</think> tags, they pass through as-is in content."""
         async def mock_stream(prompt, on_chunk=None):
-            return "__THINKING__\nI am thinking...__THINKING_END__\nResponse text"
+            if on_chunk:
+                on_chunk("<think>\nI am thinking...\n</think>\n\nResponse text")
+            return "<think>\nI am thinking...\n</think>\n\nResponse text"
 
         ws_mock_agent.run_streaming = AsyncMock(side_effect=mock_stream)
 
@@ -2149,8 +2143,8 @@ class TestWebSocketFallbackThinkingTail:
                         if msg["type"] == "done":
                             done = msg
                             break
-                    assert done["thinking"] == "I am thinking..."
                     assert "Response" in done["content"]
+                    assert "<think>" in done["content"]
 
 
 class TestWebSocketMainLoopErrors:

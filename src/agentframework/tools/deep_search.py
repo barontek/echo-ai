@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from . import Tool, ToolResult
-from ..constants import THINKING_END, THINKING_START
+
 
 logger = logging.getLogger(__name__)
 
@@ -108,9 +108,9 @@ class DeepSearchTool(Tool):
         contents = await asyncio.gather(*(fetch_with_limit(r) for r in results))
 
         def _strip_thinking(text: str) -> str:
-            if THINKING_START in text:
-                if THINKING_END in text:
-                    parts = text.split(THINKING_END, 1)
+            if "<think>" in text:
+                if "</think>" in text:
+                    parts = text.split("</think>", 1)
                     return parts[1].strip()
                 return ""
             return text.strip()

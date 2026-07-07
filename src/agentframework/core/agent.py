@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Callable
 from uuid import uuid4
 
-from ..constants import ECHO_DATA_DIR, THINKING_END, THINKING_START
+from ..constants import ECHO_DATA_DIR
 from ..providers import LLMProvider, LLMProviderProtocol, get_provider, LLMToolCall, LLMResponse
 from ..tools import Tool, ToolResult
 from ..session import SessionManager, ChangeTracker
@@ -77,9 +77,10 @@ def _extract_thinking(messages: list[Message]) -> str | None:
         if msg.role == "assistant":
             if msg.thinking:
                 return msg.thinking
-            if THINKING_START in msg.content:
-                parts = msg.content.split(THINKING_END, 1)
-                return parts[0].replace(THINKING_START, "").strip()
+            if "<think>" in msg.content:
+                match = re.search(r"<think>(.*?)</think>", msg.content, re.DOTALL)
+                if match:
+                    return match.group(1).strip()
     return None
 
 
@@ -279,19 +280,10 @@ class Agent:
                     ),
                     timeout=30.0,
                 )
-            if title_response.thinking:
-                raw = title_response.thinking
-            else:
-                raw = title_response.content
-                if THINKING_START in raw:
-                    after_thinking = raw.split(THINKING_END, 1)[1]
-                    raw = after_thinking.strip()
-                raw = re.sub(
-                    rf"{re.escape(THINKING_START)}.*?{re.escape(THINKING_END)}",
-                    "",
-                    raw,
-                    flags=re.DOTALL,
-                ).strip()
+            raw = title_response.content
+            raw = re.sub(
+                r"<think>.*?</think>", "", raw, flags=re.DOTALL
+            ).strip()
             return raw.strip().strip('"').strip("'") or simple_title
         except (asyncio.TimeoutError, Exception) as e:
             logger.debug(f"Title generation failed or timed out: {e}")

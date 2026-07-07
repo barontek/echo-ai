@@ -15,7 +15,6 @@ from fastapi.responses import StreamingResponse
 
 from .. import web_models
 from ..config import get_safety_config, load_config as _load_config
-from ..constants import THINKING_END, THINKING_START
 from ..core import Agent
 from ..core.session_runtime import deserialize_messages
 from ..safety import SafetyConfig
@@ -281,8 +280,6 @@ async def websocket_chat(websocket: WebSocket):
             return
 
         accumulated_content = ""
-        thinking_content = ""
-        in_thinking = False
         send_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=1024)
 
         async def sender_loop():
@@ -301,84 +298,18 @@ async def websocket_chat(websocket: WebSocket):
         sender_task = asyncio.create_task(sender_loop())
 
         def on_chunk(chunk: str) -> None:
-            nonlocal accumulated_content, thinking_content, in_thinking
+            nonlocal accumulated_content
             if stop_requested:
                 raise asyncio.CancelledError()
-
-            # Process markers in order of appearance within the chunk.
-            # Search for THINKING_END first so it takes priority when both
-            # markers match at the same position (THINKING_START is a prefix
-            # of THINKING_END, e.g. "__THINKING__" matches in "__THINKING_END__").
-            end_pos = chunk.find(THINKING_END)
-            start_pos = chunk.find(THINKING_START)
-            # When both match at the same position, THINKING_END wins
-            if start_pos >= 0 and start_pos == end_pos:
-                start_pos = -1
-
-            if start_pos >= 0 and (end_pos < 0 or start_pos < end_pos):
-                # THINKING_START appears first — split there
-                before, rest = chunk.split(THINKING_START, 1)
-                if not in_thinking and before:
-                    accumulated_content += before
-                    with contextlib.suppress(asyncio.QueueFull):
-                        send_queue.put_nowait(
-                            {"type": "content", "content": accumulated_content}
-                        )
-                in_thinking = True
-
-                # Now check for THINKING_END in the rest
-                if THINKING_END in rest:
-                    thinking_tail, content_rest = rest.split(THINKING_END, 1)
-                    in_thinking = False
-                    if thinking_tail:
-                        thinking_content += thinking_tail
-                        with contextlib.suppress(asyncio.QueueFull):
-                            send_queue.put_nowait(
-                                {"type": "thinking", "content": thinking_content}
-                            )
-                    accumulated_content += content_rest
-                    with contextlib.suppress(asyncio.QueueFull):
-                        send_queue.put_nowait(
-                            {"type": "content", "content": accumulated_content}
-                        )
-                else:
-                    thinking_content += rest
-                    with contextlib.suppress(asyncio.QueueFull):
-                        send_queue.put_nowait(
-                            {"type": "thinking", "content": thinking_content}
-                        )
-            elif end_pos >= 0 and (start_pos < 0 or end_pos < start_pos):
-                # THINKING_END appears first or only THINKING_END
-                thinking_tail, content_rest = chunk.split(THINKING_END, 1)
-                in_thinking = False
-                if thinking_tail:
-                    thinking_content += thinking_tail
-                    with contextlib.suppress(asyncio.QueueFull):
-                        send_queue.put_nowait(
-                            {"type": "thinking", "content": thinking_content}
-                        )
-                accumulated_content += content_rest
-                with contextlib.suppress(asyncio.QueueFull):
-                    send_queue.put_nowait(
-                        {"type": "content", "content": accumulated_content}
-                    )
-            elif in_thinking:
-                thinking_content += chunk
-                with contextlib.suppress(asyncio.QueueFull):
-                    send_queue.put_nowait(
-                        {"type": "thinking", "content": thinking_content}
-                    )
-            else:
-                accumulated_content += chunk
-                with contextlib.suppress(asyncio.QueueFull):
-                    send_queue.put_nowait(
-                        {"type": "content", "content": accumulated_content}
-                    )
+            accumulated_content += chunk
+            with contextlib.suppress(asyncio.QueueFull):
+                send_queue.put_nowait(
+                    {"type": "content", "content": accumulated_content}
+                )
 
         has_tools = False
         tool_calls_info = []
 
-        # Send session info immediately when AI starts responding
         if (
             active_agent.session_manager
             and active_agent.session_manager.current_session
@@ -395,37 +326,14 @@ async def websocket_chat(websocket: WebSocket):
 
         try:
             msg_count_before = len(active_agent.messages)
-            response = await active_agent.run_streaming(prompt, on_chunk=on_chunk)
+            await active_agent.run_streaming(prompt, on_chunk=on_chunk)
             for msg in active_agent.messages[msg_count_before:]:
                 tc = getattr(msg, "tool_calls", None)
                 if tc:
                     has_tools = True
                     tool_calls_info.extend(_web_api._extract_tool_calls_info(tc))
 
-            if not accumulated_content:
-                # All streamed content went to thinking (no __THINKING_END__ seen).
-                # Strip the __THINKING__ marker from the fallback since it was
-                # already sent to the thinking box, and close the thinking state.
-                fallback = response
-                if fallback.startswith(THINKING_START):
-                    fallback = fallback[len(THINKING_START):].lstrip()
-                    if THINKING_END in fallback:
-                        thinking_tail, fallback = fallback.split(THINKING_END, 1)
-                        thinking_content += thinking_tail
-                    with contextlib.suppress(asyncio.QueueFull):
-                        send_queue.put_nowait(
-                            {"type": "thinking", "content": thinking_content}
-                        )
-                    in_thinking = False
-                    with contextlib.suppress(asyncio.QueueFull):
-                        send_queue.put_nowait(
-                            {"type": "content", "content": fallback.lstrip()}
-                        )
-                accumulated_content = fallback
-
         except asyncio.CancelledError:
-            # Keep accumulated_content as-is (partial response preserved)
-            thinking_content = ""
             has_tools = False
             tool_calls_info = []
             logger.debug("Generation cancelled, preserving partial content")
@@ -450,18 +358,15 @@ async def websocket_chat(websocket: WebSocket):
                 "role": "assistant",
                 "content": accumulated_content,
                 "timestamp": timestamp,
-                "thinking": thinking_content,
                 "has_tools": has_tools,
             }
         )
 
-        # Send done message first
         try:
             await websocket.send_json(
                 {
                     "type": "done",
                     "content": accumulated_content,
-                    "thinking": thinking_content,
                     "timestamp": timestamp,
                     "has_tools": has_tools,
                     "tool_calls": tool_calls_info,

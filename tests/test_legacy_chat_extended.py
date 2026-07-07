@@ -105,11 +105,8 @@ async def test_chat_session_with_thinking_and_sources():
     agent = MagicMock()
 
     async def mock_run_streaming(user_input, on_chunk):
-        on_chunk("__THINKING__")
-        on_chunk("thoughts")
-        on_chunk("__THINKING_END__")
-        on_chunk("response [Source](https://ext.com)")
-        return "response [Source](https://ext.com)"
+        on_chunk("<think>thoughts</think>response [Source](https://ext.com)")
+        return "<think>thoughts</think>response [Source](https://ext.com)"
 
     agent.run_streaming = AsyncMock(side_effect=mock_run_streaming)
     agent.messages = [

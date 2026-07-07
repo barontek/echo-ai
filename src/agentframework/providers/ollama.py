@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 from . import LLMProvider, LLMResponse, LLMToolCall
-from ..constants import OLLAMA_BASE_URL, THINKING_END, THINKING_START
+from ..constants import OLLAMA_BASE_URL
 from ..conversation import normalize_args_for_ollama
 
 logger = logging.getLogger(__name__)
@@ -254,12 +254,8 @@ class OllamaProvider(LLMProvider):
         content = data.get("message", {}).get("content", "")
         thinking = data.get("message", {}).get("thinking", "")
 
-        if "<think>" in content:
-            content = content.replace("<think>", THINKING_START + "\n")
-            content = content.replace("</think>", "\n" + THINKING_END)
-
-        if thinking and THINKING_START not in content:
-            content = f"{THINKING_START}\n{thinking}\n{THINKING_END}\n\n{content}"
+        if thinking and "<think>" not in content:
+            content = f"<think>\n{thinking}\n</think>\n\n{content}"
         tool_calls = []
 
         if "tool_calls" in data.get("message", {}):
@@ -281,9 +277,7 @@ class OllamaProvider(LLMProvider):
                 tool_calls = extracted
                 content = ""
 
-        return LLMResponse(
-            content=content, thinking=thinking, tool_calls=tool_calls
-        )
+        return LLMResponse(content=content, tool_calls=tool_calls)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -345,11 +339,9 @@ class OllamaProvider(LLMProvider):
                 response.raise_for_status()
 
                 content = ""
-                thinking = ""
-                thinking_ended = False  # FIX: Use a flag instead of clearing the string
                 tool_calls = []
-                has_seen_non_json = False  # Track if we've seen actual text content
-                tag_leftover = ""  # Partial <think>/</think> tag left over from previous chunk
+                has_seen_non_json = False
+                thinking_open = False
 
                 async for line in response.aiter_lines():
                     if not line.strip():
@@ -361,48 +353,33 @@ class OllamaProvider(LLMProvider):
 
                     msg = data.get("message", {})
 
-                    # Handle thinking (stream it with marker)
                     msg_thinking = msg.get("thinking", "")
                     if msg_thinking:
-                        if not thinking:
+                        if thinking_open:
+                            content += msg_thinking
                             if on_chunk:
-                                on_chunk(THINKING_START)
-                        thinking += msg_thinking
-                        if on_chunk:
-                            on_chunk(msg_thinking)
+                                on_chunk(msg_thinking)
+                        else:
+                            open_tag = "<think>\n" + msg_thinking
+                            content += open_tag
+                            if on_chunk:
+                                on_chunk(open_tag)
+                            thinking_open = True
 
                     chunk = msg.get("content", "")
+
+                    if chunk and thinking_open:
+                        close_tag = "\n</think>\n\n"
+                        content += close_tag
+                        if on_chunk:
+                            on_chunk(close_tag)
+                        thinking_open = False
+
                     if chunk:
-                        if thinking and not thinking_ended:
-                            if on_chunk:
-                                on_chunk(THINKING_END)
-                            thinking_ended = (
-                                True  # FIX: Use flag so thinking string isn't lost
-                            )
-
-                        # Handle <think>/</think> tags that may be split across chunks
-                        # by accumulating partial tags until the full tag is seen
-                        chunk = tag_leftover + chunk
-                        tag_leftover = ""
-
-                        if "<think>" in chunk or "</think>" in chunk:
-                            chunk = chunk.replace("<think>", THINKING_START)
-                            chunk = chunk.replace("</think>", THINKING_END)
-
-                        # Check if chunk ends with an incomplete tag boundary
-                        # (max partial tag length is 7 for e.g. "<think>" without ">")
-                        for tag_start in ("<think", "</thin"):
-                            pos = chunk.rfind(tag_start)
-                            if pos != -1 and pos >= len(chunk) - len(tag_start):
-                                tag_leftover = chunk[pos:]
-                                chunk = chunk[:pos]
-                                break
-
                         # Skip chunks that are part of markdown tool calls or tool schemas
                         # until we've seen some normal text content
                         stripped = chunk.strip()
 
-                        # Check if this chunk looks like it's part of JSON/technical content
                         is_technical = (
                             stripped.startswith("```")
                             or stripped in ("json", "java", "python", "text")
@@ -414,16 +391,13 @@ class OllamaProvider(LLMProvider):
                             or stripped in COMMON_TOOL_NAMES
                             or (
                                 len(stripped) < 20 and ":" in stripped
-                            )  # Short chunks with colons are likely JSON
+                            )
                         )
 
                         if is_technical and not has_seen_non_json:
-                            # Accumulate for later extraction, but don't output yet
                             content += chunk
                             continue
 
-                        # This is regular content
-                        # If we haven't marked non-JSON yet, flush accumulated content first
                         if not has_seen_non_json:
                             if content:
                                 extracted = self._extract_tool_calls_from_content(
@@ -438,7 +412,6 @@ class OllamaProvider(LLMProvider):
                         if on_chunk:
                             on_chunk(chunk)
 
-                    # Handle tool calls
                     if "tool_calls" in msg:
                         for tc in msg["tool_calls"]:
                             args = tc.get("function", {}).get("arguments", {})
@@ -455,31 +428,17 @@ class OllamaProvider(LLMProvider):
                     if data.get("done"):
                         break
 
-            # Flush any remaining content from the tag leftover
-            if tag_leftover:
-                tag_leftover = (
-                    tag_leftover.replace("<think>", THINKING_START).replace(
-                        "</think>", THINKING_END
-                    )
-                )
-                if has_seen_non_json:
-                    content += tag_leftover
-                    if on_chunk:
-                        on_chunk(tag_leftover)
-                else:
-                    content += tag_leftover
+            # Flush remaining open thinking if no content followed
+            if thinking_open:
+                close_tag = "</think>"
+                content += close_tag
+                if on_chunk:
+                    on_chunk(close_tag)
+                thinking_open = False
 
-            # Catch any raw tags that slipped through split boundaries
-            content = content.replace("<think>", THINKING_START).replace(
-                "</think>", THINKING_END
-            )
-
-            # Also check content for markdown tool calls (qwen2.5-coder style)
             if content:
                 extracted = self._extract_tool_calls_from_content(content)
                 if extracted:
-                    # Check if content is ONLY a tool call (wrapped in markdown, JSON, or plain text)
-                    # If so, treat it as tool call only, no text response
                     content_stripped = content.strip()
                     is_only_tool_call = (
                         content_stripped.startswith("```")
@@ -496,7 +455,6 @@ class OllamaProvider(LLMProvider):
                         tool_calls = extracted
                         content = ""
                     else:
-                        # Keep any text before the tool call as the actual response
                         first_tc_start = len(content)
                         for tc in extracted:
                             tc_json = json.dumps(
@@ -518,9 +476,7 @@ class OllamaProvider(LLMProvider):
                             tool_calls = extracted
                             content = ""
 
-            return LLMResponse(
-                content=content, thinking=thinking, tool_calls=tool_calls
-            )
+            return LLMResponse(content=content, tool_calls=tool_calls)
 
         except Exception as e:
             logger.error("Ollama streaming failed: %s", e)

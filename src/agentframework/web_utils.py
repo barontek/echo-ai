@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from .constants import THINKING_END, THINKING_START
+
 
 _INTERNAL_PATTERNS = [
     re.compile(r"^FAILED: .*"),
@@ -17,22 +17,21 @@ def extract_thinking_content(content: str) -> tuple[str | None, str]:
     """Extract thinking markers from content.
 
     Args:
-        content: Message content that may contain thinking markers.
+        content: Message content that may contain <think> tags.
 
     Returns:
         Tuple of (thinking_content, display_content).
     """
-    if THINKING_START not in content:
+    if "<think>" not in content:
         return None, content
 
-    if THINKING_END in content:
-        parts = content.split(THINKING_END, 1)
-        thinking = parts[0].replace(THINKING_START, "").strip()
+    if "</think>" in content:
+        parts = content.split("</think>", 1)
+        thinking = parts[0].replace("<think>", "").strip()
         display = parts[1].strip()
         return thinking, display
 
-    # Unclosed thinking — treat everything after __THINKING__ as thinking
-    _, after = content.split(THINKING_START, 1)
+    _, after = content.split("<think>", 1)
     return after.strip(), ""
 
 
@@ -168,21 +167,18 @@ def filter_messages_for_ui(
         if is_internal:
             continue
 
-        display_thinking, display_content = extract_thinking_content(content)
+        if thinking and "<think>" not in content:
+            content = f"<think>\n{thinking}\n</think>\n\n{content}"
 
         if not timestamp:
             timestamp = default_timestamp if default_timestamp else datetime.now().strftime("%H:%M")
 
         msg_dict = {
             "role": role,
-            "content": display_content,
+            "content": content,
             "timestamp": timestamp,
             "has_tools": has_tools,
         }
-
-        final_thinking = thinking or display_thinking
-        if final_thinking:
-            msg_dict["thinking"] = final_thinking
 
         if tool_calls:
             normalized = [normalize_tool_call(tc) for tc in tool_calls]

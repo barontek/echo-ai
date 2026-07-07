@@ -9,7 +9,6 @@ from src.agentframework.core.agent import _extract_thinking
 from src.agentframework.tools import Tool, ToolResult
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from src.agentframework.conversation import Message
-from src.agentframework.constants import THINKING_START, THINKING_END
 from src.agentframework.session import SessionManager
 
 
@@ -35,14 +34,13 @@ class ThinkingProvider(SimpleProvider):
     """Provider that returns thinking content."""
     async def chat(self, messages, tools=None, temperature=0.3):
         return LLMResponse(
-            content=f"{THINKING_START}Let me solve this{THINKING_END}Here is the answer",
-            thinking="Let me solve this",
+            content="<think>Let me solve this</think>Here is the answer",
         )
 
     async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
         if on_chunk:
-            on_chunk(f"{THINKING_START}Let me solve this{THINKING_END}Here is the answer")
-        return LLMResponse(content="Here is the answer", thinking="Let me solve this")
+            on_chunk("<think>Let me solve this</think>Here is the answer")
+        return LLMResponse(content="<think>Let me solve this</think>Here is the answer")
 
 
 class ToolCallProvider(SimpleProvider):
@@ -234,8 +232,8 @@ class TestGenerateTitle:
         result = await agent.generate_title()
         assert isinstance(result, str)
         assert len(result) > 0
-        assert THINKING_START not in result
-        assert THINKING_END not in result
+        assert "<think>" not in result
+        assert "</think>" not in result
 
     @pytest.mark.asyncio
     async def test_generate_title_fallback_on_timeout(self, agent):
@@ -399,18 +397,18 @@ class TestExtractThinkingExtended:
     def test_with_thinking_markers(self):
         msgs = [
             Message(role="user", content="hello"),
-            Message(role="assistant", content=f"{THINKING_START}step by step{THINKING_END}answer"),
+            Message(role="assistant", content="<think>step by step</think>answer"),
         ]
         result = _extract_thinking(msgs)
         assert result == "step by step"
 
     def test_with_thinking_start_only(self):
         msgs = [
-            Message(role="assistant", content=f"{THINKING_START}thinking without end"),
+            Message(role="assistant", content="<think>thinking without end"),
         ]
         result = _extract_thinking(msgs)
-        # No THINKING_END, so the whole content after THINKING_START is returned
-        assert result == "thinking without end"
+        # No </think>, so _extract_thinking returns None
+        assert result is None
 
 
 class TestAgentInitWithSession:
@@ -496,14 +494,14 @@ class TestGenerateTitleExtended:
     @pytest.mark.asyncio
     async def test_thinking_in_title_response(self):
         """When LLM response contains thinking markers, generate_title strips them.
-        Assumption: the LLM produces content after __THINKING_END__ that becomes the title."""
+        Assumption: the LLM produces content after </think> that becomes the title."""
         agent = Agent(AgentConfig(session_enabled=False), ThinkingProvider())
         agent.add_user_message("What is Python?")
         result = await agent.generate_title()
         assert isinstance(result, str)
         assert len(result) > 0
-        assert THINKING_START not in result
-        assert THINKING_END not in result
+        assert "<think>" not in result
+        assert "</think>" not in result
         agent.close()
 
     @pytest.mark.asyncio

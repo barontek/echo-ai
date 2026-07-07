@@ -21,7 +21,6 @@ function combineAssistantMessages(
     // Combine consecutive assistant messages
     if (last && last.role === 'assistant' && msg.role === 'assistant') {
       last.content += '\n' + msg.content;
-      if (msg.thinking) last.thinking = (last.thinking || '') + '\n' + msg.thinking;
       if (msg.has_tools) last.has_tools = msg.has_tools;
       if (msg.tool_calls && msg.tool_calls.length > 0) last.tool_calls = msg.tool_calls;
     } else {
@@ -167,22 +166,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               });
               break;
 
-            case 'thinking':
-              if (data.session_id && data.session_id !== activeSessionIdRef.current) break;
-              debugLog('message:thinking', data.content?.substring(0, 30));
-              setIsStreaming(true);
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                if (last?.role === 'assistant') {
-                  return [...prev.slice(0, -1), { ...last, thinking: data.content }];
-                }
-                return [
-                  ...prev,
-                  { role: 'assistant', content: '', thinking: data.content, has_tools: false },
-                ];
-              });
-              break;
-
             case 'done':
               debugLog('done', {
                 session_id: data.session_id,
@@ -218,7 +201,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     {
                       ...last,
                       content: data.content || last.content,
-                      thinking: data.thinking,
                       has_tools: data.has_tools ?? last.has_tools,
                       tool_calls:
                         data.tool_calls && data.tool_calls.length > 0
@@ -228,17 +210,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     },
                   ];
                 }
-                return [
-                  ...prev,
-                  {
-                    role: 'assistant',
-                    content: data.content || '',
-                    thinking: data.thinking,
-                    has_tools: data.has_tools,
-                    tool_calls: data.tool_calls,
-                    timestamp: data.timestamp,
-                  },
-                ];
+                  return [
+                    ...prev,
+                    {
+                      role: 'assistant',
+                      content: data.content || '',
+                      has_tools: data.has_tools,
+                      tool_calls: data.tool_calls,
+                      timestamp: data.timestamp,
+                    },
+                  ];
               });
               if (data.session_id) {
                 setActiveSessionId(data.session_id);

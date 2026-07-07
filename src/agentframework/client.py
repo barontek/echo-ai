@@ -6,7 +6,7 @@ from typing import AsyncGenerator
 
 from .core import Agent
 from .chat_commands import normalize_command
-from .constants import THINKING_START, THINKING_END
+
 
 
 @dataclass
@@ -125,67 +125,15 @@ class EchoClient:
                 return
 
         # Setup streaming queue
-        queue = asyncio.Queue()
+        queue: asyncio.Queue[ChatEvent | None] = asyncio.Queue()
 
-        # We must manage state correctly because chunks might split thinking tags.
-        # This state tracks whether we've seen THINKING_START but not THINKING_END
-        in_thinking = False
         buffer = ""
-
-        def process_buffer():
-            nonlocal in_thinking, buffer
-            while buffer:
-                if in_thinking:
-                    end_idx = buffer.find(THINKING_END)
-                    if end_idx != -1:
-                        if end_idx > 0:
-                            queue.put_nowait(ThinkingEvent(content=buffer[:end_idx]))
-                        in_thinking = False
-                        buffer = buffer[end_idx + len(THINKING_END) :]
-                    else:
-                        # Check for partial end tag at the end (THINKING_END is longer)
-                        partial_match = False
-                        for i in range(len(THINKING_END) - 1, 0, -1):
-                            if buffer.endswith(THINKING_END[:i]):
-                                if len(buffer) > i:
-                                    queue.put_nowait(ThinkingEvent(content=buffer[:-i]))
-                                buffer = buffer[-i:]
-                                partial_match = True
-                                break
-
-                        if not partial_match:
-                            queue.put_nowait(ThinkingEvent(content=buffer))
-                            buffer = ""
-                        break
-                else:
-                    start_idx = buffer.find(THINKING_START)
-                    if start_idx != -1:
-                        if start_idx > 0:
-                            queue.put_nowait(ContentEvent(content=buffer[:start_idx]))
-                        in_thinking = True
-                        buffer = buffer[start_idx + len(THINKING_START) :]
-                    else:
-                        # Check for partial start tag at the end (THINKING_START is shorter)
-                        partial_match = False
-                        for i in range(len(THINKING_START) - 1, 0, -1):
-                            if buffer.endswith(THINKING_START[:i]):
-                                if len(buffer) > i:
-                                    queue.put_nowait(ContentEvent(content=buffer[:-i]))
-                                buffer = buffer[-i:]
-                                partial_match = True
-                                break
-
-                        if not partial_match:
-                            queue.put_nowait(ContentEvent(content=buffer))
-                            buffer = ""
-                        break
 
         def on_chunk(chunk: str):
             nonlocal buffer
             buffer += chunk
-            process_buffer()
+            queue.put_nowait(ContentEvent(content=buffer))
 
-        # Background task to run agent
         async def agent_task():
             nonlocal buffer
             try:
@@ -195,11 +143,8 @@ class EchoClient:
                 queue.put_nowait(ErrorEvent(error=str(e)))
             finally:
                 if buffer:
-                    if in_thinking:
-                        queue.put_nowait(ThinkingEvent(content=buffer))
-                    else:
-                        queue.put_nowait(ContentEvent(content=buffer))
-                queue.put_nowait(None)  # Sentinel to finish
+                    queue.put_nowait(ContentEvent(content=buffer))
+                queue.put_nowait(None)
 
         task = asyncio.create_task(agent_task())
 

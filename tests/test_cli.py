@@ -166,15 +166,10 @@ async def test_interactive_mode_keyboard_interrupt():
 
 @pytest.mark.asyncio
 async def test_run_single_thinking_markers():
-    from src.agentframework.constants import THINKING_END, THINKING_START
-
     agent = MagicMock()
 
     async def mock_run_streaming(task, on_chunk):
-        on_chunk(THINKING_START)
-        on_chunk("thoughts")
-        on_chunk(THINKING_END)
-        on_chunk("actual response")
+        on_chunk("<think>thoughts</think>actual response")
         return "full"
 
     agent.run_streaming = AsyncMock(side_effect=mock_run_streaming)
@@ -182,5 +177,4 @@ async def test_run_single_thinking_markers():
     with patch("sys.stdout.write") as mock_write:
         await run_single(agent, "test task")
         calls = [args[0][0] for args in mock_write.call_args_list]
-        assert any("\033[90mthoughts\033[0m" in c for c in calls)
         assert any("actual response" in c for c in calls)

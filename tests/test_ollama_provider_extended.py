@@ -92,12 +92,15 @@ async def test_ollama_chat_streaming_success(provider):
         [{"role": "user", "content": "hi"}], on_chunk=on_chunk
     )
 
-    assert "__THINKING__" in chunks_received
-    assert "Logic step 1\n" in chunks_received
-    assert "__THINKING_END__" in chunks_received
-    assert "The result " in chunks_received
-    assert "is 42" in chunks_received
-    assert response.content == "The result is 42"
+    assert chunks_received[0] == "<think>\nLogic step 1\n"
+    assert chunks_received[1] == "Logic step 2\n"
+    assert chunks_received[2] == "\n</think>\n\n"
+    assert chunks_received[3] == "The result "
+    assert chunks_received[4] == "is 42"
+    assert "<think>" in response.content
+    assert "Logic step 1" in response.content
+    assert "Logic step 2" in response.content
+    assert "The result is 42" in response.content
 
 
 @pytest.mark.asyncio

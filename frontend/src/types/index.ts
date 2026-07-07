@@ -40,9 +40,8 @@ export interface ApprovalRequest {
 }
 
 export interface StreamEvent {
-  type: 'ready' | 'message' | 'content' | 'thinking' | 'done' | 'error' | 'pong' | 'session_start' | 'approval_request' | 'title_updated';
+  type: 'ready' | 'message' | 'content' | 'done' | 'error' | 'pong' | 'session_start' | 'approval_request' | 'title_updated';
   content?: string;
-  thinking?: string;
   has_tools?: boolean;
   tool_calls?: ToolCall[];
   session_id?: string;

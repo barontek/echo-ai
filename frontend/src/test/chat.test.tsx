@@ -20,6 +20,7 @@ const { mockApi, wsCalls } = vi.hoisted(() => ({
       ],
     }),
     deleteSession: vi.fn().mockResolvedValue(undefined),
+    renameSession: vi.fn().mockResolvedValue(undefined),
     updateConfig: vi.fn().mockResolvedValue(undefined),
     getPreferences: vi.fn().mockResolvedValue({}),
     setPreferences: vi.fn().mockResolvedValue(undefined),
@@ -458,6 +459,95 @@ describe('Session History Bug Tests', () => {
 
       await waitFor(() => {
         expect(mockApi.deleteSession).toHaveBeenCalledWith('session-1');
+      });
+    });
+
+    it('renameSession calls API with session_id and new_title', async () => {
+      function TestComponent() {
+        const { renameSession } = useChat();
+        return <button onClick={() => renameSession('session-1', 'Renamed Chat')}>Rename</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Rename'));
+
+      await waitFor(() => {
+        expect(mockApi.renameSession).toHaveBeenCalledWith('session-1', 'Renamed Chat');
+      });
+    });
+
+    it('renameSession updates title in sessions list after rename', async () => {
+      function TestComponent() {
+        const { sessions, renameSession } = useChat();
+        return (
+          <div>
+            <span data-testid="session-title">
+              {sessions.find((s) => s.id === 'session-1')?.title}
+            </span>
+            <button onClick={() => renameSession('session-1', 'Renamed Chat')}>Rename</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-title').textContent).toBe('First Chat');
+      });
+
+      await userEvent.click(screen.getByText('Rename'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-title').textContent).toBe('Renamed Chat');
+      });
+    });
+
+    it('renameSession handles API error without crashing', async () => {
+      mockApi.renameSession.mockRejectedValueOnce(new Error('API error'));
+
+      function TestComponent() {
+        const { renameSession } = useChat();
+        return <button onClick={() => renameSession('session-1', 'Will Fail')}>RenameError</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('RenameError'));
+
+      await waitFor(() => {
+        expect(mockApi.renameSession).toHaveBeenCalledWith('session-1', 'Will Fail');
+      });
+    });
+
+    it('renameSession with empty string still calls API (backend validates min_length)', async () => {
+      function TestComponent() {
+        const { renameSession } = useChat();
+        return <button onClick={() => renameSession('session-1', '')}>RenameEmpty</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('RenameEmpty'));
+
+      await waitFor(() => {
+        expect(mockApi.renameSession).toHaveBeenCalledWith('session-1', '');
       });
     });
   });

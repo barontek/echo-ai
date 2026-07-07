@@ -32,6 +32,7 @@ export interface ChatContextValue {
   createSession: () => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  renameSession: (sessionId: string, newTitle: string) => Promise<void>;
   selectModel: (model: string) => void;
   selectProvider: (provider: string) => void;
   reconnect: () => void;

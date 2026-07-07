@@ -11,21 +11,30 @@ export const MessageList = memo(function MessageList() {
   const [editText, setEditText] = useState('');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const userScrolledUpRef = useRef(false);
+  const thinkingContainerRef = useRef<HTMLDivElement | null>(null);
+  const thinkingScrolledUpRef = useRef(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isAtBottom = () => {
-    const el = containerRef.current;
-    if (!el) return true;
+  const isAtBottom = (el: HTMLElement) => {
     return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
   const handleScroll = () => {
-    userScrolledUpRef.current = !isAtBottom();
+    userScrolledUpRef.current = !isAtBottom(containerRef.current!);
+  };
+
+  const handleThinkingScroll = () => {
+    const el = thinkingContainerRef.current;
+    if (el) thinkingScrolledUpRef.current = !isAtBottom(el);
   };
 
   useEffect(() => {
     if (!userScrolledUpRef.current && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+    const thinkingEl = thinkingContainerRef.current;
+    if (thinkingEl && !thinkingScrolledUpRef.current) {
+      thinkingEl.scrollTop = thinkingEl.scrollHeight;
     }
   }, [messages, isStreaming]);
 
@@ -73,9 +82,13 @@ export const MessageList = memo(function MessageList() {
                 <>
                   <div className="message-content">
                     {msg.thinking && (
-                      <details className="thinking-collapsible">
+                      <details className="thinking-collapsible" open>
                         <summary className="thinking-label">Thinking</summary>
-                        <div className="markdown-content">
+                        <div
+                          className="markdown-content"
+                          ref={idx === messages.length - 1 ? (el) => { thinkingContainerRef.current = el; } : undefined}
+                          onScroll={idx === messages.length - 1 ? handleThinkingScroll : undefined}
+                        >
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.thinking}</ReactMarkdown>
                         </div>
                       </details>

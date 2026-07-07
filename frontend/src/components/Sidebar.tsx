@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { useChat } from '../context';
 
 export const Sidebar = memo(function Sidebar() {
@@ -14,6 +14,7 @@ export const Sidebar = memo(function Sidebar() {
     selectModel,
     selectProvider,
     deleteSession,
+    renameSession,
     sidebarOpen,
     setSidebarOpen,
   } = useChat();
@@ -21,6 +22,9 @@ export const Sidebar = memo(function Sidebar() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showProviderDropdown, setShowProviderDropdown] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   const filteredSessions = !searchTerm
     ? sessions
@@ -35,6 +39,37 @@ export const Sidebar = memo(function Sidebar() {
     selectSession(id);
     setSidebarOpen(false);
   };
+
+  const handleStartRename = (sessionId: string, currentTitle: string | null, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingId(sessionId);
+    setRenameValue(currentTitle || '');
+  };
+
+  const handleFinishRename = () => {
+    if (renamingId && renameValue.trim()) {
+      renameSession(renamingId, renameValue.trim());
+    }
+    setRenamingId(null);
+    setRenameValue('');
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleFinishRename();
+    } else if (e.key === 'Escape') {
+      setRenamingId(null);
+      setRenameValue('');
+    }
+  };
+
+  // Focus the rename input when it appears and select text
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
 
   // Close delete confirmation on Escape
   useEffect(() => {
@@ -137,16 +172,39 @@ export const Sidebar = memo(function Sidebar() {
             className={`session-item ${session.id === activeSessionId ? 'active' : ''}`}
             onClick={() => handleSelectSession(session.id)}
           >
-            <span className="session-title">{session.title || 'New Chat'}</span>
-            <button
-              className="delete-button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setDeleteConfirm(session.id);
-              }}
-            >
-              ×
-            </button>
+            {renamingId === session.id ? (
+              <input
+                ref={renameInputRef}
+                className="rename-input"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={handleFinishRename}
+                onKeyDown={handleRenameKeyDown}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span className="session-title">{session.title || 'New Chat'}</span>
+            )}
+            <div className="session-actions">
+              {renamingId !== session.id && (
+                <button
+                  className="rename-button"
+                  onClick={(e) => handleStartRename(session.id, session.title, e)}
+                  title="Rename"
+                >
+                  ✎
+                </button>
+              )}
+              <button
+                className="delete-button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteConfirm(session.id);
+                }}
+              >
+                ×
+              </button>
+            </div>
           </div>
         ))}
         {filteredSessions.length === 0 && (

@@ -136,18 +136,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               }
               break;
 
-            case 'message':
-              debugLog('message:user', data.content?.substring(0, 30));
-              setMessages((prev) => [
-                ...prev,
-                {
-                  role: 'user',
-                  content: data.content || '',
-                  timestamp: data.timestamp,
-                },
-              ]);
-              break;
-
             case 'content':
               if (data.session_id && data.session_id !== activeSessionIdRef.current) break;
               debugLog('message:content', {
@@ -516,6 +504,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [activeSessionId]
   );
 
+  const renameSession = useCallback(
+    async (sessionId: string, newTitle: string) => {
+      debugLog('renameSession:start', { sessionId, newTitle });
+      try {
+        await api.renameSession(sessionId, newTitle);
+        setSessions((prev) =>
+          prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
+        );
+      } catch (err) {
+        console.error('[Chat] Failed to rename session:', err);
+      }
+    },
+    []
+  );
+
   const selectModel = useCallback(
     (model: string) => {
       debugLog('selectModel', model);
@@ -570,6 +573,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     createSession,
     selectSession,
     deleteSession,
+    renameSession,
     selectModel,
     selectProvider,
     reconnect,
@@ -594,6 +598,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     createSession,
     selectSession,
     deleteSession,
+    renameSession,
     selectModel,
     selectProvider,
     reconnect,

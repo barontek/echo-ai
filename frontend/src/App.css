@@ -262,7 +262,12 @@ body {
 .sessions-list {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
   padding: 8px 12px;
+}
+
+.sessions-list::-webkit-scrollbar {
+  display: none;
 }
 
 .session-item {

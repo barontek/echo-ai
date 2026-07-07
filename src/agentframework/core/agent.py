@@ -110,6 +110,7 @@ class Agent:
         self._pending_summary: list[Message] | None = None
         self._session_gen = 0
         self._background_tasks: set[asyncio.Task] = set()
+        self._llm_lock = asyncio.Lock()
 
         if config.session_enabled:
             self.session_manager = SessionManager(config.session_dir)
@@ -271,12 +272,13 @@ class Agent:
         )
 
         try:
-            title_response = await asyncio.wait_for(
-                self.llm.chat(
-                    messages=[{"role": "user", "content": prompt}], temperature=0.3
-                ),
-                timeout=30.0,
-            )
+            async with self._llm_lock:
+                title_response = await asyncio.wait_for(
+                    self.llm.chat(
+                        messages=[{"role": "user", "content": prompt}], temperature=0.3
+                    ),
+                    timeout=30.0,
+                )
             if title_response.thinking:
                 raw = title_response.thinking
             else:
@@ -290,7 +292,7 @@ class Agent:
                     raw,
                     flags=re.DOTALL,
                 ).strip()
-            return raw.strip().strip('"').strip("'")
+            return raw.strip().strip('"').strip("'") or simple_title
         except (asyncio.TimeoutError, Exception) as e:
             logger.debug(f"Title generation failed or timed out: {e}")
             return simple_title
@@ -300,11 +302,12 @@ class Agent:
         # Note: Tracing hooks could be initialized here if we wanted to log this,
         # but for simplicity we bypass the conversational buffer.
         messages = [{"role": "user", "content": prompt}]
-        return await self.llm.extract_structured(
-            messages=messages,
-            response_model=response_model,
-            temperature=self.config.temperature,
-        )
+        async with self._llm_lock:
+            return await self.llm.extract_structured(
+                messages=messages,
+                response_model=response_model,
+                temperature=self.config.temperature,
+            )
 
     async def _call_llm(
         self,
@@ -313,21 +316,22 @@ class Agent:
         on_chunk: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         """Call the LLM, using streaming if available and on_chunk is provided."""
-        if on_chunk is not None:
-            try:
-                return await self.llm.chat_streaming(
-                    messages=messages,
-                    tools=tools,
-                    temperature=self.config.temperature,
-                    on_chunk=on_chunk,
-                )
-            except NotImplementedError:
-                pass
-        return await self.llm.chat(
-            messages=messages,
-            tools=tools,
-            temperature=self.config.temperature,
-        )
+        async with self._llm_lock:
+            if on_chunk is not None:
+                try:
+                    return await self.llm.chat_streaming(
+                        messages=messages,
+                        tools=tools,
+                        temperature=self.config.temperature,
+                        on_chunk=on_chunk,
+                    )
+                except NotImplementedError:
+                    pass
+            return await self.llm.chat(
+                messages=messages,
+                tools=tools,
+                temperature=self.config.temperature,
+            )
 
     async def _run_loop(
         self, messages: list[Message], thinking_process: str | None = None
@@ -353,9 +357,10 @@ class Agent:
 
         max_msgs = self.config.max_history_messages
         if self.memory_manager:
-            current_messages = await self.memory_manager.summarize_if_needed(
-                agent_messages=current_messages, llm=self.llm, max_messages=max_msgs
-            )
+            async with self._llm_lock:
+                current_messages = await self.memory_manager.summarize_if_needed(
+                    agent_messages=current_messages, llm=self.llm, max_messages=max_msgs
+                )
             self.messages = list(current_messages)
 
         for iteration in range(self.config.max_iterations):
@@ -671,7 +676,8 @@ class Agent:
         gen = self._session_gen
         dropped = list(self._pending_summary)
         try:
-            summary = await summarize_old_messages(dropped, self.llm)
+            async with self._llm_lock:
+                summary = await summarize_old_messages(dropped, self.llm)
             if summary and gen == self._session_gen:
                 # Remove dropped messages by object identity to avoid removing
                 # distinct messages with identical content

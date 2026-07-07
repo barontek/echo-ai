@@ -699,17 +699,43 @@ async def update_config(
     }
 
 
-async def _generate_title_async(active_agent: "Agent") -> None:
+async def _generate_title_async(
+    active_agent: "Agent",
+    websocket: Any | None = None,
+) -> None:
     """Generate title in background without blocking."""
     try:
+        if (
+            not active_agent.session_manager
+            or not active_agent.session_manager.current_session
+            or active_agent.session_manager.current_session.title
+            or getattr(active_agent.session_manager.current_session, 'title_generation_attempted', None) is True
+        ):
+            return
+
+        session = active_agent.session_manager.current_session
+        session.title_generation_attempted = True
+        active_agent.save_session()
+
         new_title = await active_agent.generate_title()
         if (
             new_title
             and active_agent.session_manager
             and active_agent.session_manager.current_session
+            and not active_agent.session_manager.current_session.title
         ):
-            active_agent.session_manager.current_session.title = new_title
+            session = active_agent.session_manager.current_session
+            session.title = new_title
             active_agent.save_session()
+            if websocket:
+                try:
+                    await websocket.send_json({
+                        "type": "title_updated",
+                        "session_id": session.id,
+                        "title": new_title,
+                    })
+                except Exception:
+                    pass
     except Exception as e:
         logger.debug(f"Background title generation failed: {e}")
 

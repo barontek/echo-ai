@@ -40,7 +40,7 @@ export interface ApprovalRequest {
 }
 
 export interface StreamEvent {
-  type: 'ready' | 'message' | 'content' | 'thinking' | 'done' | 'error' | 'pong' | 'session_start' | 'approval_request';
+  type: 'ready' | 'message' | 'content' | 'thinking' | 'done' | 'error' | 'pong' | 'session_start' | 'approval_request' | 'title_updated';
   content?: string;
   thinking?: string;
   has_tools?: boolean;

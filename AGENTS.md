@@ -7,7 +7,9 @@
 ## Commands
 
 ```bash
-# Backend — always run inside `nix develop`
+# Backend — Linux: run inside `nix develop`. macOS/Windows: prefix with `uv run`.
+#   Linux:   make verify
+#   macOS:   uv run make verify
 make verify           # canonical quality gate: pytest → ruff → pyright (run this before any PR)
 make test             # pytest with coverage only
 make lint             # ruff check
@@ -50,8 +52,8 @@ cd frontend && npm run build
 ## Key Constraints
 
 - **Python 3.11+** required
-- **Always use `nix develop`** — auto-syncs deps, sets up venv, provides all tooling
-- **Package management**: `uv` only inside nix. Never use `pip` directly.
+- **Always use `nix develop`** (Linux) — auto-syncs deps, sets up venv, provides all tooling. On macOS/Windows, use `uv run` directly.
+- **Package management**: `uv` only. Never use `pip` directly.
 - **PYTHONPATH**: must be `src` when running tests (`PYTHONPATH=src pytest ...`)
 - **Pre-commit**: runs on `git commit`. Run manually with `pre-commit run --all-files`.
 - **Pyright strict** typing required on all backend code.

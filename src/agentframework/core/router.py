@@ -205,11 +205,12 @@ class SemanticRouter:
                 {"role": "user", "content": prompt},
             ]
 
-            result: RouteSelection = await self.agent.llm.extract_structured(
-                messages=messages,
-                response_model=RouteSelection,
-                temperature=0.0,  # Strict determinism
-            )
+            async with self.agent._llm_lock:
+                result: RouteSelection = await self.agent.llm.extract_structured(
+                    messages=messages,
+                    response_model=RouteSelection,
+                    temperature=0.0,  # Strict determinism
+                )
 
             chosen = result.selected_agent
 

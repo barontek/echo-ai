@@ -1355,7 +1355,7 @@ class TestGenerateTitleAsync:
         mock_agent.save_session = MagicMock()
         await web_api._generate_title_async(mock_agent)
         assert mock_agent.session_manager.current_session.title == "New Title"
-        mock_agent.save_session.assert_called_once()
+        assert mock_agent.save_session.call_count == 2
 
     @pytest.mark.asyncio
     async def test_generate_title_async_no_session_skips_title(self, mock_agent):
@@ -2248,7 +2248,7 @@ class TestDetailedHealthMemoryErrorPath:
 
 class TestWSConfigAutoTitle:
     def test_ws_config_auto_title_generated(self, ws_mock_agent):
-        """When agent has no title, generate_title is called and session saved."""
+        """Title is generated in background and pushed via title_updated."""
         ws_mock_agent.session_manager.current_session.title = None
         ws_mock_agent.generate_title = AsyncMock(return_value="Auto Title")
 
@@ -2258,8 +2258,18 @@ class TestWSConfigAutoTitle:
                     ws.send_json({"provider": "ollama", "model": "m"})
                     ready = ws.receive_json()
                     assert ready["type"] == "ready"
-                    # Title should be set
-                    assert ready["title"] == "Auto Title"
+                    # Title is now async — ready has None, then title_updated follows
+                    assert ready["title"] is None
+
+                    # Drain pings until we get title_updated
+                    title_update = None
+                    for _ in range(5):
+                        msg = ws.receive_json()
+                        if msg.get("type") == "title_updated":
+                            title_update = msg
+                            break
+                    assert title_update is not None, "title_updated never received"
+                    assert title_update["title"] == "Auto Title"
 
     def test_ws_config_auto_title_no_title_returned(self, ws_mock_agent):
         """When generate_title returns None, no save_session call."""

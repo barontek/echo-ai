@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, text, String, DateTime, JSON
+from sqlalchemy import Boolean, create_engine, text, String, DateTime, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker, Mapped, mapped_column
 
 from .constants import ECHO_DATA_DIR
@@ -59,6 +59,7 @@ class DBSessionModel(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     title: Mapped[str | None] = mapped_column(String, nullable=True)
+    title_generation_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     messages: Mapped[list[dict]] = mapped_column(JSON, default=list)
     session_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -71,6 +72,7 @@ class Session:
 
     id: str
     title: str | None = None
+    title_generation_attempted: bool = False
     created_at: datetime = field(default_factory=datetime.now)
     messages: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -136,6 +138,8 @@ class SessionManager:
         self._migrate_add_title_column()
         # Lightweight migration: add 'events' column if it doesn't exist yet
         self._migrate_add_events_column()
+        # Lightweight migration: add 'title_generation_attempted' column if it doesn't exist yet
+        self._migrate_add_title_generation_attempted_column()
         # Add indexes for faster queries
         self._migrate_add_indexes()
 
@@ -188,6 +192,21 @@ class SessionManager:
 
         self._with_connection(migrate, "'events' column")
 
+    def _migrate_add_title_generation_attempted_column(self) -> None:
+        """Add 'title_generation_attempted' column to agent_sessions if missing."""
+
+        def migrate(conn):
+            cursor = conn.execute("PRAGMA table_info(agent_sessions)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "title_generation_attempted" not in columns:
+                conn.execute(
+                    "ALTER TABLE agent_sessions ADD COLUMN title_generation_attempted BOOLEAN DEFAULT 0"
+                )
+                conn.commit()
+                logger.info("Migrated agent_sessions: added 'title_generation_attempted' column.")
+
+        self._with_connection(migrate, "'title_generation_attempted' column")
+
     def _migrate_add_indexes(self) -> None:
         """Add indexes for faster queries."""
 
@@ -239,6 +258,7 @@ class SessionManager:
             session = Session(
                 id=db_session.id,  # type: ignore
                 title=db_session.title,  # type: ignore
+                title_generation_attempted=db_session.title_generation_attempted,  # type: ignore
                 created_at=db_session.created_at,  # type: ignore
                 messages=db_session.messages or [],  # type: ignore
                 metadata=db_session.session_metadata or {},  # type: ignore
@@ -259,6 +279,7 @@ class SessionManager:
             db_session = DBSessionModel(
                 id=session.id,
                 title=session.title,
+                title_generation_attempted=session.title_generation_attempted,
                 created_at=session.created_at,
                 messages=session.messages,
                 session_metadata=session.metadata,
@@ -317,6 +338,7 @@ class SessionManager:
                     Session(
                         id=db_session.id,  # type: ignore
                         title=db_session.title,  # type: ignore
+                        title_generation_attempted=db_session.title_generation_attempted,  # type: ignore
                         created_at=db_session.created_at,  # type: ignore
                         messages=db_session.messages or [],  # type: ignore
                         metadata=db_session.session_metadata or {},  # type: ignore

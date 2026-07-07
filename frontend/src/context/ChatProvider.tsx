@@ -136,6 +136,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               }
               break;
 
+            case 'title_updated':
+              debugLog('title_updated', data);
+              if (data.session_id && data.title) {
+                setSessions((prev) =>
+                  prev.map((s) =>
+                    s.id === data.session_id ? { ...s, title: data.title! } : s,
+                  ),
+                );
+              }
+              break;
+
             case 'content':
               if (data.session_id && data.session_id !== activeSessionIdRef.current) break;
               debugLog('message:content', {

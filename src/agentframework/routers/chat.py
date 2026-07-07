@@ -483,8 +483,9 @@ async def websocket_chat(websocket: WebSocket):
             active_agent.session_manager
             and active_agent.session_manager.current_session
             and not active_agent.session_manager.current_session.title
+            and getattr(active_agent.session_manager.current_session, 'title_generation_attempted', None) is not True
         ):
-            t = asyncio.create_task(_web_api._generate_title_async(active_agent))
+            t = asyncio.create_task(_web_api._generate_title_async(active_agent, websocket))
             bg_tasks.add(t)
             t.add_done_callback(bg_tasks.discard)
 
@@ -536,16 +537,16 @@ async def websocket_chat(websocket: WebSocket):
         if web_models._state is not None:
             web_models._state.agent = active_agent
         assert active_agent is not None
-        # Trigger auto-title if needed
+        # Schedule background title gen for loaded untitled sessions (non-blocking)
         if (
             active_agent.session_manager
             and active_agent.session_manager.current_session
             and not active_agent.session_manager.current_session.title
+            and getattr(active_agent.session_manager.current_session, 'title_generation_attempted', None) is not True
         ):
-            new_title = await active_agent.generate_title()
-            if new_title:
-                active_agent.session_manager.current_session.title = new_title
-                active_agent.save_session()
+            t = asyncio.create_task(_web_api._generate_title_async(active_agent, websocket))
+            bg_tasks.add(t)
+            t.add_done_callback(bg_tasks.discard)
 
         await websocket.send_json(
             {

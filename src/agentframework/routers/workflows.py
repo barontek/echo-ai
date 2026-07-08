@@ -14,6 +14,7 @@ from ..web_models import (
     AppState,
     WorkflowRunPayload,
     get_state,
+    require_unlocked,
 )
 from workflows import get_workflow, list_workflows
 
@@ -32,6 +33,7 @@ async def workflows_list():
 async def workflow_run(
     payload: WorkflowRunPayload,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Run a selected workflow and return its final output."""
     from .. import web_api as _web_api

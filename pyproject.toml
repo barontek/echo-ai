@@ -35,6 +35,7 @@ dependencies = [
     "mkdocstrings>=0.25.0",
     "mkdocstrings-python>=0.4.0",
     "duckduckgo-search>=8.1.1",
+    "cryptography>=49.0.0",
 ]
 
 [project.optional-dependencies]

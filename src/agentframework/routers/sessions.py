@@ -11,6 +11,7 @@ from ..web_models import (
     AppState,
     SessionRenamePayload,
     get_state,
+    require_unlocked,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ router = APIRouter(tags=["Sessions"])
 @router.get("/api/sessions")
 async def list_sessions(
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """List all chat sessions.
 
@@ -42,6 +44,7 @@ async def list_sessions(
 @router.post("/api/sessions")
 async def create_session(
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Create a new chat session.
 
@@ -59,6 +62,7 @@ async def create_session(
 async def load_session(
     session_id: str,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Load a specific session with its message history.
 
@@ -86,6 +90,7 @@ async def load_session(
 async def delete_session(
     session_id: str,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Delete a chat session.
 
@@ -105,6 +110,7 @@ async def delete_session(
 async def rename_session(
     payload: SessionRenamePayload,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Rename a session by changing its title.
 
@@ -151,6 +157,7 @@ async def rename_session(
 async def export_session(
     session_id: str,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Export a session to JSON format.
 
@@ -180,6 +187,7 @@ async def export_session(
 async def import_session(
     request: Request,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Import a session from JSON format.
 
@@ -217,6 +225,7 @@ async def import_session(
 @router.post("/api/sessions/purge")
 async def purge_sessions(
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
     days: int = 30,
 ):
     """Purge old sessions (older than `days` days)."""
@@ -233,6 +242,7 @@ async def purge_sessions(
 @router.post("/api/sessions/purge-empty")
 async def purge_empty_sessions(
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Purge sessions that have no user messages (empty sessions)."""
     if not (state.agent and state.agent.session_manager):

@@ -39,6 +39,7 @@ env/
 *.db
 *.db-shm
 *.db-wal
+.db_salt
 
 # OS
 .DS_Store

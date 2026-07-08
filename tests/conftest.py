@@ -1,12 +1,24 @@
 """Pytest bootstrap helpers for async test reliability."""
 
 import asyncio
+import base64
 import inspect
 from typing import Any
 
 import pytest
 
+from cryptography.fernet import Fernet
+
 from agentframework.providers import LLMResponse, LLMToolCall
+from agentframework.session import set_fernet as _set_session_fernet
+
+# Deterministic Fernet key for all tests so SessionManager / EncryptedJSON
+# don't try to prompt for a password.
+_TEST_FERNET = Fernet(base64.urlsafe_b64encode(b"\x00" * 32))
+
+
+# Set session module Fernet at import time (no TTY in tests).
+_set_session_fernet(_TEST_FERNET)
 
 
 def pytest_configure(config):

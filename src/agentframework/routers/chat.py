@@ -25,6 +25,7 @@ from ..web_models import (
     WsConfigPayload,
     WsMessagePayload,
     get_state,
+    require_unlocked,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ router = APIRouter(tags=["Chat"])
 async def chat(
     message: ChatPayload,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Non-streaming chat endpoint.
 
@@ -90,7 +92,10 @@ async def chat(
 
 
 @router.post("/chat")
-async def handle_chat(request: ChatRequest):
+async def handle_chat(
+    request: ChatRequest,
+    _unlocked: None = Depends(require_unlocked),
+):
     """Synchronous chat endpoint."""
     try:
         from .. import web_api as _web_api
@@ -113,6 +118,7 @@ async def stream_chat(
     session_id: str | None = None,
     provider: str = "ollama",
     model: str = "",
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Server-Sent Events (SSE) streaming endpoint."""
     from .. import web_api as _web_api
@@ -217,6 +223,13 @@ async def websocket_chat(websocket: WebSocket):
             {"type": "error", "content": "Server not initialized"}
         )
         await websocket.close(code=1011, reason="Server not initialized")
+        return
+
+    if web_models.get_state().agent is None:
+        await websocket.send_json(
+            {"type": "error", "content": "Database is locked. Unlock via /api/unlock first."}
+        )
+        await websocket.close(code=4001, reason="Database is locked")
         return
 
     _ws_message_history: list[dict[str, Any]] = []

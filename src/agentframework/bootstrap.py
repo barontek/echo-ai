@@ -3,6 +3,7 @@
 import atexit
 import os
 import sys
+from pathlib import Path
 
 from rich.console import Console
 
@@ -16,6 +17,7 @@ from .config import (
     validate_config,
     log_config_validation,
 )
+from .db_crypto import is_first_run, prompt_create_password, prompt_for_fernet
 from .logging_utils import configure_logging
 
 console = Console(color_system="256")
@@ -77,8 +79,20 @@ def setup_agent(force_session_enabled: bool = False) -> Agent:
 
     api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
 
+    # Resolve the Fernet encryption key once per process start, before
+    # SessionManager is constructed (which would otherwise prompt for each
+    # instance).  The salt file lives alongside the session database.
+    session_dir_path = Path(agent_cfg.get("session_dir", DEFAULT_SESSION_DIR))
+    salt_path = session_dir_path / ".db_salt"
+    db_path = session_dir_path / "agent_sessions.db"
+
+    if is_first_run(salt_path, db_path):
+        fernet = prompt_create_password(salt_path)
+    else:
+        fernet = prompt_for_fernet(salt_path)
+
     try:
-        agent = create_agent(agent_config, api_key)
+        agent = create_agent(agent_config, api_key, fernet=fernet)
     except ValueError as e:
         console.print(f"[red]Provider Configuration Error:[/red] {e}")
         raise SystemExit(1)

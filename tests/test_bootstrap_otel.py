@@ -13,6 +13,8 @@ def mock_dependencies():
         patch("src.agentframework.bootstrap.get_safety_config") as mock_get_safety,
         patch("src.agentframework.bootstrap.get_tools") as mock_get_tools,
         patch("src.agentframework.bootstrap.create_agent") as mock_create,
+        patch("src.agentframework.bootstrap.prompt_for_fernet") as mock_fernet,
+        patch("src.agentframework.bootstrap.prompt_create_password") as mock_create_pwd,
     ):
         mock_load.return_value = {
             "agent": {"session_enabled": True},
@@ -28,6 +30,8 @@ def mock_dependencies():
         mock_get_tools.return_value = []
         mock_agent = MagicMock()
         mock_create.return_value = mock_agent
+        mock_fernet.return_value = MagicMock()
+        mock_create_pwd.return_value = MagicMock()
 
         yield mock_agent
 

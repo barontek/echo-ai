@@ -15,6 +15,7 @@ from typing import Annotated, Any
 import httpx
 import uvicorn
 
+from cryptography.fernet import Fernet
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -36,6 +37,7 @@ from .web_models import (
     PreferencesPayload,
     RouteRequest,
     get_state,
+    require_unlocked,
 )
 
 
@@ -84,7 +86,8 @@ async def lifespan(app: FastAPI):
     logger.info("  Model: selected from frontend UI")
     logger.info("=" * 50)
 
-    web_models._state = AppState()
+    # Ensure state container exists (lazily created on first access)
+    get_state()
     # Agent creation is deferred — the frontend sends model/provider via WebSocket
     yield
     logger.info("Shutting down Echo AI...")
@@ -348,28 +351,6 @@ def _configure_cors():
 _configure_cors()
 
 
-def ensure_runtime_agent(state: AppState) -> Agent | None:
-    """Ensure application state has a usable runtime agent.
-
-    If no agent exists yet, tries to create one from saved preferences
-    so that session listing works before the first WebSocket connection.
-    The agent will be replaced when the frontend connects with real credentials.
-    """
-    if state.agent is None:
-        prefs = _load_preferences()
-        model = prefs.get("model", "")
-        provider = prefs.get("provider", "ollama")
-        if not model:
-            model = "llama3.2:latest"
-        try:
-            state.agent = _create_runtime_agent(
-                provider=provider, model=model
-            )
-            logger.info("Created runtime agent: %s / %s", provider, model)
-        except Exception as e:
-            logger.debug("Could not create runtime agent: %s", e)
-    return state.agent
-
 
 async def get_models_data(provider: str = "ollama", base_url: str | None = None) -> dict[str, Any]:
     """List available models for the given provider (with caching)."""
@@ -470,7 +451,7 @@ def get_models_sync(provider: str = "ollama", base_url: str | None = None) -> di
 
 def get_sessions_data(state: AppState) -> dict[str, Any]:
     """Return session metadata for the current runtime agent."""
-    active_agent = ensure_runtime_agent(state)
+    active_agent = state.agent
     if active_agent and active_agent.session_manager:
         sessions_list, total = active_agent.session_manager.list_sessions()
         sessions = [
@@ -483,7 +464,7 @@ def get_sessions_data(state: AppState) -> dict[str, Any]:
 
 def create_session_data(state: AppState) -> dict[str, Any]:
     """Create a fresh chat session for the shared UI/backend state."""
-    active_agent = ensure_runtime_agent(state)
+    active_agent = state.agent
     if active_agent and active_agent.session_manager:
         active_agent.session_manager.create_session()
         if active_agent.session_manager.current_session:
@@ -505,7 +486,7 @@ def create_session_data(state: AppState) -> dict[str, Any]:
 
 def load_session_data(session_id: str, state: AppState) -> dict[str, Any]:
     """Load a session and normalize messages for the UI."""
-    active_agent = ensure_runtime_agent(state)
+    active_agent = state.agent
     if active_agent and active_agent.session_manager:
         active_agent.load_session(session_id)
         state.current_session_id = session_id
@@ -537,7 +518,7 @@ def load_session_data(session_id: str, state: AppState) -> dict[str, Any]:
 
 def delete_session_data(session_id: str, state: AppState) -> dict[str, Any]:
     """Delete a persisted chat session."""
-    active_agent = ensure_runtime_agent(state)
+    active_agent = state.agent
     if active_agent and active_agent.session_manager:
         active_agent.session_manager.delete_session(session_id)
 
@@ -556,10 +537,13 @@ def _create_runtime_agent(
     api_key: str | None = None,
     session_id: str | None = None,
     safety_config_override: SafetyConfig | None = None,
+    fernet: Fernet | None = None,
 ) -> Agent:
     """Create an agent for the web UI with the same tool config as CLI."""
     if not model:
         raise ValueError("Model name is required. Select a model from the frontend UI.")
+    if fernet is None:
+        fernet = get_state().fernet
     config = load_config()
     safety_config = safety_config_override or get_safety_config(config)
     tools = get_tools(config, safety_config)
@@ -594,7 +578,7 @@ def _create_runtime_agent(
             "You are an AI assistant with access to various tools." + env_info
         )
 
-    return create_agent(agent_config, api_key=api_key, session_id=session_id)
+    return create_agent(agent_config, api_key=api_key, session_id=session_id, fernet=fernet)
 
 
 
@@ -668,6 +652,7 @@ async def get_config(
 async def update_config(
     config: ConfigPayload,
     state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
 ):
     """Update the agent configuration.
 
@@ -684,7 +669,7 @@ async def update_config(
     """
     old_agent = state.agent
     state.agent = _create_runtime_agent(
-        config.provider, config.model, api_key=config.api_key
+        config.provider, config.model, api_key=config.api_key, fernet=state.fernet
     )
     if old_agent:
         try:
@@ -765,7 +750,7 @@ def get_or_create_agent(req: ChatRequest) -> Agent:
                 detail="Model name is required. Select a model from the frontend UI.",
             )
         state.agent = _create_runtime_agent(
-            provider=req.provider, model=req.model, api_key=req.api_key
+            provider=req.provider, model=req.model, api_key=req.api_key, fernet=state.fernet
         )
 
     agent = state.agent
@@ -778,7 +763,10 @@ def get_or_create_agent(req: ChatRequest) -> Agent:
 
 
 @app.post("/route", tags=["Routing"])
-async def route_intent(request: RouteRequest):
+async def route_intent(
+    request: RouteRequest,
+    _unlocked: None = Depends(require_unlocked),
+):
     """Determine the optimal sub-agent for a user prompt via Semantic Routing."""
     state = get_state()
     if state.agent is None:
@@ -793,16 +781,29 @@ from .routers.health import router as health_router  # noqa: E402
 from .routers.models import router as models_router  # noqa: E402
 from .routers.sessions import router as sessions_router  # noqa: E402
 from .routers.workflows import router as workflows_router  # noqa: E402
+from .routers.unlock import router as unlock_router  # noqa: E402
 
 app.include_router(chat_router)
 app.include_router(health_router)
 app.include_router(models_router)
 app.include_router(sessions_router)
 app.include_router(workflows_router)
+app.include_router(unlock_router)
 
 
-def run_server(host: str = "0.0.0.0", port: int = DEFAULT_WEB_PORT):
-    """Run the FastAPI server."""
+def run_server(host: str | None = None, port: int | None = None):
+    """Run the FastAPI server.
+
+    If *host* is not provided, the ``ECHO_HOST`` environment variable is
+    read; if that is also unset, ``"127.0.0.1"`` is used (safe default).
+    If *port* is not provided, ``ECHO_WEB_PORT`` (or ``8080``) is used.
+    """
+    if host is None:
+        host = os.environ.get("ECHO_HOST", "127.0.0.1")
+    if port is None:
+        port = DEFAULT_WEB_PORT
+    logger.info("Listening on %s:%d", host, port)
+    # The database password is now resolved lazily via POST /api/unlock.
     uvicorn.run(app, host=host, port=port, reload=False, log_level="info")
 
 

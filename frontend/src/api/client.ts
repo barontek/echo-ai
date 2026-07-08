@@ -85,6 +85,19 @@ class ApiClient {
     }
   }
 
+  async getStatus(): Promise<{ locked: boolean; needs_setup: boolean }> {
+    const res = await this.client.get<{ locked: boolean; needs_setup: boolean }>('/api/status');
+    return res.data;
+  }
+
+  async unlock(password: string): Promise<void> {
+    await this.client.post('/api/unlock', { password });
+  }
+
+  async setup(password: string, confirm: string): Promise<void> {
+    await this.client.post('/api/setup', { password, confirm });
+  }
+
 }
 
 export const api = new ApiClient();

@@ -61,6 +61,25 @@ cd frontend && npm run build
 - Use `pytest.mark.asyncio` for async backend tests.
 - Provide functional code diffs only — no conversational filler.
 
+## Database Encryption & Background Services
+
+Session data is encrypted at rest via Fernet (AES-128-CBC + HMAC-SHA256). The key
+is derived from a user-chosen password using Scrypt (N=2¹⁴, r=8, p=1, 32-byte key).
+
+- **CLI / interactive**: you are prompted for the password once per process start.
+- **web_api.py as a background service** (systemd, launchd, Docker): there is no TTY
+  to prompt on, so you **must** set `ECHO_DB_PASSWORD` in the service environment.
+  Example systemd unit fragment:
+  ```
+  [Service]
+  Environment=ECHO_DB_PASSWORD=your-strong-password
+  ```
+  This is **weaker** than an interactive prompt — anything that can read the process
+  environment (e.g. `/proc/<pid>/environ`, debuggers, other processes running as the
+  same user) can recover the password. This is a known trade-off; it prevents casual
+  disk-level access to session data but does **not** protect against an attacker with
+  OS-level access.
+
 ## Security Module
 
 `src/agentframework/safety.py` controls workspace confinement, bash allowlist, sensitive file protections, and dangerous pattern detection.

@@ -1,14 +1,22 @@
 """Tests for Agent class."""
 
 import asyncio
+import base64
 import time
 
 import pytest
 
+from cryptography.fernet import Fernet
+
 from src.agentframework.core import Agent, AgentConfig
+from src.agentframework.session import set_fernet
 from src.agentframework.tools import Tool, ToolResult
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from pydantic import BaseModel
+
+
+# Module-level Fernet so Agent + SessionManager works without a TTY.
+set_fernet(Fernet(base64.urlsafe_b64encode(b"\x00" * 32)))
 
 
 class MockProvider(LLMProvider):

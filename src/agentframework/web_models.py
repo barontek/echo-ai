@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from cryptography.fernet import Fernet
 from pydantic import BaseModel, Field
 
 from .core import Agent
@@ -18,6 +19,7 @@ class AppState:
     """Application state with dependency injection support."""
 
     agent: Agent | None = None
+    fernet: Fernet | None = None
     current_session_id: str | None = None
     message_history: list[dict[str, Any]] = field(default_factory=list)
 
@@ -32,6 +34,15 @@ def get_state() -> AppState:
     if _state is None:
         _state = AppState()
     return _state
+
+
+def require_unlocked():
+    """FastAPI dependency — reject requests when the database is locked."""
+    from fastapi import HTTPException
+
+    state = get_state()
+    if state.agent is None:
+        raise HTTPException(status_code=423, detail="Database is locked")
 
 
 class ConfigPayload(BaseModel):

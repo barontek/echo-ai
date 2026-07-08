@@ -90,7 +90,7 @@ class TestAgentBootstrap:
         fake_tools = [SimpleNamespace(name="bash")]
         monkeypatch.setattr(web_api, "get_tools", lambda cfg, safety: fake_tools)
 
-        def fake_create_agent(agent_config, api_key=None, session_id=None):
+        def fake_create_agent(agent_config, api_key=None, session_id=None, fernet=None):
             captured["agent_config"] = agent_config
             captured["api_key"] = api_key
             return SimpleNamespace(config=agent_config)
@@ -122,7 +122,7 @@ class TestAgentBootstrap:
         monkeypatch.setattr(
             web_api,
             "create_agent",
-            lambda agent_config, api_key=None, session_id=None: SimpleNamespace(
+            lambda agent_config, api_key=None, session_id=None, fernet=None: SimpleNamespace(
                 config=agent_config
             ),
         )
@@ -236,21 +236,13 @@ class TestSessions:
             assert "title" in session
             assert "created_at" in session
 
-    def test_list_sessions_lazy_init(self, monkeypatch, mock_agent):
+    def test_list_sessions_locked(self, monkeypatch, mock_agent):
         state = web_api.get_state()
         state.agent = None
-        monkeypatch.setattr(
-            web_api, "_create_runtime_agent", lambda *args, **kwargs: mock_agent
-        )
-        mock_agent.session_manager.list_sessions.return_value = (
-            [MagicMock(id="lazy-session")],
-            1,
-        )
 
         response = client.get("/api/sessions")
-        assert response.status_code == 200
-        assert response.json()["sessions"][0]["id"] == "lazy-session"
-        assert state.agent == mock_agent
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_create_session(self, monkeypatch, mock_agent):
         state = web_api.get_state()
@@ -313,15 +305,9 @@ class TestSessions:
     def test_load_session_no_agent(self):
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", side_effect=Exception("no provider")):
-            response = client.get("/api/sessions/any-session")
-        assert response.status_code == 200
-        assert response.json() == {
-            "session_id": "any-session",
-            "messages": [],
-            "title": None,
-            "error": "Session manager unavailable.",
-        }
+        response = client.get("/api/sessions/any-session")
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_delete_session(self, monkeypatch, mock_agent):
         state = web_api.get_state()
@@ -986,7 +972,8 @@ class TestExportImport:
         state = web_api.get_state()
         state.agent = None
         response = client.get("/api/sessions/test/export")
-        assert response.status_code == 503
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_export_session_success(self, mock_agent):
         state = web_api.get_state()
@@ -1007,7 +994,8 @@ class TestExportImport:
         state = web_api.get_state()
         state.agent = None
         response = client.post("/api/sessions/import", json={"id": "test", "messages": []})
-        assert response.status_code == 503
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_import_session_success(self, mock_agent):
         state = web_api.get_state()
@@ -1043,7 +1031,8 @@ class TestPurgeEmpty:
         state = web_api.get_state()
         state.agent = None
         response = client.post("/api/sessions/purge-empty")
-        assert response.status_code == 503
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_purge_empty_success(self, mock_agent):
         state = web_api.get_state()
@@ -1060,16 +1049,15 @@ class TestPurgeEmpty:
 
 
 class TestSimpleChat:
-    def test_chat_without_agent(self, mock_agent):
+    def test_chat_without_agent(self):
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
-            response = client.post("/chat", json={
-                "prompt": "hello",
-                "model": "qwen3:4b-instruct",
-            })
-        assert response.status_code == 200
-        assert "response" in response.json()
+        response = client.post("/chat", json={
+            "prompt": "hello",
+            "model": "qwen3:4b-instruct",
+        })
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_chat_with_session_id(self, mock_agent):
         state = web_api.get_state()
@@ -1109,8 +1097,8 @@ class TestRoute:
         state = web_api.get_state()
         state.agent = None
         response = client.post("/route", json={"prompt": "hello"})
-        assert response.status_code == 503
-        assert "Agent not initialized" in response.json()["detail"]
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_route_exception(self, mock_agent):
         state = web_api.get_state()
@@ -1131,16 +1119,15 @@ class TestRoute:
 
 
 class TestWorkflowErrors:
-    def test_workflow_run_no_agent_creates_agent_and_returns_workflow_id(self, mock_agent):
+    def test_workflow_run_no_agent_returns_locked(self):
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
-            response = client.post(
-                "/api/workflows/run",
-                json={"workflow_id": "research_and_summarize", "topic": "test"},
-            )
-        assert response.status_code == 200
-        assert response.json()["workflow_id"] == "research_and_summarize"
+        response = client.post(
+            "/api/workflows/run",
+            json={"workflow_id": "research_and_summarize", "topic": "test"},
+        )
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_workflow_not_found(self, mock_agent):
         state = web_api.get_state()
@@ -1181,10 +1168,9 @@ class TestDeleteSessionEdgeCases:
     def test_delete_session_no_agent(self):
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", side_effect=Exception("no provider")):
-            response = client.delete("/api/sessions/test")
-        assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+        response = client.delete("/api/sessions/test")
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
     def test_delete_session_clears_current(self, mock_agent):
         state = web_api.get_state()
@@ -1202,12 +1188,9 @@ class TestCreateSessionEdgeCases:
     def test_create_session_no_agent(self):
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", side_effect=Exception("no provider")):
-            response = client.post("/api/sessions")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["session_id"] is None
-        assert data["error"] == "Session manager unavailable."
+        response = client.post("/api/sessions")
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
 
 class TestRenameSessionNoAgent:
@@ -1215,7 +1198,8 @@ class TestRenameSessionNoAgent:
         state = web_api.get_state()
         state.agent = None
         response = client.post("/api/sessions/rename", json={"session_id": "x", "new_title": "y"})
-        assert response.status_code == 503
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
 
 class TestPurgeSessionsNoAgent:
@@ -1223,7 +1207,8 @@ class TestPurgeSessionsNoAgent:
         state = web_api.get_state()
         state.agent = None
         response = client.post("/api/sessions/purge")
-        assert response.status_code == 503
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
 
 class TestWorkflowListEndpoint:
@@ -1515,18 +1500,17 @@ class TestSessionDataFallbacks:
 
 class TestChatEndpointNoAgent:
     @pytest.mark.asyncio
-    async def test_chat_api_creates_agent_when_none(self, mock_agent):
-        """chat endpoint should create agent when state.agent is None."""
+    async     def test_chat_api_creates_agent_when_none(self):
+        """chat endpoint returns locked when state.agent is None."""
         web_api._rate_limiter.clear()
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", return_value=mock_agent):
-            response = client.post("/chat", json={
-                "prompt": "hello",
-                "model": "qwen3:4b-instruct",
-            })
-        assert response.status_code == 200
-        assert response.json()["response"] == "Mock response"
+        response = client.post("/chat", json={
+            "prompt": "hello",
+            "model": "qwen3:4b-instruct",
+        })
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
 
 # ---------------------------------------------------------------------------
@@ -1696,7 +1680,7 @@ class TestCreateRuntimeAgentModelValidation:
         monkeypatch.setattr(web_api, "load_config", lambda: {})
         monkeypatch.setattr(web_api, "get_safety_config", lambda cfg: SimpleNamespace(workspace="."))
         monkeypatch.setattr(web_api, "get_tools", lambda cfg, safety: [])
-        monkeypatch.setattr(web_api, "create_agent", lambda ac, api_key=None, session_id=None: SimpleNamespace(config=ac))
+        monkeypatch.setattr(web_api, "create_agent", lambda ac, api_key=None, session_id=None, fernet=None: SimpleNamespace(config=ac))
         result = web_api._create_runtime_agent("ollama", "Loading models...")
         assert result.config.model == "Loading models..."
 
@@ -1712,6 +1696,20 @@ class TestRunServerFunction:
         """run_server should call uvicorn.run with correct params."""
         web_api.run_server(host="127.0.0.1", port=9000)
         mock_uvicorn_run.assert_called_once_with(web_api.app, host="127.0.0.1", port=9000, reload=False, log_level="info")
+
+    @patch("uvicorn.run")
+    def test_run_server_default_host(self, mock_uvicorn_run, monkeypatch):
+        """When ECHO_HOST is unset, 127.0.0.1 is used."""
+        monkeypatch.delenv("ECHO_HOST", raising=False)
+        web_api.run_server(port=9000)
+        mock_uvicorn_run.assert_called_once_with(web_api.app, host="127.0.0.1", port=9000, reload=False, log_level="info")
+
+    @patch("uvicorn.run")
+    def test_run_server_env_host(self, mock_uvicorn_run, monkeypatch):
+        """ECHO_HOST env var overrides the default."""
+        monkeypatch.setenv("ECHO_HOST", "0.0.0.0")
+        web_api.run_server(port=9000)
+        mock_uvicorn_run.assert_called_once_with(web_api.app, host="0.0.0.0", port=9000, reload=False, log_level="info")
 
 
 # ---------------------------------------------------------------------------
@@ -2204,14 +2202,14 @@ class TestDeferredInit:
 # ---------------------------------------------------------------------------
 
 
-class TestEnsureRuntimeAgent:
-    def test_ensure_runtime_agent_exception(self):
-        """When _create_runtime_agent raises in ensure_runtime_agent, error is logged."""
+class TestLockedState:
+    def test_locked_returns_423(self):
+        """Session endpoints return 423 when database is locked."""
         state = web_api.get_state()
         state.agent = None
-        with patch.object(web_api, "_create_runtime_agent", side_effect=Exception("fail")):
-            result = web_api.ensure_runtime_agent(state)
-        assert result is None
+        response = client.get("/api/sessions")
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
 
 
 # ---------------------------------------------------------------------------
@@ -2504,3 +2502,280 @@ class TestPreferences:
             assert response.json() == {}
         finally:
             web_api._PREFERENCES_PATH = Path.home() / ".echo-ai" / "preferences.json"
+
+
+# ---------------------------------------------------------------------------
+# Unlock flow tests
+# ---------------------------------------------------------------------------
+
+
+class TestUnlockFlow:
+    """POST /api/unlock — correct password, wrong password, locked state, rate-limit."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_state(self):
+        """Reset state before and after each test."""
+        state = web_models.get_state()
+        state.agent = None
+        state.fernet = None
+        yield
+        state.agent = None
+        state.fernet = None
+
+    def test_unlock_success(self, tmp_path, monkeypatch):
+        """Correct password unlocks the database and makes session routes work."""
+        import base64 as _b64
+
+        salt_path = tmp_path / ".db_salt"
+        salt_path.write_bytes(b"\xaa" * 16)
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.derive_key",
+            lambda pwd, salt: _b64.urlsafe_b64encode(b"\x00" * 32),
+        )
+
+        monkeypatch.setattr(
+            web_api, "_create_runtime_agent",
+            lambda *a, **kw: MagicMock(session_manager=MagicMock()),
+        )
+
+        state = web_models.get_state()
+        state.agent = None
+        state.fernet = None
+
+        resp = client.post("/api/unlock", json={"password": "any-password"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "unlocked"
+
+        state = web_models.get_state()
+        assert state.fernet is not None
+        assert state.agent is not None
+
+    def test_unlock_wrong_password(self, tmp_path, monkeypatch):
+        """Wrong password returns 401 with a generic message."""
+        from cryptography.fernet import InvalidToken
+
+        salt_path = tmp_path / ".db_salt"
+        salt_path.write_bytes(b"\xaa" * 16)
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.derive_key",
+            lambda pwd, salt: (
+                # Return a valid-but-different key so Fernet() doesn't crash;
+                # the session read will fail.
+                __import__("base64").urlsafe_b64encode(b"\x01" * 32)
+            ),
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.SessionManager.list_sessions",
+            lambda self, **kw: (_ for _ in ()).throw(InvalidToken),
+        )
+
+        resp = client.post("/api/unlock", json={"password": "wrong-password"})
+        assert resp.status_code == 401, resp.text
+        assert resp.json()["detail"] == "Incorrect password"
+        # Fernet should not be stored on failure
+        assert web_models.get_state().fernet is None
+
+    def test_locked_before_unlock(self):
+        """Session routes return 423 before unlocking."""
+        state = web_models.get_state()
+        state.agent = None
+        state.fernet = None
+
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 423
+        assert resp.json()["detail"] == "Database is locked"
+
+    def test_unlock_on_fresh_install(self, tmp_path, monkeypatch):
+        """Unlocking without any salt or db file returns 409 — must /api/setup first."""
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path / "nonexistent",
+        )
+
+        resp = client.post("/api/unlock", json={"password": "pwd"})
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == "Database not initialized. Call POST /api/setup first."
+
+
+
+    def test_unlock_rate_limit(self, monkeypatch):
+        """Repeated unlock attempts past the limit return 429."""
+        async def always_blocked(*args, **kwargs):
+            return False, 0
+
+        monkeypatch.setattr(web_api._rate_limiter, "check", always_blocked)
+
+        resp = client.post("/api/unlock", json={"password": "irrelevant"})
+        assert resp.status_code == 429
+        assert "too many requests" in resp.json()["detail"].lower()
+
+    def test_status_locked(self):
+        """GET /api/status returns locked=True and needs_setup when agent is None."""
+        state = web_models.get_state()
+        state.agent = None
+
+        resp = client.get("/api/status")
+        assert resp.status_code == 200
+        assert resp.json()["locked"] is True
+        assert "needs_setup" in resp.json()
+
+    def test_status_unlocked(self):
+        """GET /api/status returns locked=False after unlock."""
+        state = web_models.get_state()
+        state.agent = MagicMock()
+
+        resp = client.get("/api/status")
+        assert resp.status_code == 200
+        assert resp.json()["locked"] is False
+        assert "needs_setup" in resp.json()
+
+
+class TestSetupFlow:
+    """POST /api/setup — fresh install flow."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_state(self):
+        state = web_models.get_state()
+        state.agent = None
+        state.fernet = None
+        yield
+        state.agent = None
+        state.fernet = None
+
+    def test_status_shows_needs_setup(self, tmp_path, monkeypatch):
+        """On a fresh install /api/status returns needs_setup=True."""
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        resp = client.get("/api/status")
+        assert resp.status_code == 200
+        assert resp.json()["needs_setup"] is True
+        assert resp.json()["locked"] is True
+
+    def test_setup_success(self, tmp_path, monkeypatch):
+        """Valid setup creates salt, db, and unlocks the app."""
+        import base64 as _b64
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.derive_key",
+            lambda pwd, salt: _b64.urlsafe_b64encode(b"\x00" * 32),
+        )
+
+        monkeypatch.setattr(
+            web_api, "_create_runtime_agent",
+            lambda *a, **kw: MagicMock(session_manager=MagicMock()),
+        )
+
+        resp = client.post("/api/setup", json={"password": "correct-password", "confirm": "correct-password"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "setup_ok"
+
+        state = web_models.get_state()
+        assert state.fernet is not None
+        assert state.agent is not None
+
+        # Salt file should have been created on disk
+        assert (tmp_path / ".db_salt").exists()
+
+    def test_setup_password_mismatch(self, tmp_path, monkeypatch):
+        """Mismatched passwords return 400."""
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        resp = client.post("/api/setup", json={"password": "abc12345", "confirm": "different"})
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"] == "Passwords do not match"
+        assert web_models.get_state().fernet is None
+
+    def test_setup_password_too_short(self, tmp_path, monkeypatch):
+        """Short passwords return 400."""
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        resp = client.post("/api/setup", json={"password": "short", "confirm": "short"})
+        assert resp.status_code == 400, resp.text
+        assert "8 characters" in resp.json()["detail"].lower()
+
+    def test_setup_twice_returns_409(self, tmp_path, monkeypatch):
+        """Calling /api/setup after a successful setup returns 409."""
+        import base64 as _b64
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.derive_key",
+            lambda pwd, salt: _b64.urlsafe_b64encode(b"\x00" * 32),
+        )
+        monkeypatch.setattr(
+            web_api, "_create_runtime_agent",
+            lambda *a, **kw: MagicMock(session_manager=MagicMock()),
+        )
+
+        resp = client.post("/api/setup", json={"password": "password123", "confirm": "password123"})
+        assert resp.status_code == 200
+
+        resp = client.post("/api/setup", json={"password": "password123", "confirm": "password123"})
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["detail"] == "Database already initialized"
+
+    def test_unlock_before_setup_returns_409(self, tmp_path, monkeypatch):
+        """Calling /api/unlock before /api/setup returns 409."""
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        resp = client.post("/api/unlock", json={"password": "any-password"})
+        assert resp.status_code == 409
+        assert "setup" in resp.json()["detail"].lower()
+
+    def test_setup_followed_by_unlock(self, tmp_path, monkeypatch):
+        """After setup, the same password unlocks the app."""
+        import base64 as _b64
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.derive_key",
+            lambda pwd, salt: _b64.urlsafe_b64encode(b"\x00" * 32),
+        )
+        monkeypatch.setattr(
+            web_api, "_create_runtime_agent",
+            lambda *a, **kw: MagicMock(session_manager=MagicMock()),
+        )
+
+        setup_resp = client.post("/api/setup", json={"password": "mypassword", "confirm": "mypassword"})
+        assert setup_resp.status_code == 200
+
+        state = web_models.get_state()
+        state.agent = None
+        state.fernet = None
+
+        unlock_resp = client.post("/api/unlock", json={"password": "mypassword"})
+        assert unlock_resp.status_code == 200, unlock_resp.text
+        assert unlock_resp.json()["status"] == "unlocked"
+
+        state = web_models.get_state()
+        assert state.fernet is not None
+        assert state.agent is not None

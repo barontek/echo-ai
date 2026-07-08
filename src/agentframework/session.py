@@ -1,5 +1,6 @@
 """Session management for the agent framework using SQLite."""
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -7,10 +8,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Boolean, create_engine, text, String, DateTime, JSON
+from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import Boolean, create_engine, text, String, DateTime, LargeBinary, TypeDecorator
 from sqlalchemy.orm import declarative_base, sessionmaker, Mapped, mapped_column
 
 from .constants import ECHO_DATA_DIR
+from .db_crypto import prompt_for_fernet
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,42 @@ DEFAULT_SESSION_DIR = str(ECHO_DATA_DIR / "sessions")
 DEFAULT_BACKUP_DIR = str(ECHO_DATA_DIR / "sessions" / ".backups")
 
 Base = declarative_base()
+
+_fernet: Fernet | None = None
+
+
+def get_fernet() -> Fernet:
+    if _fernet is None:
+        raise RuntimeError(
+            "No Fernet instance configured. "
+            "Create a SessionManager or set_fernet() first."
+        )
+    return _fernet
+
+
+def set_fernet(fernet: Fernet) -> None:
+    global _fernet
+    _fernet = fernet
+
+
+class EncryptedJSON(TypeDecorator):
+    """SQLAlchemy type that transparently encrypts JSON columns with Fernet."""
+
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value: object, dialect: object) -> bytes | None:
+        if value is None:
+            return None
+        return get_fernet().encrypt(json.dumps(value, default=str).encode("utf-8"))
+
+    def process_result_value(self, value: bytes | None, dialect: object) -> object | None:
+        if value is None:
+            return None
+        try:
+            return json.loads(get_fernet().decrypt(value).decode("utf-8"))
+        except InvalidToken:
+            raise ValueError("Incorrect database password") from None
 
 
 class SessionEvent:
@@ -61,9 +100,9 @@ class DBSessionModel(Base):
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     title_generation_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-    messages: Mapped[list[dict]] = mapped_column(JSON, default=list)
-    session_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
-    events: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    messages: Mapped[list[dict]] = mapped_column(EncryptedJSON, default=list)
+    session_metadata: Mapped[dict] = mapped_column(EncryptedJSON, default=dict)
+    events: Mapped[list[dict]] = mapped_column(EncryptedJSON, default=list)
 
 
 @dataclass
@@ -108,11 +147,21 @@ class Session:
 class SessionManager:
     """Manages agent sessions using SQLite backends."""
 
-    def __init__(self, session_dir: str | None = None):
+    def __init__(self, session_dir: str | None = None, fernet: Fernet | None = None):
         if session_dir is None:
             session_dir = DEFAULT_SESSION_DIR
         self.session_dir = Path(session_dir)
         self.session_dir.mkdir(parents=True, exist_ok=True)
+
+        # Configure the module-level Fernet instance
+        if fernet is not None:
+            set_fernet(fernet)
+        else:
+            try:
+                get_fernet()
+            except RuntimeError:
+                salt_path = self.session_dir / ".db_salt"
+                set_fernet(prompt_for_fernet(salt_path))
 
         # Initialize SQLite database connection with pooling
         self.db_path = self.session_dir / "agent_sessions.db"

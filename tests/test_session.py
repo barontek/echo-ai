@@ -5,17 +5,38 @@ test_session_visibility_race.py.
 Integration tests run against a real temporary SQLite database.
 """
 
+import base64
 import threading
 import pytest
 import sqlite3
 import time
 from datetime import datetime, timedelta
 
+from cryptography.fernet import Fernet
+
 from src.agentframework.session import (
     Session,
     SessionManager,
     ChangeTracker,
+    set_fernet,
 )
+
+
+_TEST_KEY = base64.urlsafe_b64encode(b"\x00" * 32)
+_TEST_FERNET = Fernet(_TEST_KEY)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _setup_fernet():
+    """Set a deterministic Fernet key for all tests in this module."""
+    set_fernet(_TEST_FERNET)
+    yield
+    # Don't bother restoring — each test run gets a fresh Python process.
+
+
+@pytest.fixture
+def test_fernet():
+    return _TEST_FERNET
 
 
 # ---------------------------------------------------------------------------
@@ -369,28 +390,36 @@ class TestPurgeEmpty:
 
 
 class TestMigration:
-    def test_migration_adds_title_column(self, tmp_path):
+    def test_migration_adds_title_column(self, tmp_path, test_fernet):
         db_dir = tmp_path / "legacy_sessions"
         db_dir.mkdir()
-        db_path = db_dir / "agent_sessions.db"
 
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("""
-            CREATE TABLE agent_sessions (
+        # Create a session through the normal encrypted path
+        mgr = SessionManager(str(db_dir), fernet=test_fernet)
+        mgr.create_session(session_id="legacy_session")
+        mgr.close()
+
+        # Drop title column via table recreation to simulate pre-migration schema
+        conn = sqlite3.connect(str(db_dir / "agent_sessions.db"))
+        conn.executescript("""
+            CREATE TABLE agent_sessions_new (
                 id VARCHAR PRIMARY KEY,
                 created_at DATETIME,
-                messages JSON,
-                session_metadata JSON
-            )
+                messages BLOB,
+                session_metadata BLOB,
+                events BLOB
+            );
+            INSERT INTO agent_sessions_new
+                SELECT id, created_at, messages, session_metadata, events
+                FROM agent_sessions;
+            DROP TABLE agent_sessions;
+            ALTER TABLE agent_sessions_new RENAME TO agent_sessions;
         """)
-        conn.execute(
-            "INSERT INTO agent_sessions (id, created_at, messages, session_metadata) VALUES (?, ?, '[]', '{}')",
-            ("legacy_session", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-        )
         conn.commit()
         conn.close()
 
-        mgr = SessionManager(str(db_dir))
+        # Re-open — migration should add the title column
+        mgr = SessionManager(str(db_dir), fernet=test_fernet)
         sessions, total = mgr.list_sessions()
         assert len(sessions) == 1
         assert total == 1
@@ -500,6 +529,26 @@ class TestSessionEdgeCases:
         assert loaded is not None
         assert loaded.metadata["tool_count"] == 3
         assert loaded.metadata["tags"] == ["test", "debug"]
+
+
+class TestEncryptionErrors:
+    def test_wrong_password_raises_clear_error(self, session_dir):
+        """Loading a session encrypted with key A using key B gives a clear message."""
+        # Save session with the module-wide test key
+        mgr1 = SessionManager(session_dir)
+        mgr1.create_session(session_id="wrong_pw_test")
+        mgr1.add_message("user", "secret data")
+        mgr1.close()
+
+        # Swap to a different key and try to load
+        wrong_key = Fernet(base64.urlsafe_b64encode(b"\xff" * 32))
+        set_fernet(wrong_key)
+        try:
+            with pytest.raises(ValueError, match="Incorrect database password"):
+                mgr2 = SessionManager(session_dir)
+                mgr2.load_session("wrong_pw_test")
+        finally:
+            set_fernet(_TEST_FERNET)
 
 
 # ---------------------------------------------------------------------------

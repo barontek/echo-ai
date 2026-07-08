@@ -409,7 +409,7 @@ def get_safety_config(config: dict) -> SafetyConfig:
 
     require_approval_for = safety.get("require_approval_for")
     if require_approval_for is None:
-        require_approval_for = ["bash", "write_file", "memory"]
+        require_approval_for = ["bash", "write_file", "memory", "sqlite_query"]
 
     return SafetyConfig(
         workspace=safety.get("workspace", "."),
@@ -451,6 +451,10 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
                 kwargs[key] = tool_config[key]
             elif default_value is not None:
                 kwargs[key] = default_value
+
+        if tool_name == "sqlite_query":
+            session_dir = config.get("agent", {}).get("session_dir", DEFAULT_SESSION_DIR)
+            kwargs["session_db_path"] = str(Path(session_dir) / "agent_sessions.db")
 
         if "safety_config" in config_defaults and "safety_config" not in kwargs:
             kwargs["safety_config"] = safety_config

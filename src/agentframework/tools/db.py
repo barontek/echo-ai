@@ -34,7 +34,7 @@ class SQLiteQueryTool(Tool):
 
     parameters_model = SQLiteQueryParams
 
-    def __init__(self, safety_config: SafetyConfig | None = None):
+    def __init__(self, safety_config: SafetyConfig | None = None, session_db_path: str | None = None):
         super().__init__(
             name="sqlite_query",
             description="Execute read-only SQL queries (SELECT) against a local SQLite database. Ensure you use the schema tool first to understand the tables.",
@@ -43,9 +43,14 @@ class SQLiteQueryTool(Tool):
             self.validator = SecurityValidator(safety_config)
         else:
             self.validator = SecurityValidator(SafetyConfig(require_approval_for=["sqlite_query"]))
+        self.session_db_path = os.path.realpath(session_db_path) if session_db_path else None
 
     async def execute(self, db_path: str, query: str, **kwargs) -> ToolResult:
         """Execute the SQLite query."""
+        resolved = os.path.realpath(db_path)
+        if self.session_db_path and resolved == self.session_db_path:
+            return ToolResult(error="Access to the session database via this tool is not permitted.")
+
         if self.validator.requires_approval("sqlite_query"):
             approved = await self.validator.get_approval_async(
                 "sqlite_query", f"Querying {db_path}:\n{query}"

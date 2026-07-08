@@ -150,7 +150,7 @@ class SafetyConfig:
     max_file_size: int = 10 * 1024 * 1024
     max_execution_time: int = 60
     require_approval_for: list[str] = field(
-        default_factory=lambda: ["bash", "write_file", "memory"]
+        default_factory=lambda: ["bash", "write_file", "memory", "sqlite_query"]
     )
     approval_callback: Optional[Callable[[str, str], bool]] = None
     async_approval_callback: Optional[Callable[[str, str], Any]] = None

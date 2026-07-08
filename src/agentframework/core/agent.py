@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import Any, Callable
 from uuid import uuid4
 
+from cryptography.fernet import Fernet
+
 from ..constants import ECHO_DATA_DIR
 from ..providers import LLMProvider, LLMProviderProtocol, get_provider, LLMToolCall, LLMResponse
 from ..tools import Tool, ToolResult
@@ -92,6 +94,7 @@ class Agent:
         config: AgentConfig,
         llm_provider: LLMProvider | LLMProviderProtocol,
         session_id: str | None = None,
+        fernet: Fernet | None = None,
     ):
         self.config = config
         self.llm = llm_provider
@@ -114,7 +117,7 @@ class Agent:
         self._llm_lock = asyncio.Lock()
 
         if config.session_enabled:
-            self.session_manager = SessionManager(config.session_dir)
+            self.session_manager = SessionManager(config.session_dir, fernet=fernet)
             if session_id:
                 session = self.session_manager.load_session(session_id)
                 if session:
@@ -813,7 +816,10 @@ class Agent:
 
 
 def create_agent(
-    config: AgentConfig, api_key: str | None = None, session_id: str | None = None
+    config: AgentConfig,
+    api_key: str | None = None,
+    session_id: str | None = None,
+    fernet: Fernet | None = None,
 ) -> Agent:
     """Create an agent with the given configuration."""
     provider = get_provider(
@@ -824,4 +830,4 @@ def create_agent(
         timeout=config.timeout,
         num_ctx=config.num_ctx,
     )
-    return Agent(config, provider, session_id=session_id)
+    return Agent(config, provider, session_id=session_id, fernet=fernet)

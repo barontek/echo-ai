@@ -62,9 +62,9 @@ export const MessageList = memo(function MessageList() {
     }
   }, [messages, isStreaming]);
 
-  const handleEditKeyDown = (e: React.KeyboardEvent, idx: number) => {
+  const handleEditKeyDown = (e: React.KeyboardEvent, idx: number, msgId?: string) => {
     if (e.key === 'Enter' && e.ctrlKey) {
-      editMessage(idx, editText);
+      editMessage(idx, editText, msgId);
       setEditingIndex(null);
     }
     if (e.key === 'Escape') {
@@ -97,7 +97,7 @@ export const MessageList = memo(function MessageList() {
                     onChange={(e) => setEditText(e.target.value)}
                     autoFocus
                     spellCheck={false}
-                    onKeyDown={(e) => handleEditKeyDown(e, idx)}
+                    onKeyDown={(e) => handleEditKeyDown(e, idx, msg.id)}
                   />
                 </div>
               )}
@@ -229,7 +229,7 @@ export const MessageList = memo(function MessageList() {
                   <button
                     className="edit-save"
                     onClick={() => {
-                      editMessage(idx, editText);
+                      editMessage(idx, editText, msg.id);
                       setEditingIndex(null);
                     }}
                   >

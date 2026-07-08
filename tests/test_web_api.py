@@ -370,6 +370,73 @@ class TestSessions:
 
 
 # ---------------------------------------------------------------------------
+# Debug Export
+# ---------------------------------------------------------------------------
+
+
+class TestDebugExportSession:
+    def test_debug_export_locked(self):
+        state = web_api.get_state()
+        state.agent = None
+        response = client.get("/api/sessions/test/debug-export")
+        assert response.status_code == 423
+        assert response.json()["detail"] == "Database is locked"
+
+    def test_debug_export_success(self, mock_agent):
+        state = web_api.get_state()
+        state.agent = mock_agent
+        mock_db = MagicMock()
+        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
+            mock_db
+        )
+        from datetime import datetime
+
+        mock_session = MagicMock(
+            id="sess-001",
+            title="Debug Test",
+            title_generation_attempted=True,
+            created_at=datetime(2026, 3, 19, 14, 30, 52),
+            messages=[{"role": "user", "content": "hello"}],
+            session_metadata={"source": "test"},
+            events=[{"event_type": "created", "data": {}}],
+        )
+        mock_db.query.return_value.filter.return_value.first.return_value = (
+            mock_session
+        )
+
+        response = client.get("/api/sessions/sess-001/debug-export")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "sess-001"
+        assert data["title"] == "Debug Test"
+        assert data["title_generation_attempted"] is True
+        assert data["created_at"] == "2026-03-19T14:30:52"
+        assert data["messages"] == [{"role": "user", "content": "hello"}]
+        assert data["session_metadata"] == {"source": "test"}
+        assert data["events"] == [{"event_type": "created", "data": {}}]
+
+    def test_debug_export_not_found(self, mock_agent):
+        state = web_api.get_state()
+        state.agent = mock_agent
+        mock_db = MagicMock()
+        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
+            mock_db
+        )
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+
+        response = client.get("/api/sessions/nonexistent/debug-export")
+        assert response.status_code == 404
+        assert "nonexistent" in response.json()["detail"]
+
+    def test_debug_export_no_session_manager(self, mock_agent):
+        state = web_api.get_state()
+        state.agent = mock_agent
+        mock_agent.session_manager = None
+        response = client.get("/api/sessions/test/debug-export")
+        assert response.status_code == 503
+
+
+# ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
 

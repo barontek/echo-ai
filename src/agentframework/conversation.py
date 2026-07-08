@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import platform
+import uuid
 from datetime import datetime
 import re
 from dataclasses import dataclass
@@ -43,6 +44,7 @@ class Message:
 
     role: Literal["user", "assistant", "system", "tool"]
     content: str
+    id: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     tool_name: str | None = None
@@ -50,6 +52,10 @@ class Message:
     error_category: str | None = None
     timestamp: str | None = None
     thinking: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.id is None:
+            self.id = "msg_" + uuid.uuid4().hex[:12]
 
 
 def sanitize_json(json_str: str) -> str:

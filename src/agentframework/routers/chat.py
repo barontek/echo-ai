@@ -545,20 +545,34 @@ async def websocket_chat(websocket: WebSocket):
                         else [],
                     },
                 )
-                if (
-                    not session
-                    or edit_index < 0
-                    or edit_index >= len(session.messages) - 1
-                ):
+                target_msg = None
+                target_index = None
+
+                # Find by message_id when available (preferred — survives frontend merging)
+                if message.message_id:
+                    for i, m in enumerate(session.messages):
+                        if m.get("id") == message.message_id:
+                            target_msg = m
+                            target_index = i
+                            break
+
+                # Fall back to index-based mapping for sessions without message IDs
+                if target_msg is None and edit_index is not None:
+                    visible_count = 0
+                    for i, m in enumerate(session.messages):
+                        if m.get("role") in ("system", "tool"):
+                            continue
+                        if visible_count == edit_index:
+                            target_msg = m
+                            target_index = i
+                            break
+                        visible_count += 1
+
+                if target_msg is None:
                     await websocket.send_json(
                         {"type": "error", "content": "Invalid edit index"}
                     )
                     continue
-
-                # Frontend excludes system message from its array, but session includes it
-                # So frontend index 0 = session index 1, frontend index N = session index N+1
-                target_index = edit_index + 1
-                target_msg = session.messages[target_index]
 
                 if target_msg.get("role") != "user":
                     await websocket.send_json(

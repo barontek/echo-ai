@@ -13,6 +13,7 @@ export interface ChatContextValue {
   messages: Array<{
     role: 'user' | 'assistant';
     content: string;
+    id?: string;
     timestamp?: string;
     thinking?: string;
     has_tools?: boolean;
@@ -27,7 +28,7 @@ export interface ChatContextValue {
   setSidebarOpen: (open: boolean) => void;
   sendMessage: (content: string) => void;
   stopGeneration: () => void;
-  editMessage: (index: number, newText: string) => void;
+  editMessage: (index: number, newText: string, msgId?: string) => void;
   retryMessage: (index: number) => void;
   createSession: () => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;

@@ -14,6 +14,7 @@ export const Header = memo(function Header() {
   const chat = useChat();
   const [showDebug, setShowDebug] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -106,6 +107,52 @@ export const Header = memo(function Header() {
               )}
             </pre>
           </div>
+          <div style={{ marginBottom: '8px' }}>
+            <button
+              disabled={!chat.activeSessionId}
+              onClick={async () => {
+                setCopyMsg(null);
+                try {
+                  const res = await fetch(`/api/sessions/${chat.activeSessionId}/debug-export`);
+                  if (!res.ok) {
+                    const body = await res.json().catch(() => null);
+                    throw new Error(body?.detail || `HTTP ${res.status}`);
+                  }
+                  const data = await res.json();
+                  await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+                  setCopyMsg('Copied to clipboard');
+                } catch (err) {
+                  setCopyMsg(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                }
+                setTimeout(() => setCopyMsg(null), 3000);
+              }}
+              style={{
+                padding: '4px 8px',
+                background: chat.activeSessionId ? 'var(--accent)' : '#666',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: chat.activeSessionId ? 'pointer' : 'not-allowed',
+                fontSize: '11px',
+                width: '100%',
+                opacity: chat.activeSessionId ? 1 : 0.5,
+              }}
+            >
+              Copy session JSON
+            </button>
+            {copyMsg && (
+              <div
+                style={{
+                  marginTop: '4px',
+                  fontSize: '10px',
+                  color: copyMsg.startsWith('Failed') ? '#ff6b6b' : '#8f8',
+                }}
+              >
+                {copyMsg}
+              </div>
+            )}
+          </div>
+
           <div>
             <strong>Recent Logs:</strong>
             <div style={{ color: 'var(--text-muted)', fontSize: '9px' }}>Enable debug logging</div>

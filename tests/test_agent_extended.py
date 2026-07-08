@@ -745,3 +745,118 @@ class TestCloseExtended:
             mock_provider.shutdown.side_effect = Exception("otel error")
             mock_get.return_value = mock_provider
             agent.close()
+
+
+class TestSynthesisRetry:
+    """Tests for the post-tool-call synthesis retry logic in _run_loop_streaming."""
+
+    @pytest.mark.asyncio
+    async def test_synthesis_retry_fires_and_succeeds(self):
+        """When synthesis returns only thinking, the retry fires and the final
+        stored message has the retry-provided content."""
+
+        class RetrySucceedsProvider(SimpleProvider):
+            def __init__(self):
+                super().__init__()
+                self._call_num = 0
+
+            async def chat(self, messages, tools=None, temperature=0.3):
+                self._call_num += 1
+                if self._call_num == 1:
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                if self._call_num == 2:
+                    return LLMResponse(content="<think>\nLet me process the result...\n</think>")
+                return LLMResponse(content="final answer after retry")
+
+            async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+                self._call_num += 1
+                if self._call_num == 1:
+                    if on_chunk:
+                        on_chunk("")
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                if self._call_num == 2:
+                    if on_chunk:
+                        on_chunk("<think>\nLet me process the result...\n</think>")
+                    return LLMResponse(content="<think>\nLet me process the result...\n</think>")
+                if on_chunk:
+                    on_chunk("final answer after retry")
+                return LLMResponse(content="final answer after retry")
+
+        config = AgentConfig(
+            session_enabled=False,
+            tools=[SimpleTool()],
+        )
+        agent = Agent(config, RetrySucceedsProvider())
+        agent.add_user_message("use a tool")
+        response, messages = await agent._run_loop(agent.messages)
+        assert "final answer after retry" in response
+        # The final assistant message should have the retry content
+        last = messages[-1]
+        assert last.role == "assistant"
+        assert "final answer after retry" in last.content
+        # The thinking-only message should not appear in the final history
+        thinking_msgs = [
+            m for m in messages
+            if m.role == "assistant" and "<think>" in m.content and "final answer" not in m.content
+        ]
+        assert len(thinking_msgs) == 0, "Thinking-only message should have been replaced"
+        agent.close()
+
+    @pytest.mark.asyncio
+    async def test_synthesis_retry_both_empty_stores_fallback(self):
+        """When both synthesis and retry return only thinking, the fallback
+        message is stored instead of a blank turn."""
+
+        class RetryBothEmptyProvider(SimpleProvider):
+            def __init__(self):
+                super().__init__()
+                self._call_num = 0
+
+            async def chat(self, messages, tools=None, temperature=0.3):
+                self._call_num += 1
+                if self._call_num == 1:
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                return LLMResponse(content="<think>\nLet me process the result...\n</think>")
+
+            async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+                self._call_num += 1
+                if self._call_num == 1:
+                    if on_chunk:
+                        on_chunk("")
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                if on_chunk:
+                    on_chunk("<think>\nLet me process the result...\n</think>")
+                return LLMResponse(content="<think>\nLet me process the result...\n</think>")
+
+        config = AgentConfig(
+            session_enabled=False,
+            tools=[SimpleTool()],
+        )
+        agent = Agent(config, RetryBothEmptyProvider())
+        agent.add_user_message("use a tool")
+        response, messages = await agent._run_loop(agent.messages)
+        assert "No answer generated" in response
+        last = messages[-1]
+        assert last.role == "assistant"
+        assert "No answer generated" in last.content
+        agent.close()

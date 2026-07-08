@@ -107,10 +107,11 @@ def extract_message_fields(msg: Any) -> dict[str, Any]:
         msg: Message as dict or object.
 
     Returns:
-        Dict with role, content, metadata, timestamp, thinking, tool_calls.
+        Dict with role, content, id, metadata, timestamp, thinking, tool_calls.
     """
     role = _get_msg_field(msg, "role", "")
     content = _get_msg_field(msg, "content", "") or ""
+    msg_id = _get_msg_field(msg, "id", None)
     metadata = _get_msg_field(msg, "metadata", None)
     timestamp = _get_msg_field(msg, "timestamp", "")
     thinking = _get_msg_field(msg, "thinking", "")
@@ -123,6 +124,7 @@ def extract_message_fields(msg: Any) -> dict[str, Any]:
     return {
         "role": role,
         "content": content,
+        "id": msg_id,
         "metadata": metadata,
         "timestamp": timestamp,
         "thinking": thinking,
@@ -173,12 +175,16 @@ def filter_messages_for_ui(
         if not timestamp:
             timestamp = default_timestamp if default_timestamp else datetime.now().strftime("%H:%M")
 
+        msg_id = fields.get("id")
         msg_dict = {
             "role": role,
             "content": content,
             "timestamp": timestamp,
             "has_tools": has_tools,
         }
+
+        if msg_id:
+            msg_dict["id"] = msg_id
 
         if tool_calls:
             normalized = [normalize_tool_call(tc) for tc in tool_calls]

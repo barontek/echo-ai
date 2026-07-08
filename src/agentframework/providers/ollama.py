@@ -390,7 +390,7 @@ class OllamaProvider(LLMProvider):
                             or stripped == ""
                             or stripped in COMMON_TOOL_NAMES
                             or (
-                                len(stripped) < 20 and ":" in stripped
+                                stripped.startswith('"') and ":" in stripped
                             )
                         )
 

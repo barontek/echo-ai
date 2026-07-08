@@ -367,7 +367,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   );
 
   const editMessage = useCallback(
-    (index: number, newText: string) => {
+    (index: number, newText: string, msgId?: string) => {
       setMessages((prev) => {
         if (index < 0 || index >= prev.length) return prev;
         return prev.map((m, i) => (i === index ? { ...m, content: newText, error: undefined } : m));
@@ -383,6 +383,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             index: index,
             content: newText,
             session_id: activeSessionId,
+            message_id: msgId || undefined,
           })
         );
       }

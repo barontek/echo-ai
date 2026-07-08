@@ -86,6 +86,49 @@ async def load_session(
     return _web_api.load_session_data(session_id, state)
 
 
+@router.get("/api/sessions/{session_id}/debug-export")
+async def debug_export_session(
+    session_id: str,
+    state: Annotated[AppState, Depends(get_state)],
+    _unlocked: None = Depends(require_unlocked),
+):
+    """Debug export of a session's full database row (decrypted).
+
+    Returns every column from the session row including the decrypted
+    `messages`, `session_metadata`, and `events` fields verbatim.
+
+    This is a support/debug endpoint — the response is meant to be
+    copy-pasted for troubleshooting, not consumed programmatically.
+    """
+    if not (state.agent and state.agent.session_manager):
+        raise HTTPException(
+            status_code=503,
+            detail="Session service is unavailable. Please try again later.",
+        )
+
+    with state.agent.session_manager.SessionLocal() as db:
+        session = (
+            db.query(DBSessionModel)
+            .filter(DBSessionModel.id == session_id)
+            .first()
+        )
+        if session is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Session with ID '{session_id}' was not found.",
+            )
+
+        return {
+            "id": session.id,
+            "title": session.title,
+            "title_generation_attempted": session.title_generation_attempted,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "messages": session.messages,
+            "session_metadata": session.session_metadata,
+            "events": session.events,
+        }
+
+
 @router.delete("/api/sessions/{session_id}")
 async def delete_session(
     session_id: str,

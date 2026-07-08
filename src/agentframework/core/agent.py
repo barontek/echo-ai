@@ -358,6 +358,9 @@ class Agent:
                 )
             self.messages = list(current_messages)
 
+        has_executed_tools = False
+        synthesis_retried = False
+
         for iteration in range(self.config.max_iterations):
             logger.debug(
                 "agent_iteration_start",
@@ -414,6 +417,69 @@ class Agent:
                     extra={"request_id": request_id, "iteration": iteration},
                 )
                 final_content = response.content or ""
+
+                # Post-tool-call synthesis guard: retry once if content is only thinking
+                if has_executed_tools and not synthesis_retried:
+                    display_content = re.sub(
+                        r"<think>.*?</think>", "", final_content, flags=re.DOTALL
+                    ).strip()
+                    if not display_content:
+                        synthesis_retried = True
+                        logger.warning(
+                            "Synthesis retry: tool-call response contained only thinking, re-prompting",
+                            extra={
+                                "request_id": request_id,
+                                "iteration": iteration,
+                                "raw_content_length": len(final_content),
+                            },
+                        )
+                        retry_msg = Message(
+                            role="user",
+                            content="Please provide your answer based on the tool results above.",
+                        )
+                        current_messages.append(retry_msg)
+
+                        llm_messages = await self._prepare_messages(current_messages)
+                        try:
+                            response = await self._call_llm(
+                                llm_messages,
+                                get_tool_schemas(self.config.tools),
+                                on_chunk=wrapped_on_chunk,
+                            )
+                        except asyncio.CancelledError:
+                            partial_response = "".join(partial_chunks)
+                            if partial_response:
+                                assistant_msg = create_assistant_message(
+                                    partial_response, thinking_process
+                                )
+                                current_messages.append(assistant_msg)
+                                if self.session_manager:
+                                    self.session_manager.add_message(
+                                        "assistant",
+                                        partial_response,
+                                        timestamp=datetime.now().strftime("%H:%M"),
+                                    )
+                            logger.debug(
+                                "Generation stopped by user",
+                                extra={"partial_length": len(partial_response)},
+                            )
+                            return partial_response, current_messages
+
+                        current_messages.pop()
+
+                        final_content = response.content or ""
+                        display_content = re.sub(
+                            r"<think>.*?</think>",
+                            "",
+                            final_content,
+                            flags=re.DOTALL,
+                        ).strip()
+                        if not display_content:
+                            fallback = "[No answer generated — the model produced only reasoning. Try rephrasing your question.]"
+                            final_content = fallback
+                            if on_chunk:
+                                on_chunk(fallback)
+
                 self.callback_manager.on_run_end(request_id, final_content)
                 assistant_msg = create_assistant_message(
                     final_content, response.thinking or thinking_process
@@ -461,6 +527,8 @@ class Agent:
                 iteration=iteration,
             )
             current_messages = updated_messages
+
+            has_executed_tools = True
 
             # Persist tool execution results - attach to last assistant message
             if self.session_manager and tool_messages:

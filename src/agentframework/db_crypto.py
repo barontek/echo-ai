@@ -107,6 +107,11 @@ def prompt_create_password(salt_path: Path) -> Fernet:
     sys.exit("Error: Password creation failed after 3 attempts.")
 
 
+def generate_salt() -> bytes:
+    """Generate a fresh 16-byte salt without writing it anywhere."""
+    return secrets.token_bytes(_SALT_LENGTH)
+
+
 def prompt_for_fernet(salt_path: Path) -> Fernet:
     """Prompt for a database password and return a ready-to-use ``Fernet`` instance.
 

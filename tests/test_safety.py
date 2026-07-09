@@ -384,18 +384,17 @@ class TestSQLInjection:
         import uuid
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager = SessionManager(session_dir=tmpdir)
+            with SessionManager(session_dir=tmpdir) as manager:
+                test_ids = [
+                    f"test-{uuid.uuid4().hex[:8]}",
+                    f"session_{uuid.uuid4().hex[:8]}",
+                    f"session.{uuid.uuid4().hex[:8]}",
+                    f"session-{uuid.uuid4().hex[:8]}",
+                ]
 
-            test_ids = [
-                f"test-{uuid.uuid4().hex[:8]}",
-                f"session_{uuid.uuid4().hex[:8]}",
-                f"session.{uuid.uuid4().hex[:8]}",
-                f"session-{uuid.uuid4().hex[:8]}",
-            ]
-
-            for session_id in test_ids:
-                session = manager.create_session(session_id=session_id)
-                assert session.id == session_id
+                for session_id in test_ids:
+                    session = manager.create_session(session_id=session_id)
+                    assert session.id == session_id
 
             sessions, total_count = manager.list_sessions()
             assert total_count == len(test_ids)

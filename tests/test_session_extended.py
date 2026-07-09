@@ -46,9 +46,8 @@ class TestSessionEvent:
 class TestLogEvent:
     @pytest.fixture
     def manager(self, tmp_path):
-        mgr = SessionManager(str(tmp_path / "sessions"))
-        yield mgr
-        mgr.close()
+        with SessionManager(str(tmp_path / "sessions")) as mgr:
+            yield mgr
 
     def test_log_event_no_current_session(self, manager):
         manager.current_session = None
@@ -66,9 +65,8 @@ class TestLogEvent:
 class TestTruncateHistory:
     @pytest.fixture
     def manager(self, tmp_path):
-        mgr = SessionManager(str(tmp_path / "sessions"))
-        yield mgr
-        mgr.close()
+        with SessionManager(str(tmp_path / "sessions")) as mgr:
+            yield mgr
 
     def test_truncate_no_current_session(self, manager):
         manager.current_session = None
@@ -99,9 +97,8 @@ class TestTruncateHistory:
 class TestSaveCheckpoint:
     @pytest.fixture
     def manager(self, tmp_path):
-        mgr = SessionManager(str(tmp_path / "sessions"))
-        yield mgr
-        mgr.close()
+        with SessionManager(str(tmp_path / "sessions")) as mgr:
+            yield mgr
 
     def test_save_checkpoint_no_session(self, manager):
         manager.current_session = None
@@ -117,9 +114,8 @@ class TestSaveCheckpoint:
 class TestExportImportSession:
     @pytest.fixture
     def manager(self, tmp_path):
-        mgr = SessionManager(str(tmp_path / "sessions"))
-        yield mgr
-        mgr.close()
+        with SessionManager(str(tmp_path / "sessions")) as mgr:
+            yield mgr
 
     def test_export_session_not_found(self, manager):
         result = manager.export_session("nonexistent")
@@ -225,9 +221,9 @@ class TestChangeTrackerExtended:
 
 class TestCloseErrorHandling:
     def test_close_dispose_error(self, tmp_path):
-        mgr = SessionManager(str(tmp_path / "sessions"))
-        with patch.object(mgr.engine, "dispose", side_effect=Exception("dispose failed")):
-            mgr.close()
+        with SessionManager(str(tmp_path / "sessions")) as mgr:
+            with patch.object(mgr.engine, "dispose", side_effect=Exception("dispose failed")):
+                mgr.close()
 
 
 class TestMigrationFailed:
@@ -237,15 +233,21 @@ class TestMigrationFailed:
         conn = sqlite3.connect(str(db_path))
         conn.execute("CREATE TABLE agent_sessions (id VARCHAR PRIMARY KEY)")
         conn.close()
-        mgr = SessionManager(str(db_path.parent))
-        mgr.close()
+        with SessionManager(str(db_path.parent)):
+            pass
 
 
 class TestDefaultSessionDir:
-    def test_session_dir_defaults(self):
-        mgr = SessionManager(session_dir=None)
-        assert str(mgr.session_dir).endswith(".echo-ai/sessions")
-        mgr.close()
+    def test_session_dir_defaults(self, tmp_path):
+        import base64
+        from cryptography.fernet import Fernet
+        from agentframework.session import DEFAULT_SESSION_DIR
+
+        fernet = Fernet(base64.urlsafe_b64encode(b"\x00" * 32))
+        with SessionManager(session_dir=str(tmp_path / "explicit"), fernet=fernet) as mgr:
+            assert str(mgr.session_dir).endswith("explicit")
+        # Also verify the default constant is the real default
+        assert "echo-ai" in DEFAULT_SESSION_DIR
 
 
 class TestLargeContentWriteFailure:

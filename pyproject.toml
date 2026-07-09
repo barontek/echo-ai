@@ -98,6 +98,22 @@ markers = [
 ]
 timeout = 30
 timeout_method = "thread"
+filterwarnings = [
+    "error::ResourceWarning",
+    # Python 3.14 interpreter-shutdown GC artifact — even after engine.dispose(),
+    # sqlalchemy's pool-reference cleanup can trigger a ResourceWarning during
+    # the final gc.collect() inside asyncio.run() or pytest's gc_collect_harder.
+    # Confirmed: clean isolated `with SessionManager:` reproduction produces
+    # zero warnings; only the full-suite GC race across test boundaries does.
+    # Traceback always points to stdlib (threading.py, selectable.py, etc),
+    # never to application code. See AGENTS.md or git log for the full
+    # investigation history.
+    "ignore:unclosed database.*:pytest.PytestUnraisableExceptionWarning",
+    "ignore:unclosed database.*:ResourceWarning",
+    "ignore:unclosed event loop.*:ResourceWarning",
+]
+
+
 
 
 [tool.pyright]

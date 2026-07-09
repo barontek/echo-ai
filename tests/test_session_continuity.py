@@ -233,15 +233,14 @@ class TestSessionContinuity:
         agent.save_session()
 
         # Verify saved to DB
-        manager = SessionManager(temp_session_dir)
-        loaded = manager.load_session("test-load")
-        assert loaded is not None
-        assert len(loaded.messages) >= 2
+        with SessionManager(temp_session_dir) as manager:
+            loaded = manager.load_session("test-load")
+            assert loaded is not None
+            assert len(loaded.messages) >= 2
 
-        user_msg = next((m for m in loaded.messages if m.get("role") == "user"), None)
-        assert user_msg is not None
-        assert user_msg.get("timestamp") == "10:30"
-
+            user_msg = next((m for m in loaded.messages if m.get("role") == "user"), None)
+            assert user_msg is not None
+            assert user_msg.get("timestamp") == "10:30"
         agent.close()
 
 

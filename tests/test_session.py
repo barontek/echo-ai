@@ -121,9 +121,8 @@ def session_dir(tmp_path):
 
 @pytest.fixture
 def manager(session_dir):
-    mgr = SessionManager(session_dir)
-    yield mgr
-    mgr.close()
+    with SessionManager(session_dir) as mgr:
+        yield mgr
 
 
 class TestSessionManagerCRUD:
@@ -395,9 +394,8 @@ class TestMigration:
         db_dir.mkdir()
 
         # Create a session through the normal encrypted path
-        mgr = SessionManager(str(db_dir), fernet=test_fernet)
-        mgr.create_session(session_id="legacy_session")
-        mgr.close()
+        with SessionManager(str(db_dir), fernet=test_fernet) as mgr:
+            mgr.create_session(session_id="legacy_session")
 
         # Drop title column via table recreation to simulate pre-migration schema
         conn = sqlite3.connect(str(db_dir / "agent_sessions.db"))
@@ -419,28 +417,25 @@ class TestMigration:
         conn.close()
 
         # Re-open — migration should add the title column
-        mgr = SessionManager(str(db_dir), fernet=test_fernet)
-        sessions, total = mgr.list_sessions()
-        assert len(sessions) == 1
-        assert total == 1
-        assert sessions[0].id == "legacy_session"
-        assert sessions[0].title is None
-        mgr.close()
+        with SessionManager(str(db_dir), fernet=test_fernet) as mgr:
+            sessions, total = mgr.list_sessions()
+            assert len(sessions) == 1
+            assert total == 1
+            assert sessions[0].id == "legacy_session"
+            assert sessions[0].title is None
 
     def test_migration_idempotent(self, tmp_path):
         db_dir = tmp_path / "idempotent_test"
         db_dir.mkdir()
 
-        mgr1 = SessionManager(str(db_dir))
-        mgr1.create_session(session_id="test", title="Hello")
-        mgr1.close()
+        with SessionManager(str(db_dir)) as mgr1:
+            mgr1.create_session(session_id="test", title="Hello")
 
-        mgr2 = SessionManager(str(db_dir))
-        sessions, total = mgr2.list_sessions()
-        assert len(sessions) == 1
-        assert total == 1
-        assert sessions[0].title == "Hello"
-        mgr2.close()
+        with SessionManager(str(db_dir)) as mgr2:
+            sessions, total = mgr2.list_sessions()
+            assert len(sessions) == 1
+            assert total == 1
+            assert sessions[0].title == "Hello"
 
 
 class TestSessionImportExport:
@@ -459,15 +454,12 @@ class TestSessionImportExport:
         data = manager.export_session("export_me")
         assert data is not None
 
-        mgr2 = SessionManager(str(manager.session_dir))
-        try:
+        with SessionManager(str(manager.session_dir)) as mgr2:
             mgr2.delete_session("export_me")
             imported = mgr2.import_session(data)
             assert imported.id == "export_me"
             assert imported.title == "Export Test"
             assert imported.messages == [{"role": "user", "content": "hello"}]
-        finally:
-            mgr2.close()
 
     def test_import_session_without_created_at_defaults_to_now(self, manager):
         data = {"id": "imported_now", "messages": [], "metadata": {}}
@@ -517,18 +509,17 @@ class TestEncryptionErrors:
     def test_wrong_password_raises_clear_error(self, session_dir):
         """Loading a session encrypted with key A using key B gives a clear message."""
         # Save session with the module-wide test key
-        mgr1 = SessionManager(session_dir)
-        mgr1.create_session(session_id="wrong_pw_test")
-        mgr1.add_message("user", "secret data")
-        mgr1.close()
+        with SessionManager(session_dir) as mgr1:
+            mgr1.create_session(session_id="wrong_pw_test")
+            mgr1.add_message("user", "secret data")
 
         # Swap to a different key and try to load
         wrong_key = Fernet(base64.urlsafe_b64encode(b"\xff" * 32))
         set_fernet(wrong_key)
         try:
             with pytest.raises(ValueError, match="Incorrect database password"):
-                mgr2 = SessionManager(session_dir)
-                mgr2.load_session("wrong_pw_test")
+                with SessionManager(session_dir) as mgr2:
+                    mgr2.load_session("wrong_pw_test")
         finally:
             set_fernet(_TEST_FERNET)
 
@@ -660,8 +651,8 @@ class TestSessionVisibility:
     def session_dir(self, tmp_path):
         d = tmp_path / "test_sessions"
         d.mkdir()
-        mgr = SessionManager(str(d))
-        mgr.close()
+        with SessionManager(str(d)):
+            pass
         return str(d)
 
     def test_cross_thread_visibility(self, session_dir):
@@ -670,8 +661,7 @@ class TestSessionVisibility:
         barrier = threading.Barrier(2, timeout=10)
 
         def reader():
-            mgr_a = SessionManager(session_dir)
-            try:
+            with SessionManager(session_dir) as mgr_a:
                 barrier.wait()
                 barrier.wait()
                 sid = results.get("session_id")
@@ -680,20 +670,15 @@ class TestSessionVisibility:
                     results["found"] = loaded is not None
                     if loaded:
                         results["msgs"] = len(loaded.messages)
-            finally:
-                mgr_a.close()
 
         def writer():
-            mgr_b = SessionManager(session_dir)
-            try:
+            with SessionManager(session_dir) as mgr_b:
                 barrier.wait()
                 session = mgr_b.create_session(title="cross-thread")
                 mgr_b.add_message("user", "hello from B")
                 mgr_b.add_message("assistant", "reply from B")
                 results["session_id"] = session.id
                 barrier.wait()
-            finally:
-                mgr_b.close()
 
         t_a = threading.Thread(target=reader, daemon=True)
         t_b = threading.Thread(target=writer, daemon=True)
@@ -711,8 +696,7 @@ class TestSessionVisibility:
         barrier = threading.Barrier(2, timeout=10)
 
         def reader():
-            mgr_a = SessionManager(session_dir)
-            try:
+            with SessionManager(session_dir) as mgr_a:
                 mgr_a.load_session("nonexistent")
                 barrier.wait()
                 barrier.wait()
@@ -720,18 +704,13 @@ class TestSessionVisibility:
                 if sid:
                     loaded = mgr_a.load_session(str(sid))
                     results["found"] = loaded is not None
-            finally:
-                mgr_a.close()
 
         def writer():
-            mgr_b = SessionManager(session_dir)
-            try:
+            with SessionManager(session_dir) as mgr_b:
                 barrier.wait()
                 session = mgr_b.create_session(title="warmup")
                 results["session_id"] = session.id
                 barrier.wait()
-            finally:
-                mgr_b.close()
 
         t_a = threading.Thread(target=reader, daemon=True)
         t_b = threading.Thread(target=writer, daemon=True)
@@ -745,9 +724,7 @@ class TestSessionVisibility:
     @pytest.mark.parametrize("scenario", ["sequential", "reverse", "interleaved"])
     def test_create_then_load_scenarios(self, session_dir, scenario):
         """Various create/load scenarios across managers."""
-        rest = SessionManager(session_dir)
-        ws = SessionManager(session_dir)
-        try:
+        with SessionManager(session_dir) as rest, SessionManager(session_dir) as ws:
             if scenario == "sequential":
                 rest.create_session(session_id="seq_001")
                 assert ws.load_session("seq_001") is not None
@@ -759,15 +736,10 @@ class TestSessionVisibility:
                 ws.create_session(session_id="inter_b")
                 assert ws.load_session("inter_a") is not None
                 assert rest.load_session("inter_b") is not None
-        finally:
-            rest.close()
-            ws.close()
 
     def test_fallback_create_on_load_failure(self, session_dir):
         """If cross-manager load fails, create_session with same id recovers."""
-        rest = SessionManager(session_dir)
-        ws = SessionManager(session_dir)
-        try:
+        with SessionManager(session_dir) as rest, SessionManager(session_dir) as ws:
             rest.create_session(session_id="fallback_test")
 
             loaded = ws.load_session("fallback_test")
@@ -777,77 +749,52 @@ class TestSessionVisibility:
 
             assert loaded is not None
             assert loaded.id == "fallback_test"
-        finally:
-            rest.close()
-            ws.close()
 
     def test_high_frequency_sequential(self, session_dir):
         """Stress sequential create/load across managers."""
-        rest = SessionManager(session_dir)
-        ws = SessionManager(session_dir)
-        try:
+        with SessionManager(session_dir) as rest, SessionManager(session_dir) as ws:
             for i in range(50):
                 sid = f"hf_{i:03d}"
                 rest.create_session(session_id=sid)
                 loaded = ws.load_session(sid)
                 assert loaded is not None, f"Session {sid} not found at iter {i}"
-        finally:
-            rest.close()
-            ws.close()
 
 
 def test_load_created_session_across_managers(session_dir):
     """Simulate: REST API creates session → WS handler loads it."""
-    rest_mgr = SessionManager(session_dir)
-    ws_mgr = SessionManager(session_dir)
-    try:
+    with SessionManager(session_dir) as rest_mgr, SessionManager(session_dir) as ws_mgr:
         session_id = "cross_mgr_test"
         rest_mgr.create_session(session_id=session_id, title="REST-created")
         loaded = ws_mgr.load_session(session_id)
         assert loaded is not None
         assert loaded.id == session_id
         assert loaded.title == "REST-created"
-    finally:
-        rest_mgr.close()
-        ws_mgr.close()
 
 
 def test_reverse_direction(session_dir):
     """Symmetry check: create on WS-side, load on REST-side."""
-    ws_mgr = SessionManager(session_dir)
-    rest_mgr = SessionManager(session_dir)
-    try:
+    with SessionManager(session_dir) as ws_mgr, SessionManager(session_dir) as rest_mgr:
         session_id = "reverse_test"
         ws_mgr.create_session(session_id=session_id, title="WS-created")
         loaded = rest_mgr.load_session(session_id)
         assert loaded is not None
         assert loaded.id == session_id
-    finally:
-        ws_mgr.close()
-        rest_mgr.close()
 
 
 def test_concurrent_create_and_load_persists_across_managers(session_dir):
     """Stress-test sequential creates/loads across managers."""
-    mgr_a = SessionManager(session_dir)
-    mgr_b = SessionManager(session_dir)
-    try:
+    with SessionManager(session_dir) as mgr_a, SessionManager(session_dir) as mgr_b:
         for i in range(10):
             sid = f"concurrent_test_{i}"
             mgr_a.create_session(session_id=sid, title=f"Session {i}")
             loaded = mgr_b.load_session(sid)
             assert loaded is not None
             assert loaded.title == f"Session {i}"
-    finally:
-        mgr_a.close()
-        mgr_b.close()
 
 
 def test_session_with_messages_visibility(session_dir):
     """Verify messages written by one manager are visible to another."""
-    writer = SessionManager(session_dir)
-    reader = SessionManager(session_dir)
-    try:
+    with SessionManager(session_dir) as writer, SessionManager(session_dir) as reader:
         sid = "msg_visibility_test"
         writer.create_session(session_id=sid)
         writer.add_message("user", "Hello from writer")
@@ -858,6 +805,3 @@ def test_session_with_messages_visibility(session_dir):
         assert loaded.messages[0]["role"] == "user"
         assert loaded.messages[0]["content"] == "Hello from writer"
         assert loaded.messages[1]["role"] == "assistant"
-    finally:
-        writer.close()
-        reader.close()

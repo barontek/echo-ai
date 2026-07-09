@@ -5,3 +5,4 @@ export { ChatInput } from './ChatInput';
 export { ApprovalDialog } from './ApprovalDialog';
 export { UnlockScreen } from './UnlockScreen';
 export { SetupScreen } from './SetupScreen';
+export { ChangePasswordDialog } from './ChangePasswordDialog';

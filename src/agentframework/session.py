@@ -562,14 +562,29 @@ class SessionManager:
         self.log_event("session_imported", {"original_id": data.get("id")})
         return session
 
+    def __del__(self) -> None:
+        """Try to clean up the engine pool on garbage collection."""
+        if hasattr(self, "engine") and self.engine is not None:
+            try:
+                self.engine.dispose()
+            except Exception:
+                pass
+
     def close(self) -> None:
         """Dispose of the database engine and any connections in its pool."""
-        if hasattr(self, "engine") and self.engine:
+        if hasattr(self, "engine") and self.engine is not None:
             try:
                 self.engine.dispose()
                 logger.debug("Successfully disposed of SQLAlchemy engine.")
             except Exception as e:
                 logger.error("Failed to dispose of SQLAlchemy engine: %s", e)
+            self.engine = None
+
+    def __enter__(self) -> "SessionManager":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
 
 
 class ChangeTracker:

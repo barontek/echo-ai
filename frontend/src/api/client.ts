@@ -98,6 +98,14 @@ class ApiClient {
     await this.client.post('/api/setup', { password, confirm });
   }
 
+  async changePassword(currentPassword: string, newPassword: string, confirm: string): Promise<void> {
+    await this.client.post('/api/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+      confirm,
+    });
+  }
+
 }
 
 export const api = new ApiClient();

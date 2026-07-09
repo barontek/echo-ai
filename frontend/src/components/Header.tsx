@@ -1,5 +1,6 @@
 import { memo, useState } from 'react';
 import { useChat } from '../context';
+import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 function getInitialTheme(): 'dark' | 'light' {
   const saved = localStorage.getItem('theme');
@@ -13,6 +14,7 @@ function getInitialTheme(): 'dark' | 'light' {
 export const Header = memo(function Header() {
   const chat = useChat();
   const [showDebug, setShowDebug] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
@@ -157,7 +159,32 @@ export const Header = memo(function Header() {
             <strong>Recent Logs:</strong>
             <div style={{ color: 'var(--text-muted)', fontSize: '9px' }}>Enable debug logging</div>
           </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '8px 0' }} />
+
+          <button
+            onClick={() => {
+              setShowDebug(false);
+              setShowChangePassword(true);
+            }}
+            style={{
+              padding: '6px 8px',
+              background: 'var(--accent)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              width: '100%',
+            }}
+          >
+            Change Password
+          </button>
         </div>
+      )}
+
+      {showChangePassword && (
+        <ChangePasswordDialog onClose={() => setShowChangePassword(false)} />
       )}
     </>
   );

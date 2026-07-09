@@ -19,13 +19,16 @@ import logging
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+import base64
+import json
+import sqlite3
 
 from ..config import DEFAULT_SESSION_DIR, load_config
-from ..db_crypto import create_password, derive_key, is_first_run
+from ..db_crypto import create_password, derive_key, generate_salt, is_first_run
 from ..session import SessionManager, set_fernet
-from ..web_models import get_state
+from ..web_models import get_state, require_unlocked
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,12 @@ class UnlockRequest(BaseModel):
 
 class SetupRequest(BaseModel):
     password: str
+    confirm: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
     confirm: str
 
 
@@ -181,6 +190,123 @@ async def unlock_database(request: Request, body: UnlockRequest):
         logger.warning("Could not create runtime agent on unlock: %s", exc)
 
     return {"status": "unlocked"}
+
+
+@router.post("/api/change-password")
+async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocked)):
+    """Re-encrypt all stored sessions under a new password.
+
+    Gated by :func:`require_unlocked` — the caller must already hold a valid
+    unlocked session.  The endpoint independently re-verifies
+    *current_password* before doing any work, then re-encrypts every row inside
+    a single transaction.  The salt file and in-memory Fernet are only updated
+    *after* the transaction commits successfully.
+    """
+    session_dir = _session_dir()
+    salt_path = session_dir / ".db_salt"
+    db_path = _db_path(session_dir)
+
+    # -----------------------------------------------------------------
+    # 1. Validate inputs
+    # -----------------------------------------------------------------
+    if body.new_password != body.confirm:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long",
+        )
+
+    # -----------------------------------------------------------------
+    # 2. Verify current_password independently by deriving a Fernet
+    #    from it and confirming it matches what is already in memory.
+    # -----------------------------------------------------------------
+    current_salt = salt_path.read_bytes()
+    current_key = derive_key(body.current_password, current_salt)
+    current_fernet = Fernet(current_key)
+
+    state = get_state()
+    if state.fernet is None:
+        raise HTTPException(status_code=500, detail="No Fernet configured")
+
+    # Confirm current_password produces the same Fernet key as the one
+    # that is currently in memory — protects against e.g. an already-open
+    # browser tab being used to silently change the password.
+    # derive_key returns base64-urlsafe-encoded bytes; compare decoded raw keys.
+    stored_raw_key = state.fernet._signing_key + state.fernet._encryption_key
+    if base64.urlsafe_b64decode(current_key) != stored_raw_key:
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    # -----------------------------------------------------------------
+    # 3. Generate new salt + new Fernet (but do NOT persist yet)
+    # -----------------------------------------------------------------
+    new_salt = generate_salt()
+    new_key = derive_key(body.new_password, new_salt)
+    new_fernet = Fernet(new_key)
+
+    # -----------------------------------------------------------------
+    # 4. Re-encrypt every row inside a single DB transaction
+    # -----------------------------------------------------------------
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.execute(
+            "SELECT id, messages, session_metadata, events FROM agent_sessions"
+        )
+        rows: list[tuple[str, bytes, bytes | None, bytes | None]] = list(cursor.fetchall())
+
+        update_stmt = (
+            "UPDATE agent_sessions SET messages = ?, session_metadata = ?, events = ? WHERE id = ?"
+        )
+
+        for row_id, msg_raw, meta_raw, evt_raw in rows:
+            decrypted_messages = json.loads(current_fernet.decrypt(msg_raw).decode("utf-8"))
+            decrypted_metadata: dict = {}
+            if meta_raw is not None:
+                decrypted_metadata = json.loads(current_fernet.decrypt(meta_raw).decode("utf-8"))
+            decrypted_events: list = []
+            if evt_raw is not None:
+                decrypted_events = json.loads(current_fernet.decrypt(evt_raw).decode("utf-8"))
+
+            new_msg_raw = new_fernet.encrypt(json.dumps(decrypted_messages, default=str).encode("utf-8"))
+            new_meta_raw = (
+                new_fernet.encrypt(json.dumps(decrypted_metadata, default=str).encode("utf-8"))
+                if meta_raw is not None
+                else None
+            )
+            new_evt_raw = (
+                new_fernet.encrypt(json.dumps(decrypted_events, default=str).encode("utf-8"))
+                if evt_raw is not None
+                else None
+            )
+
+            conn.execute(update_stmt, (new_msg_raw, new_meta_raw, new_evt_raw, row_id))
+
+        conn.commit()
+    except Exception as exc:
+        if conn is not None:
+            conn.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Re-encryption failed — database unchanged: {exc}",
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+    # -----------------------------------------------------------------
+    # 5. Persist the new salt and update in-memory state
+    # -----------------------------------------------------------------
+    salt_path.write_bytes(new_salt)
+    salt_path.chmod(0o600)
+    state.fernet = new_fernet
+    set_fernet(new_fernet)
+
+    logger.info("Database password changed — all sessions re-encrypted with new key")
+
+    return {"status": "password_changed"}
 
 
 @router.get("/api/status")

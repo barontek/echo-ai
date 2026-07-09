@@ -183,20 +183,32 @@ class TestAgentSession:
         assert "loaded" in loaded.lower()
 
     def test_save_session_no_session_manager(self, agent):
+        original_mgr = agent.session_manager
         agent.session_manager = None
-        result = agent.save_session("test")
-        assert "not enabled" in result
+        try:
+            result = agent.save_session("test")
+            assert "not enabled" in result
+        finally:
+            agent.session_manager = original_mgr
 
     def test_load_session_no_session_manager(self, agent):
+        original_mgr = agent.session_manager
         agent.session_manager = None
-        result = agent.load_session("test")
-        assert "not enabled" in result
+        try:
+            result = agent.load_session("test")
+            assert "not enabled" in result
+        finally:
+            agent.session_manager = original_mgr
 
     def test_list_sessions_no_session_manager(self, agent):
+        original_mgr = agent.session_manager
         agent.session_manager = None
-        ids, total = agent.list_sessions()
-        assert ids == []
-        assert total == 0
+        try:
+            ids, total = agent.list_sessions()
+            assert ids == []
+            assert total == 0
+        finally:
+            agent.session_manager = original_mgr
 
     def test_list_sessions(self, agent):
         agent._ensure_session("test-list")
@@ -419,12 +431,11 @@ class TestExtractThinkingExtended:
 class TestAgentInitWithSession:
     def test_init_with_existing_session(self, tmp_path):
         session_dir = tmp_path / "sessions"
-        sm = SessionManager(str(session_dir))
-        sm.create_session(session_id="existing-session")
-        sm.current_session.messages = [{"role": "user", "content": "hello"}]
-        sm.save_session()
-        session_id = sm.current_session.id
-        sm.close()
+        with SessionManager(str(session_dir)) as sm:
+            sm.create_session(session_id="existing-session")
+            sm.current_session.messages = [{"role": "user", "content": "hello"}]
+            sm.save_session()
+            session_id = sm.current_session.id
 
         agent = Agent(
             AgentConfig(session_enabled=True, session_dir=str(session_dir)),

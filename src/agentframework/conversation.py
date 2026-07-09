@@ -79,25 +79,42 @@ def estimate_tokens(text: str) -> int:
 def split_thinking_content(raw_content: str) -> tuple[str, str | None]:
     """Extract <think>...</think> tags from content.
 
+    Supports multiple <think>...</think> blocks -- their contents are
+    concatenated in order with ``\n\n`` separators. An unterminated
+    trailing <think> (without a closing </think>) is also captured.
+
     Returns (clean_content, thinking_text). If no thinking tags are
     found *thinking_text* is None and *clean_content* equals *raw_content*.
     """
     if "<think>" not in raw_content:
         return raw_content, None
 
-    match = re.search(r"<think>(.*?)</think>", raw_content, re.DOTALL)
-    if match:
-        thinking = match.group(1).strip()
-        clean = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
-        return clean, thinking
+    thinking_parts: list[str] = []
+    clean_parts: list[str] = []
+    pos = 0
 
-    match = re.search(r"<think>(.*)", raw_content, re.DOTALL)
-    if match:
-        thinking = match.group(1).strip()
-        clean = raw_content[:match.start()].strip()
-        return clean, thinking
+    for m in re.finditer(r"<think>", raw_content):
+        start = m.start()
 
-    return raw_content, None
+        clean_parts.append(raw_content[pos:start])
+
+        rest = raw_content[m.end():]
+        close = re.search(r"</think>", rest)
+        if close:
+            thinking_parts.append(rest[:close.start()].strip())
+            pos = m.end() + close.end()
+        else:
+            thinking_parts.append(rest.strip())
+            pos = len(raw_content)
+            break
+
+    clean_parts.append(raw_content[pos:])
+    clean = "".join(clean_parts).strip()
+
+    if not thinking_parts:
+        return raw_content, None
+
+    return clean, "\n\n".join(thinking_parts)
 
 
 def create_assistant_message(content: str, thinking: str | None = None) -> Message:

@@ -452,7 +452,7 @@ def get_tools(config: dict, safety_config: SafetyConfig) -> list:
             elif default_value is not None:
                 kwargs[key] = default_value
 
-        if tool_name == "sqlite_query":
+        if tool_name in {"sqlite_query", "sqlite_schema"}:
             session_dir = config.get("agent", {}).get("session_dir", DEFAULT_SESSION_DIR)
             kwargs["session_db_path"] = str(Path(session_dir) / "agent_sessions.db")
 

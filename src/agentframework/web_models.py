@@ -20,6 +20,7 @@ class AppState:
 
     agent: Agent | None = None
     fernet: Fernet | None = None
+    fernet_key: bytes | None = None
     current_session_id: str | None = None
     message_history: list[dict[str, Any]] = field(default_factory=list)
 

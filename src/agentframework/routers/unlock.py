@@ -14,20 +14,21 @@ the assumption is a single trusted user per running instance.
 
 from __future__ import annotations
 
-import os
+import asyncio
+import json
 import logging
+import os
+import secrets
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-import base64
-import json
-import sqlite3
+from sqlalchemy import create_engine, text
 
 from ..config import DEFAULT_SESSION_DIR, load_config
-from ..db_crypto import create_password, derive_key, generate_salt, is_first_run
-from ..session import SessionManager, set_fernet
+from ..db_crypto import derive_key, generate_salt, get_or_create_salt, is_first_run
+from ..session import SessionManager, db_write_lock, set_fernet
 from ..web_models import get_state, require_unlocked
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,9 @@ async def setup_database(request: Request, body: SetupRequest):
         )
 
     session_dir.mkdir(parents=True, exist_ok=True)
-    fernet = create_password(body.password, salt_path)
+    salt = get_or_create_salt(salt_path)
+    key = derive_key(body.password, salt)
+    fernet = Fernet(key)
 
     set_fernet(fernet)
     test_sm: SessionManager | None = None
@@ -106,6 +109,7 @@ async def setup_database(request: Request, body: SetupRequest):
 
     state = get_state()
     state.fernet = fernet
+    state.fernet_key = key
 
     prefs = _web_api._load_preferences()
     model = prefs.get("model", "")
@@ -175,6 +179,7 @@ async def unlock_database(request: Request, body: UnlockRequest):
     # Success — store on app state
     state = get_state()
     state.fernet = fernet
+    state.fernet_key = key
 
     # Build a default agent from preferences / config so REST endpoints work
     prefs = _web_api._load_preferences()
@@ -227,15 +232,13 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
     current_fernet = Fernet(current_key)
 
     state = get_state()
-    if state.fernet is None:
+    if state.fernet_key is None:
         raise HTTPException(status_code=500, detail="No Fernet configured")
 
     # Confirm current_password produces the same Fernet key as the one
     # that is currently in memory — protects against e.g. an already-open
     # browser tab being used to silently change the password.
-    # derive_key returns base64-urlsafe-encoded bytes; compare decoded raw keys.
-    stored_raw_key = state.fernet._signing_key + state.fernet._encryption_key
-    if base64.urlsafe_b64decode(current_key) != stored_raw_key:
+    if not secrets.compare_digest(current_key, state.fernet_key):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
 
     # -----------------------------------------------------------------
@@ -247,62 +250,95 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
 
     # -----------------------------------------------------------------
     # 4. Re-encrypt every row inside a single DB transaction
+    #
+    #    The entire critical section — from reading rows through to
+    #    committing the new salt and swapping state.fernet — is
+    #    serialised under db_write_lock so that no concurrent chat
+    #    write (save_session / add_message / delete_session etc.)
+    #    can interleave.  This prevents two classes of corruption:
+    #      a) a row written with the old Fernet after state.fernet
+    #         has already been swapped to the new key (unreadable);
+    #      b) the SQLAlchemy connection pool and a raw connection
+    #         fighting over the same SQLite file.
+    #
+    #    The lock is acquired via asyncio.to_thread because the
+    #    underlying Lock is a threading.Lock (not asyncio-compatible
+    #    natively) and the same lock is held by SessionManager's
+    #    synchronous write methods.
     # -----------------------------------------------------------------
-    conn: sqlite3.Connection | None = None
+    await asyncio.to_thread(db_write_lock.acquire)
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("BEGIN IMMEDIATE")
-        cursor = conn.execute(
-            "SELECT id, messages, session_metadata, events FROM agent_sessions"
+        engine = create_engine(
+            f"sqlite:///{db_path}",
+            connect_args={"check_same_thread": False},
         )
-        rows: list[tuple[str, bytes, bytes | None, bytes | None]] = list(cursor.fetchall())
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA journal_mode=WAL"))
+                conn.execute(text("PRAGMA synchronous=NORMAL"))
 
-        update_stmt = (
-            "UPDATE agent_sessions SET messages = ?, session_metadata = ?, events = ? WHERE id = ?"
-        )
+                rows = conn.execute(
+                    text("SELECT id, messages, session_metadata, events FROM agent_sessions")
+                ).fetchall()
 
-        for row_id, msg_raw, meta_raw, evt_raw in rows:
-            decrypted_messages = json.loads(current_fernet.decrypt(msg_raw).decode("utf-8"))
-            decrypted_metadata: dict = {}
-            if meta_raw is not None:
-                decrypted_metadata = json.loads(current_fernet.decrypt(meta_raw).decode("utf-8"))
-            decrypted_events: list = []
-            if evt_raw is not None:
-                decrypted_events = json.loads(current_fernet.decrypt(evt_raw).decode("utf-8"))
+                for row in rows:
+                    row_id = row._mapping["id"]
+                    msg_raw = row._mapping["messages"]
+                    meta_raw = row._mapping["session_metadata"]
+                    evt_raw = row._mapping["events"]
 
-            new_msg_raw = new_fernet.encrypt(json.dumps(decrypted_messages, default=str).encode("utf-8"))
-            new_meta_raw = (
-                new_fernet.encrypt(json.dumps(decrypted_metadata, default=str).encode("utf-8"))
-                if meta_raw is not None
-                else None
-            )
-            new_evt_raw = (
-                new_fernet.encrypt(json.dumps(decrypted_events, default=str).encode("utf-8"))
-                if evt_raw is not None
-                else None
-            )
+                    decrypted_messages = json.loads(current_fernet.decrypt(msg_raw).decode("utf-8"))
+                    decrypted_metadata: dict = {}
+                    if meta_raw is not None:
+                        decrypted_metadata = json.loads(current_fernet.decrypt(meta_raw).decode("utf-8"))
+                    decrypted_events: list = []
+                    if evt_raw is not None:
+                        decrypted_events = json.loads(current_fernet.decrypt(evt_raw).decode("utf-8"))
 
-            conn.execute(update_stmt, (new_msg_raw, new_meta_raw, new_evt_raw, row_id))
+                    new_msg_raw = new_fernet.encrypt(
+                        json.dumps(decrypted_messages, default=str).encode("utf-8")
+                    )
+                    new_meta_raw = (
+                        new_fernet.encrypt(json.dumps(decrypted_metadata, default=str).encode("utf-8"))
+                        if meta_raw is not None
+                        else None
+                    )
+                    new_evt_raw = (
+                        new_fernet.encrypt(json.dumps(decrypted_events, default=str).encode("utf-8"))
+                        if evt_raw is not None
+                        else None
+                    )
 
-        conn.commit()
-    except Exception as exc:
-        if conn is not None:
+                    conn.execute(
+                        text(
+                            "UPDATE agent_sessions "
+                            "SET messages = :msg, session_metadata = :meta, events = :evt "
+                            "WHERE id = :id"
+                        ),
+                        {"msg": new_msg_raw, "meta": new_meta_raw, "evt": new_evt_raw, "id": row_id},
+                    )
+
+                conn.commit()
+        except Exception as exc:
             conn.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Re-encryption failed — database unchanged: {exc}",
-        )
-    finally:
-        if conn is not None:
-            conn.close()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Re-encryption failed — database unchanged: {exc}",
+            )
+        finally:
+            engine.dispose()
 
-    # -----------------------------------------------------------------
-    # 5. Persist the new salt and update in-memory state
-    # -----------------------------------------------------------------
-    salt_path.write_bytes(new_salt)
-    salt_path.chmod(0o600)
-    state.fernet = new_fernet
-    set_fernet(new_fernet)
+        # -----------------------------------------------------------------
+        # 5. Persist the new salt and update in-memory state
+        #    (still under db_write_lock — no write path can interleave)
+        # -----------------------------------------------------------------
+        salt_path.write_bytes(new_salt)
+        salt_path.chmod(0o600)
+        state.fernet = new_fernet
+        state.fernet_key = new_key
+        set_fernet(new_fernet)
+    finally:
+        db_write_lock.release()
 
     logger.info("Database password changed — all sessions re-encrypted with new key")
 

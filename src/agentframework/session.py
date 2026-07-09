@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +17,15 @@ from .constants import ECHO_DATA_DIR
 from .db_crypto import prompt_for_fernet
 
 logger = logging.getLogger(__name__)
+
+# Process-wide lock serialising all writes to agent_sessions.
+# Every write path — SessionManager.save_session / delete_session / purge_* AND
+# the change_password re-encryption in routers/unlock.py — must hold this lock.
+# The lock is a plain threading.Lock (not RLock) because:
+#   - write methods never re-enter each other on the same thread, and
+#   - change_password acquires via asyncio.to_thread and releases on the
+#     async-event-loop thread, which RLock would not allow.
+db_write_lock = threading.Lock()
 
 DEFAULT_SESSION_DIR = str(ECHO_DATA_DIR / "sessions")
 DEFAULT_BACKUP_DIR = str(ECHO_DATA_DIR / "sessions" / ".backups")
@@ -324,18 +334,19 @@ class SessionManager:
         if session is None:
             return
 
-        with self.SessionLocal() as db:
-            db_session = DBSessionModel(
-                id=session.id,
-                title=session.title,
-                title_generation_attempted=session.title_generation_attempted,
-                created_at=session.created_at,
-                messages=session.messages,
-                session_metadata=session.metadata,
-                events=session.events or [],
-            )
-            db.merge(db_session)
-            db.commit()
+        with db_write_lock:
+            with self.SessionLocal() as db:
+                db_session = DBSessionModel(
+                    id=session.id,
+                    title=session.title,
+                    title_generation_attempted=session.title_generation_attempted,
+                    created_at=session.created_at,
+                    messages=session.messages,
+                    session_metadata=session.metadata,
+                    events=session.events or [],
+                )
+                db.merge(db_session)
+                db.commit()
 
     def truncate_history(self, index: int) -> None:
         """Truncate session history to the given index (exclusive), dropping all subsequent messages."""
@@ -431,37 +442,39 @@ class SessionManager:
 
     def delete_session(self, session_id: str) -> None:
         """Delete a single session by ID."""
-        with self.SessionLocal() as db:
-            db.query(DBSessionModel).filter(DBSessionModel.id == session_id).delete(synchronize_session=False)
-            db.commit()
-            if self.current_session and self.current_session.id == session_id:
-                self.current_session = None
+        with db_write_lock:
+            with self.SessionLocal() as db:
+                db.query(DBSessionModel).filter(DBSessionModel.id == session_id).delete(synchronize_session=False)
+                db.commit()
+                if self.current_session and self.current_session.id == session_id:
+                    self.current_session = None
 
     def purge_sessions(self, older_than_days: int | None = None) -> int:
         """Purge old sessions from the database."""
-        with self.SessionLocal() as db:
-            query = db.query(DBSessionModel)
-            if older_than_days is not None:
-                from datetime import timedelta
+        with db_write_lock:
+            with self.SessionLocal() as db:
+                query = db.query(DBSessionModel)
+                if older_than_days is not None:
+                    from datetime import timedelta
 
-                cutoff = datetime.now() - timedelta(days=older_than_days)
-                query = query.filter(DBSessionModel.created_at < cutoff)
+                    cutoff = datetime.now() - timedelta(days=older_than_days)
+                    query = query.filter(DBSessionModel.created_at < cutoff)
 
-            count = query.count()
-            query.delete(synchronize_session=False)
-            db.commit()
+                count = query.count()
+                query.delete(synchronize_session=False)
+                db.commit()
 
-            # If current session was deleted, reset it
-            if self.current_session:
-                exists = (
-                    db.query(DBSessionModel)
-                    .filter(DBSessionModel.id == self.current_session.id)
-                    .first()
-                )
-                if not exists:
-                    self.current_session = None
+                # If current session was deleted, reset it
+                if self.current_session:
+                    exists = (
+                        db.query(DBSessionModel)
+                        .filter(DBSessionModel.id == self.current_session.id)
+                        .first()
+                    )
+                    if not exists:
+                        self.current_session = None
 
-            return count
+                return count
 
     def purge_empty_sessions(self) -> int:
         """Purge sessions that have no user messages.
@@ -470,28 +483,29 @@ class SessionManager:
             Number of sessions deleted.
         """
         to_delete: list[str] = []
-        with self.SessionLocal() as db:
-            for db_session in db.query(DBSessionModel).yield_per(100):
-                messages = db_session.messages or []
-                has_user_message = any(
-                    isinstance(m, dict) and m.get("role") == "user" for m in messages
-                )
-                if not has_user_message:
-                    to_delete.append(db_session.id)
+        with db_write_lock:
+            with self.SessionLocal() as db:
+                for db_session in db.query(DBSessionModel).yield_per(100):
+                    messages = db_session.messages or []
+                    has_user_message = any(
+                        isinstance(m, dict) and m.get("role") == "user" for m in messages
+                    )
+                    if not has_user_message:
+                        to_delete.append(db_session.id)
 
-            for sid in to_delete:
-                db.query(DBSessionModel).filter(DBSessionModel.id == sid).delete()
-            db.commit()
-            count = len(to_delete)
+                for sid in to_delete:
+                    db.query(DBSessionModel).filter(DBSessionModel.id == sid).delete()
+                db.commit()
+                count = len(to_delete)
 
-            if self.current_session:
-                exists = (
-                    db.query(DBSessionModel)
-                    .filter(DBSessionModel.id == self.current_session.id)
-                    .first()
-                )
-                if not exists:
-                    self.current_session = None
+                if self.current_session:
+                    exists = (
+                        db.query(DBSessionModel)
+                        .filter(DBSessionModel.id == self.current_session.id)
+                        .first()
+                    )
+                    if not exists:
+                        self.current_session = None
 
         return count
 

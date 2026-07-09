@@ -9,6 +9,22 @@ from ..safety import SafetyConfig, SecurityValidator
 from . import Tool, ToolResult
 
 
+def _same_file(path_a: str, path_b: str) -> bool:
+    try:
+        return os.path.exists(path_a) and os.path.exists(path_b) and os.path.samefile(path_a, path_b)
+    except OSError:
+        return False
+
+
+def _is_session_db(session_db_path: str | None, db_path: str) -> bool:
+    if not session_db_path:
+        return False
+    resolved = os.path.realpath(db_path)
+    if resolved == os.path.realpath(session_db_path):
+        return True
+    return _same_file(session_db_path, db_path)
+
+
 def _strip_sql_comments(sql: str) -> str:
     """Remove SQL line comments (--) and block comments (/* */)."""
     sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)
@@ -47,8 +63,7 @@ class SQLiteQueryTool(Tool):
 
     async def execute(self, db_path: str, query: str, **kwargs) -> ToolResult:
         """Execute the SQLite query."""
-        resolved = os.path.realpath(db_path)
-        if self.session_db_path and resolved == self.session_db_path:
+        if _is_session_db(self.session_db_path, db_path):
             return ToolResult(error="Access to the session database via this tool is not permitted.")
 
         if self.validator.requires_approval("sqlite_query"):
@@ -114,16 +129,20 @@ class SQLiteSchemaTool(Tool):
 
     parameters_model = SQLiteSchemaParams
 
-    def __init__(self, safety_config: SafetyConfig | None = None):
+    def __init__(self, safety_config: SafetyConfig | None = None, session_db_path: str | None = None):
         super().__init__(
             name="sqlite_schema",
             description="Extract the table schema and column definitions from a local SQLite database file.",
         )
         # Schema reads are generally safe so we don't strictly require approval by default
         self.validator = SecurityValidator(safety_config or SafetyConfig())
+        self.session_db_path = os.path.realpath(session_db_path) if session_db_path else None
 
     async def execute(self, db_path: str, **kwargs) -> ToolResult:
         """Extract the SQLite schema."""
+        if _is_session_db(self.session_db_path, db_path):
+            return ToolResult(error="Access to the session database via this tool is not permitted.")
+
         if not os.path.exists(db_path):
             return ToolResult(error=f"Database file not found: {db_path}")
 

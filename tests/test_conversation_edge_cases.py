@@ -8,6 +8,7 @@ from src.agentframework.conversation import (
     apply_context_window,
     summarize_old_messages,
     sanitize_json,
+    split_thinking_content,
 )
 
 
@@ -117,6 +118,48 @@ def mock_llm():
     llm = MagicMock()
     llm.chat = AsyncMock()
     return llm
+
+
+def test_split_thinking_single():
+    clean, thinking = split_thinking_content(
+        "Hello <think>first thought</think> world"
+    )
+    assert thinking == "first thought"
+    assert clean == "Hello  world"
+
+
+def test_split_thinking_two_closed_blocks():
+    clean, thinking = split_thinking_content(
+        "A <think>first</think> B <think>second</think> C"
+    )
+    assert thinking == "first\n\nsecond"
+    assert clean == "A  B  C"
+
+
+def test_split_thinking_two_closed_and_unterminated():
+    clean, thinking = split_thinking_content(
+        "A <think>one</think> B <think>two</think> C <think>three"
+    )
+    assert thinking == "one\n\ntwo\n\nthree"
+    assert clean == "A  B  C"
+
+
+def test_split_thinking_none():
+    clean, thinking = split_thinking_content("no tags here")
+    assert thinking is None
+    assert clean == "no tags here"
+
+
+def test_split_thinking_only_unterminated():
+    clean, thinking = split_thinking_content("A <think>dangling")
+    assert thinking == "dangling"
+    assert clean == "A"
+
+
+def test_split_thinking_empty_blocks():
+    clean, thinking = split_thinking_content("<think></think>")
+    assert thinking == ""
+    assert clean == ""
 
 
 def test_sanitize_json_variants():

@@ -92,11 +92,13 @@ def clean_state():
             pass
     state.agent = None
     state.fernet = None
+    state.fernet_key = None
     state.current_session_id = None
     state.message_history = []
     yield
     state.agent = None
     state.fernet = None
+    state.fernet_key = None
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +115,7 @@ class TestChangePasswordSuccess:
         state = web_api.get_state()
         state.agent = MagicMock()
         state.fernet = fernet
+        state.fernet_key = derive_key("oldpassword", salt)
         set_fernet(fernet)
 
         with _patch_session_dir(tmp_path):
@@ -132,7 +135,7 @@ class TestChangePasswordSuccess:
         # New Fernet in memory matches new key
         new_key = derive_key("newpassword", new_salt)
         new_fernet = Fernet(new_key)
-        assert state.fernet._signing_key == new_fernet._signing_key
+        assert state.fernet_key == new_key
 
         # Old password rejected
         state.fernet = None
@@ -172,6 +175,7 @@ class TestChangePasswordSuccess:
         state = web_api.get_state()
         state.agent = MagicMock()
         state.fernet = fernet
+        state.fernet_key = key
         set_fernet(fernet)
 
         with _patch_session_dir(tmp_path):
@@ -202,6 +206,7 @@ class TestChangePasswordRejected:
         state = web_api.get_state()
         state.agent = MagicMock()
         state.fernet = fernet
+        state.fernet_key = key
         set_fernet(fernet)
 
         with _patch_session_dir(tmp_path):
@@ -223,6 +228,7 @@ class TestChangePasswordRejected:
         state = web_api.get_state()
         state.agent = MagicMock()
         state.fernet = fernet
+        state.fernet_key = key
         set_fernet(fernet)
 
         with _patch_session_dir(tmp_path):
@@ -243,6 +249,7 @@ class TestChangePasswordRejected:
         state = web_api.get_state()
         state.agent = MagicMock()
         state.fernet = fernet
+        state.fernet_key = key
         set_fernet(fernet)
 
         with _patch_session_dir(tmp_path):
@@ -321,6 +328,7 @@ class TestChangePasswordRollbackSafety:
         state = web_api.get_state()
         state.agent = MagicMock()
         state.fernet = original_fernet
+        state.fernet_key = key
         set_fernet(original_fernet)
 
         salt_mtime_before = salt_path.stat().st_mtime_ns
@@ -368,4 +376,200 @@ class TestChangePasswordRollbackSafety:
         ).fetchone()
         msgs = json.loads(original_fernet.decrypt(row[0]).decode("utf-8"))
         assert msgs[0]["role"] == "user"
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Concurrency safety
+# ---------------------------------------------------------------------------
+
+
+class TestChangePasswordConcurrency:
+    """Verify that a concurrent chat write and change_password are serialised
+    by db_write_lock — no row can be left encrypted with a mismatched key."""
+
+    def test_concurrent_chat_write_does_not_corrupt_db(self, tmp_path):
+        """A SessionManager.save_session call concurrent with change_password
+        is serialised by db_write_lock, so no row ends up encrypted with a
+        mismatched key.  All rows must be decryptable with the new Fernet
+        after both operations complete, and data from the concurrent write
+        must not be lost."""
+        import threading
+        import time
+
+        salt = b"\xaa" * 16
+        (tmp_path / ".db_salt").write_bytes(salt)
+        db_path, fernet = _make_db(tmp_path, "oldpwd", salt)
+
+        # Add a third session so re-encryption has more work to do,
+        # increasing the chance of a true overlap.
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO agent_sessions (id, messages, session_metadata, events, created_at) "
+            "VALUES (?, ?, ?, ?, datetime('now'))",
+            (
+                "s3",
+                fernet.encrypt(json.dumps([{"role": "user", "content": "third"}]).encode("utf-8")),
+                fernet.encrypt(json.dumps({}).encode("utf-8")),
+                fernet.encrypt(json.dumps([]).encode("utf-8")),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        state = web_api.get_state()
+        state.agent = MagicMock()
+        state.fernet = fernet
+        state.fernet_key = derive_key("oldpwd", salt)
+        set_fernet(fernet)
+
+        chat_errors: list[str] = []
+        chat_done = threading.Event()
+
+        def do_chat_write() -> None:
+            try:
+                from src.agentframework.session import SessionManager
+
+                sm = SessionManager(str(tmp_path), fernet=fernet)
+                # Brief pause so change_password can acquire the lock first
+                time.sleep(0.03)
+                sm.create_session("concurrent_session")
+                sm.add_message("user", "hello from concurrent write")
+                sm.close()
+            except Exception as e:
+                chat_errors.append(str(e))
+            finally:
+                chat_done.set()
+
+        t = threading.Thread(target=do_chat_write, daemon=True)
+        t.start()
+        time.sleep(0.02)  # Let the thread begin initialising the SessionManager
+
+        with _patch_session_dir(tmp_path):
+            resp = client.post(
+                "/api/change-password",
+                json={
+                    "current_password": "oldpwd",
+                    "new_password": "newpwd123",
+                    "confirm": "newpwd123",
+                },
+            )
+
+        chat_done.wait(timeout=15)
+
+        assert resp.status_code == 200, resp.text
+        assert not chat_errors, f"Concurrent chat write failed: {chat_errors}"
+
+        # All data must be decryptable with the NEW key
+        new_salt = (tmp_path / ".db_salt").read_bytes()
+        new_key = derive_key("newpwd123", new_salt)
+        new_fernet = Fernet(new_key)
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute(
+            "SELECT id, messages FROM agent_sessions"
+        ).fetchall()
+        assert len(rows) >= 4, f"Expected ≥4 sessions, got {len(rows)}"
+
+        for row_id, msg_raw in rows:
+            try:
+                messages = json.loads(new_fernet.decrypt(msg_raw).decode("utf-8"))
+                assert isinstance(messages, list)
+            except Exception as exc:
+                pytest.fail(f"Row {row_id} not decryptable with new key: {exc}")
+
+        # Concurrent chat session exists with correct content
+        row = conn.execute(
+            "SELECT messages FROM agent_sessions WHERE id = 'concurrent_session'"
+        ).fetchone()
+        assert row is not None, "Concurrent chat session not found in DB"
+        msgs = json.loads(new_fernet.decrypt(row[0]).decode("utf-8"))
+        assert msgs[0]["role"] == "user"
+        assert msgs[0]["content"] == "hello from concurrent write"
+        conn.close()
+
+    def test_multiple_concurrent_writes_are_serialised(self, tmp_path):
+        """Fire several chat writes from separate threads alongside
+        change_password — all writes must be serialised so no row
+        ends up in a mixed key state."""
+        import threading
+        import time
+
+        salt = b"\xdd" * 16
+        (tmp_path / ".db_salt").write_bytes(salt)
+        db_path, fernet = _make_db(tmp_path, "secret", salt)
+
+        state = web_api.get_state()
+        state.agent = MagicMock()
+        state.fernet = fernet
+        state.fernet_key = derive_key("secret", salt)
+        set_fernet(fernet)
+
+        from src.agentframework.session import SessionManager
+
+        n_writers = 4
+        chat_errors: list[str] = []
+        writers_remaining = threading.Semaphore(0)
+
+        def writer(n: int) -> None:
+            try:
+                sm = SessionManager(str(tmp_path), fernet=fernet)
+                # Stagger the writes so at least one overlaps with
+                # change_password.
+                time.sleep(0.01 * n)
+                sid = f"concurrent_writer_{n}"
+                sm.create_session(sid)
+                sm.add_message("user", f"write from writer {n}")
+                sm.close()
+            except Exception as e:
+                chat_errors.append(str(e))
+            finally:
+                writers_remaining.release()
+
+        threads = [
+            threading.Thread(target=writer, args=(n,), daemon=True)
+            for n in range(n_writers)
+        ]
+        for t in threads:
+            t.start()
+
+        # Fire change_password while writes are in flight
+        time.sleep(0.01)
+        with _patch_session_dir(tmp_path):
+            resp = client.post(
+                "/api/change-password",
+                json={
+                    "current_password": "secret",
+                    "new_password": "moresecret",
+                    "confirm": "moresecret",
+                },
+            )
+
+        for t in threads:
+            t.join(timeout=15)
+
+        assert resp.status_code == 200, resp.text
+        assert not chat_errors, f"Concurrent writes failed: {chat_errors}"
+
+        # Verify everything decryptable with new key
+        new_salt = (tmp_path / ".db_salt").read_bytes()
+        new_key = derive_key("moresecret", new_salt)
+        new_fernet = Fernet(new_key)
+
+        conn = sqlite3.connect(str(db_path))
+        for row_id, msg_raw in conn.execute(
+            "SELECT id, messages FROM agent_sessions"
+        ).fetchall():
+            try:
+                msgs = json.loads(new_fernet.decrypt(msg_raw).decode("utf-8"))
+                assert isinstance(msgs, list)
+            except Exception as exc:
+                pytest.fail(f"Row {row_id} not decryptable with new key: {exc}")
+
+        for n in range(n_writers):
+            row = conn.execute(
+                "SELECT messages FROM agent_sessions WHERE id = ?",
+                (f"concurrent_writer_{n}",),
+            ).fetchone()
+            assert row is not None, f"Writer {n} session not found"
         conn.close()

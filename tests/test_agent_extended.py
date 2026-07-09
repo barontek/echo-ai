@@ -877,6 +877,130 @@ class TestSynthesisRetry:
         assert "No answer generated" in last.content
         agent.close()
 
+    @pytest.mark.asyncio
+    async def test_synthesis_retry_unterminated_think_fires_retry(self):
+        """When synthesis returns an unterminated <think> tag (no closing
+        </think>) and no real content, the retry fires — unlike the old
+        re.sub-based guard which would miss this edge case."""
+
+        class UnterminatedThinkProvider(SimpleProvider):
+            def __init__(self):
+                super().__init__()
+                self._call_num = 0
+
+            async def chat(self, messages, tools=None, temperature=0.3):
+                self._call_num += 1
+                if self._call_num == 1:
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                if self._call_num == 2:
+                    return LLMResponse(content="<think>\nLet me reason without closing")
+                return LLMResponse(content="final answer after retry")
+
+            async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+                self._call_num += 1
+                if self._call_num == 1:
+                    if on_chunk:
+                        on_chunk("")
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                if self._call_num == 2:
+                    if on_chunk:
+                        on_chunk("<think>\nLet me reason without closing")
+                    return LLMResponse(content="<think>\nLet me reason without closing")
+                if on_chunk:
+                    on_chunk("final answer after retry")
+                return LLMResponse(content="final answer after retry")
+
+        config = AgentConfig(
+            session_enabled=False,
+            tools=[SimpleTool()],
+        )
+        agent = Agent(config, UnterminatedThinkProvider())
+        agent.add_user_message("use a tool")
+        response, messages = await agent._run_loop(agent.messages)
+        assert "final answer after retry" in response
+        last = messages[-1]
+        assert last.role == "assistant"
+        assert "final answer after retry" in last.content
+        # The thinking-only message (with unterminated tag) should not appear
+        thinking_msgs = [
+            m for m in messages
+            if m.role == "assistant" and "<think>" in str(m.content) and "final answer" not in m.content
+        ]
+        assert len(thinking_msgs) == 0, "Unterminated thinking-only message should have been replaced"
+        agent.close()
+
+    @pytest.mark.asyncio
+    async def test_synthesis_retry_cancelled_during_retry_uses_only_retry_chunks(self):
+        """When the user cancels during the retry call, partial_chunks should
+        only contain chunks from the retry, not from the first (thinking-only) call."""
+        retry_chunks: list[str] = []
+
+        class CancelDuringRetryProvider(SimpleProvider):
+            def __init__(self):
+                super().__init__()
+                self._call_num = 0
+
+            async def chat(self, messages, tools=None, temperature=0.3):
+                self._call_num += 1
+                if self._call_num == 1:
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                if self._call_num == 2:
+                    return LLMResponse(content="<think>\nJust thinking</think>")
+                return LLMResponse(content="should not reach here")
+
+            async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+                self._call_num += 1
+                if self._call_num == 1:
+                    if on_chunk:
+                        on_chunk("")
+                    return LLMResponse(
+                        content="",
+                        tool_calls=[
+                            LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})
+                        ],
+                    )
+                if self._call_num == 2:
+                    if on_chunk:
+                        on_chunk("<think>\nJust thinking</think>")
+                    return LLMResponse(content="<think>\nJust thinking</think>")
+                # Call 3: the retry — emit a couple chunks then cancel
+                if on_chunk:
+                    on_chunk("retry chunk 1")
+                    on_chunk("retry chunk 2")
+                    retry_chunks.extend(["retry chunk 1", "retry chunk 2"])
+                raise asyncio.CancelledError()
+
+        config = AgentConfig(
+            session_enabled=False,
+            tools=[SimpleTool()],
+        )
+        agent = Agent(config, CancelDuringRetryProvider())
+        agent.add_user_message("use a tool")
+        response, messages = await agent._run_loop(agent.messages)
+        # Should contain only retry chunks, not the first call's thinking content
+        assert response == "retry chunk 1retry chunk 2", (
+            f"Expected retry-only chunks, got: {response!r}"
+        )
+        assert "Just thinking" not in response, (
+            "First call's thinking content leaked into the cancelled retry response"
+        )
+        agent.close()
+
 
 @pytest.mark.asyncio
 async def test_all_three_paths_thinking_shape():

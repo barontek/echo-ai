@@ -125,7 +125,7 @@ TOOL_CONFIG_KEYS: dict[str, dict[str, Any]] = {
     "python_execute": {"safety_config": None, "execution_timeout": 30},
     "rest_api": {"safety_config": None},
     "sqlite_query": {"safety_config": None, "session_db_path": None},
-    "sqlite_schema": {"safety_config": None},
+    "sqlite_schema": {"safety_config": None, "session_db_path": None},
     "ask_user": {},
     "semantic_search": {"vector_store": None},
     "ingest_document": {"vector_store": None},

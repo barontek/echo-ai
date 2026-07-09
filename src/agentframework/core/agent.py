@@ -415,9 +415,7 @@ class Agent:
 
                 # Post-tool-call synthesis guard: retry once if content is only thinking
                 if has_executed_tools and not synthesis_retried:
-                    display_content = re.sub(
-                        r"<think>.*?</think>", "", final_content, flags=re.DOTALL
-                    ).strip()
+                    display_content, _ = split_thinking_content(final_content)
                     if not display_content:
                         synthesis_retried = True
                         logger.warning(
@@ -435,6 +433,7 @@ class Agent:
                         current_messages.append(retry_msg)
 
                         llm_messages = await self._prepare_messages(current_messages)
+                        partial_chunks.clear()
                         try:
                             response = await self._call_llm(
                                 llm_messages,
@@ -458,12 +457,7 @@ class Agent:
                         current_messages.pop()
 
                         final_content = response.content or ""
-                        display_content = re.sub(
-                            r"<think>.*?</think>",
-                            "",
-                            final_content,
-                            flags=re.DOTALL,
-                        ).strip()
+                        display_content, _ = split_thinking_content(final_content)
                         if not display_content:
                             fallback = "[No answer generated — the model produced only reasoning. Try rephrasing your question.]"
                             final_content = fallback

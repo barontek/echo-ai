@@ -170,24 +170,21 @@ async def rename_session(
             detail="Session service is unavailable. Please try again later.",
         )
 
-    with state.agent.session_manager.SessionLocal() as db:
-        updated = (
-            db.query(DBSessionModel)
-            .filter(DBSessionModel.id == payload.session_id)
-            .update({"title": payload.new_title})
+    sm = state.agent.session_manager
+    session = sm.load_session(payload.session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session with ID '{payload.session_id}' was not found.",
         )
-        if updated == 0:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Session with ID '{payload.session_id}' was not found.",
-            )
-        db.commit()
+    session.title = payload.new_title
+    sm.save_session(session)
 
     if (
-        state.agent.session_manager.current_session
-        and state.agent.session_manager.current_session.id == payload.session_id
+        sm.current_session
+        and sm.current_session.id == payload.session_id
     ):
-        state.agent.session_manager.current_session.title = payload.new_title
+        sm.current_session.title = payload.new_title
 
     return {
         "status": "ok",

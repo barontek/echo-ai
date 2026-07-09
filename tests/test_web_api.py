@@ -320,12 +320,9 @@ class TestSessions:
     def test_rename_session_success(self, mock_agent):
         state = web_api.get_state()
         state.agent = mock_agent
-        mock_db = MagicMock()
-        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
-            mock_db
-        )
+        session = MagicMock(id="old", title="old")
+        mock_agent.session_manager.load_session.return_value = session
         mock_agent.session_manager.current_session = MagicMock(id="old", title="old")
-        mock_db.query.return_value.filter.return_value.update.return_value = 1
 
         payload = {"session_id": "old", "new_title": "new title"}
         response = client.post("/api/sessions/rename", json=payload)
@@ -333,16 +330,14 @@ class TestSessions:
         data = response.json()
         assert data["title"] == "new title"
         assert data["session_id"] == "old"
+        assert session.title == "new title"
+        mock_agent.session_manager.save_session.assert_called_once_with(session)
         assert mock_agent.session_manager.current_session.title == "new title"
 
     def test_rename_session_not_found(self, mock_agent):
         state = web_api.get_state()
         state.agent = mock_agent
-        mock_db = MagicMock()
-        mock_agent.session_manager.SessionLocal.return_value.__enter__.return_value = (
-            mock_db
-        )
-        mock_db.query.return_value.filter.return_value.update.return_value = 0
+        mock_agent.session_manager.load_session.return_value = None
 
         payload = {"session_id": "nonexistent", "new_title": "title"}
         response = client.post("/api/sessions/rename", json=payload)

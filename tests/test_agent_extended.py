@@ -1,15 +1,20 @@
 """Extended tests for Agent class - covering uncovered edge cases."""
 
 import asyncio
+import base64
 import re
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from cryptography.fernet import Fernet
 from src.agentframework.core import Agent, AgentConfig
 from src.agentframework.core.agent import _extract_thinking
 from src.agentframework.tools import Tool, ToolResult
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from src.agentframework.conversation import Message
-from src.agentframework.session import SessionManager
+from src.agentframework.session import set_fernet, SessionManager
+
+# Fernet so session tests work without a TTY / ECHO_DB_PASSWORD.
+set_fernet(Fernet(base64.urlsafe_b64encode(b"\x00" * 32)))
 
 
 class SimpleProvider(LLMProvider):
@@ -854,9 +859,204 @@ class TestSynthesisRetry:
         )
         agent = Agent(config, RetryBothEmptyProvider())
         agent.add_user_message("use a tool")
-        response, messages = await agent._run_loop(agent.messages)
+        response, messages =     await agent._run_loop(agent.messages)
         assert "No answer generated" in response
         last = messages[-1]
         assert last.role == "assistant"
         assert "No answer generated" in last.content
         agent.close()
+
+
+@pytest.mark.asyncio
+async def test_all_three_paths_thinking_shape():
+    """All three assistant message construction paths produce consistent shape:
+
+    -  thinking field populated when reasoning was present, None otherwise
+    -  content never contains <think> tags in any path
+    -  nothing duplicated in both content and thinking
+    """
+
+    # ------------------------------------------------------------------
+    # Path 3 — ordinary (no-tool) assistant message
+    # ------------------------------------------------------------------
+    class OrdinaryThinkingProvider(SimpleProvider):
+        async def chat(self, messages, tools=None, temperature=0.3):
+            return LLMResponse(content="<think>Let me solve this</think>Here is the answer")
+
+        async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+            if on_chunk:
+                on_chunk("<think>Let me solve this</think>Here is the answer")
+            return LLMResponse(content="<think>Let me solve this</think>Here is the answer")
+
+    agent3 = Agent(AgentConfig(session_enabled=False), OrdinaryThinkingProvider())
+    agent3.add_user_message("hello")
+    _ret, msgs3 = await agent3._run_loop(agent3.messages)
+    last3 = msgs3[-1]
+    assert last3.role == "assistant"
+    assert "<think>" not in last3.content, "Path 3: content must not contain <think> tags"
+    assert last3.thinking == "Let me solve this", "Path 3: thinking must be extracted from inline tags"
+    assert last3.thinking not in last3.content, "Path 3: no duplication"
+    agent3.close()
+
+    # ------------------------------------------------------------------
+    # Path 1 — tool-call message  (also exercises Path 2 on the next turn)
+    # ------------------------------------------------------------------
+    class ToolAndSynthesisProvider(SimpleProvider):
+        def __init__(self):
+            super().__init__()
+            self._call_num = 0
+
+        async def chat(self, messages, tools=None, temperature=0.3):
+            self._call_num += 1
+            if self._call_num == 1:
+                return LLMResponse(
+                    content="<think>I need to look up</think>",
+                    tool_calls=[LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})],
+                )
+            return LLMResponse(content="<think>I processed the result</think>Answer is 42")
+
+        async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+            self._call_num += 1
+            if self._call_num == 1:
+                if on_chunk:
+                    on_chunk("")
+                return LLMResponse(
+                    content="<think>I need to look up</think>",
+                    tool_calls=[LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})],
+                )
+            if on_chunk:
+                on_chunk("<think>I processed the result</think>Answer is 42")
+            return LLMResponse(content="<think>I processed the result</think>Answer is 42")
+
+    config12 = AgentConfig(session_enabled=False, tools=[SimpleTool()])
+    agent12 = Agent(config12, ToolAndSynthesisProvider())
+    agent12.add_user_message("use tools")
+    _ret, msgs12 = await agent12._run_loop(agent12.messages)
+
+    # Find the tool-call assistant message (Path 1)
+    tool_call_msgs = [m for m in msgs12 if m.role == "assistant" and m.tool_calls]
+    assert len(tool_call_msgs) >= 1
+    tc_msg = tool_call_msgs[0]
+    assert "<think>" not in tc_msg.content, "Path 1: content must not contain <think> tags"
+    assert tc_msg.thinking == "I need to look up", "Path 1: thinking must be extracted from inline tags"
+    assert tc_msg.thinking not in tc_msg.content, "Path 1: no duplication"
+
+    # Find the final synthesis assistant message (Path 2)
+    synthesis_msgs = [m for m in msgs12 if m.role == "assistant" and not m.tool_calls]
+    assert len(synthesis_msgs) >= 1
+    synth_msg = synthesis_msgs[-1]
+    assert "<think>" not in synth_msg.content, "Path 2: content must not contain <think> tags"
+    assert synth_msg.thinking == "I processed the result", "Path 2: thinking must be extracted from inline tags"
+    assert synth_msg.thinking not in synth_msg.content, "Path 2: no duplication"
+    agent12.close()
+
+    # ------------------------------------------------------------------
+    # Providers that supply thinking via a separate field (no inline tags)
+    # should still populate the thinking field without extraction.
+    # ------------------------------------------------------------------
+    class SeparateThinkingProvider(SimpleProvider):
+        async def chat(self, messages, tools=None, temperature=0.3):
+            return LLMResponse(content="Clean answer", thinking="I reasoned step by step")
+
+        async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+            if on_chunk:
+                on_chunk("Clean answer")
+            return LLMResponse(content="Clean answer", thinking="I reasoned step by step")
+
+    agent_sep = Agent(AgentConfig(session_enabled=False), SeparateThinkingProvider())
+    agent_sep.add_user_message("hello")
+    _ret, msgs_sep = await agent_sep._run_loop(agent_sep.messages)
+    last_sep = msgs_sep[-1]
+    assert "<think>" not in last_sep.content
+    assert last_sep.thinking == "I reasoned step by step"
+    assert last_sep.thinking not in last_sep.content
+    agent_sep.close()
+
+    # ------------------------------------------------------------------
+    # No thinking at all — both fields absent/clean
+    # ------------------------------------------------------------------
+    class NoThinkingProvider(SimpleProvider):
+        async def chat(self, messages, tools=None, temperature=0.3):
+            return LLMResponse(content="Plain answer without reasoning")
+
+        async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+            if on_chunk:
+                on_chunk("Plain answer without reasoning")
+            return LLMResponse(content="Plain answer without reasoning")
+
+    agent_none = Agent(AgentConfig(session_enabled=False), NoThinkingProvider())
+    agent_none.add_user_message("hello")
+    _ret, msgs_none = await agent_none._run_loop(agent_none.messages)
+    last_none = msgs_none[-1]
+    assert "<think>" not in last_none.content
+    assert last_none.thinking is None
+    agent_none.close()
+
+
+@pytest.mark.asyncio
+async def test_all_three_paths_session_persistence(tmp_path):
+    """Verify session-stored messages match the same shape as in-memory messages."""
+    session_dir = tmp_path / "sessions"
+
+    class Provider(SimpleProvider):
+        def __init__(self):
+            super().__init__()
+            self._call_num = 0
+
+        async def chat(self, messages, tools=None, temperature=0.3):
+            self._call_num += 1
+            if self._call_num == 1:
+                return LLMResponse(
+                    content="<think>I need to search</think>",
+                    tool_calls=[LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})],
+                )
+            return LLMResponse(content="<think>I processed</think>Answer: 42")
+
+        async def chat_streaming(self, messages, tools=None, temperature=0.3, on_chunk=None):
+            self._call_num += 1
+            if self._call_num == 1:
+                if on_chunk:
+                    on_chunk("")
+                return LLMResponse(
+                    content="<think>I need to search</think>",
+                    tool_calls=[LLMToolCall(id="tc1", name="simple", arguments={"input": "test"})],
+                )
+            if on_chunk:
+                on_chunk("<think>I processed</think>Answer: 42")
+            return LLMResponse(content="<think>I processed</think>Answer: 42")
+
+    config = AgentConfig(
+        session_enabled=True,
+        session_dir=str(session_dir),
+        tools=[SimpleTool()],
+    )
+    agent = Agent(config, Provider())
+    response = await agent.run("use tools")
+    assert response == "Answer: 42"
+
+    assert agent.session_manager is not None
+    assert agent.session_manager.current_session is not None
+    session_msgs = agent.session_manager.current_session.messages
+
+    # Build a roled-index lookup
+    by_role: dict[str, list[dict]] = {}
+    for m in session_msgs:
+        by_role.setdefault(m["role"], []).append(m)
+
+    # Tool-call assistant message (Path 1)
+    tc = by_role.get("assistant", [])[0]
+    assert tc["role"] == "assistant"
+    assert tc.get("tool_calls"), "tool-call message must have tool_calls"
+    assert "<think>" not in tc["content"]
+    assert tc.get("thinking") == "I need to search"
+    assert tc["thinking"] not in tc["content"]
+
+    # Final synthesis assistant message (Path 2)
+    final = by_role.get("assistant", [])[1]
+    assert final["role"] == "assistant"
+    assert not final.get("tool_calls")
+    assert "<think>" not in final["content"]
+    assert final.get("thinking") == "I processed"
+    assert final["thinking"] not in final["content"]
+
+    agent.close()

@@ -96,34 +96,6 @@ class TestTruncateHistory:
         assert len(manager.current_session.messages) == 2
 
 
-class TestAddToolResults:
-    @pytest.fixture
-    def manager(self, tmp_path):
-        mgr = SessionManager(str(tmp_path / "sessions"))
-        yield mgr
-        mgr.close()
-
-    def test_add_tool_results_no_current_session(self, manager):
-        manager.current_session = None
-        manager.add_tool_results_to_last_assistant([{"tool_call_id": "1"}])
-
-    def test_add_tool_results_empty(self, manager):
-        manager.create_session(session_id="tool-res")
-        manager.add_tool_results_to_last_assistant([])
-
-    def test_add_tool_results_attaches(self, manager):
-        manager.create_session(session_id="tool-attach")
-        manager.current_session.messages.append(
-            {"role": "assistant", "tool_calls": [{"id": "tc1", "function": {"name": "test"}}]}
-        )
-        manager.add_tool_results_to_last_assistant(
-            [{"tool_call_id": "tc1", "content": "result data", "error": None}]
-        )
-        tc = manager.current_session.messages[-1]["tool_calls"][0]
-        assert tc["result"]["content"] == "result data"
-        assert tc["result"]["error"] is None
-
-
 class TestSaveCheckpoint:
     @pytest.fixture
     def manager(self, tmp_path):

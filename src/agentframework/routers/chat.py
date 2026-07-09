@@ -340,11 +340,12 @@ async def websocket_chat(websocket: WebSocket):
         try:
             msg_count_before = len(active_agent.messages)
             await active_agent.run_streaming(prompt, on_chunk=on_chunk)
-            for msg in active_agent.messages[msg_count_before:]:
+            new_messages = active_agent.messages[msg_count_before:]
+            for msg in new_messages:
                 tc = getattr(msg, "tool_calls", None)
                 if tc:
                     has_tools = True
-                    tool_calls_info.extend(_web_api._extract_tool_calls_info(tc))
+                    tool_calls_info.extend(_web_api._extract_tool_calls_info(tc, messages=new_messages))
 
         except asyncio.CancelledError:
             has_tools = False
@@ -611,6 +612,7 @@ async def websocket_chat(websocket: WebSocket):
                 # run_agent will add the new user message
                 active_agent.session_manager.current_session = session
 
+                assert target_index is not None  # guaranteed by target_msg not being None
                 active_agent.session_manager.truncate_history(target_index)
 
                 # Deserialize session messages to agent messages

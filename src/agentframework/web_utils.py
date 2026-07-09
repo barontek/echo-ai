@@ -144,6 +144,25 @@ def filter_messages_for_ui(
     Returns:
         Filtered list of message dicts suitable for UI rendering.
     """
+    # Build tool_call_id -> result mapping from tool messages
+    result_map: dict[str, dict] = {}
+    for msg in messages:
+        if isinstance(msg, dict):
+            if msg.get("role") == "tool":
+                tc_id = msg.get("tool_call_id")
+                if tc_id:
+                    result_map[tc_id] = {
+                        "content": msg.get("content"),
+                        "error": msg.get("error_category"),
+                    }
+        elif getattr(msg, "role", None) == "tool":
+            tc_id = getattr(msg, "tool_call_id", None)
+            if tc_id:
+                result_map[tc_id] = {
+                    "content": getattr(msg, "content", None),
+                    "error": getattr(msg, "error_category", None),
+                }
+
     filtered = []
 
     default_timestamp = (
@@ -188,6 +207,11 @@ def filter_messages_for_ui(
 
         if tool_calls:
             normalized = [normalize_tool_call(tc) for tc in tool_calls]
+            # Attach results from corresponding "role": "tool" messages
+            for tc, ntc in zip(tool_calls, normalized):
+                tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                if tc_id and tc_id in result_map:
+                    ntc["result"] = result_map[tc_id]
             msg_dict["tool_calls"] = normalized
 
         tool_results = getattr(

@@ -1899,11 +1899,11 @@ class TestExtractToolCallsInfo:
 
     def test_dict_format_dict_args(self):
         """Dict-format tool call with dict arguments."""
-        tcs = [{"function": {"name": "bash", "arguments": {"cmd": "ls -la"}}, "result": "ok"}]
+        tcs = [{"function": {"name": "bash", "arguments": {"cmd": "ls -la"}}}]
         result = web_api._extract_tool_calls_info(tcs)
         assert result[0]["name"] == "bash"
         assert result[0]["arguments"] == {"cmd": "ls -la"}
-        assert result[0]["result"] == "ok"
+        assert "result" not in result[0]
 
     def test_object_format_dict_args(self):
         """Object-format tool call with dict arguments."""
@@ -1950,6 +1950,31 @@ class TestExtractToolCallsInfo:
         result = web_api._extract_tool_calls_info(tcs)
         assert result[0]["name"] == "unknown"
         assert result[0]["arguments"] == {}
+
+    def test_results_from_messages(self):
+        """Tool call results are read from role=tool messages by tool_call_id."""
+        tcs = [{"function": {"name": "bash", "arguments": {"cmd": "ls"}}, "id": "call_1"}]
+        messages = [
+            {"role": "tool", "tool_call_id": "call_1", "content": "file1", "error_category": None},
+        ]
+        result = web_api._extract_tool_calls_info(tcs, messages=messages)
+        assert result[0]["result"]["content"] == "file1"
+        assert result[0]["result"]["error"] is None
+
+    def test_results_no_messages_returns_no_result(self):
+        """Without messages, no result is attached even if tool_call has id."""
+        tcs = [{"function": {"name": "bash", "arguments": {"cmd": "ls"}}, "id": "call_1"}]
+        result = web_api._extract_tool_calls_info(tcs)
+        assert "result" not in result[0]
+
+    def test_results_uses_tool_call_id_matching(self):
+        """Result is only attached when tool_call_id matches the tool call id."""
+        tcs = [{"function": {"name": "bash", "arguments": {"cmd": "ls"}}, "id": "call_1"}]
+        messages = [
+            {"role": "tool", "tool_call_id": "other_id", "content": "mismatched"},
+        ]
+        result = web_api._extract_tool_calls_info(tcs, messages=messages)
+        assert "result" not in result[0]
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { parseThinkBlocks } from '../utils/thinkBlockParser';
 
 const { mockApi } = vi.hoisted(() => ({
   mockApi: {
@@ -217,5 +218,102 @@ describe('Components', () => {
         expect(screen.getByText('First Chat')).toBeInTheDocument();
       });
     });
+  });
+});
+
+describe('parseThinkBlocks — streaming thinking classification', () => {
+  it('classifies a complete <think> block', () => {
+    const blocks = parseThinkBlocks('<think>Let me solve this</think>Here is the answer');
+    expect(blocks).toEqual([
+      { type: 'thinking', text: 'Let me solve this' },
+      { type: 'content', text: 'Here is the answer' },
+    ]);
+  });
+
+  it('classifies content before, after, and between multiple think blocks', () => {
+    const blocks = parseThinkBlocks(
+      'start <think>first</think> middle <think>second</think> end',
+    );
+    expect(blocks).toEqual([
+      { type: 'content', text: 'start ' },
+      { type: 'thinking', text: 'first' },
+      { type: 'content', text: ' middle ' },
+      { type: 'thinking', text: 'second' },
+      { type: 'content', text: ' end' },
+    ]);
+  });
+
+  it('handles unclosed <think> tag at end of stream (partial)', () => {
+    const blocks = parseThinkBlocks('Some text <think>still thinking');
+    expect(blocks).toEqual([
+      { type: 'content', text: 'Some text ' },
+      { type: 'thinking', text: 'still thinking' },
+    ]);
+  });
+
+  it('handles only thinking without content', () => {
+    const blocks = parseThinkBlocks('<think>just thinking</think>');
+    expect(blocks).toEqual([
+      { type: 'thinking', text: 'just thinking' },
+    ]);
+  });
+
+  it('returns a single content block when no thinking is present', () => {
+    const blocks = parseThinkBlocks('plain response without thinking');
+    expect(blocks).toEqual([
+      { type: 'content', text: 'plain response without thinking' },
+    ]);
+  });
+
+  it('progressive chunks: tag split across multiple appends', () => {
+    // Simulate the frontend accumulating content chunk by chunk
+    const chunks = [
+      'Here is my ',
+      '<thi',
+      'nk>Let me process ',
+      'this step by step',
+      '</think>',
+      'The answer is 42.',
+    ];
+    const streamed: string[] = [];
+    for (const chunk of chunks) {
+      streamed.push(chunk);
+      // parseThinkBlocks is called on the full accumulated content each time
+      const blocks = parseThinkBlocks(streamed.join(''));
+      // After the closing </think> tag, a content block should appear
+      if (chunk === '</think>') {
+        const thinkingBlock = blocks.find((b) => b.type === 'thinking');
+        expect(thinkingBlock).toBeDefined();
+        expect(thinkingBlock!.text).toBe('Let me process this step by step');
+      }
+    }
+    const final = parseThinkBlocks(streamed.join(''));
+    expect(final).toEqual([
+      { type: 'content', text: 'Here is my ' },
+      { type: 'thinking', text: 'Let me process this step by step' },
+      { type: 'content', text: 'The answer is 42.' },
+    ]);
+  });
+
+  it('progressive chunks: empty content after thinking', () => {
+    const blocks = parseThinkBlocks('<think>I am thinking</think>');
+    expect(blocks).toEqual([
+      { type: 'thinking', text: 'I am thinking' },
+    ]);
+  });
+
+  it('progressive chunks: partial <think tag not yet classified as thinking', () => {
+    const partial = parseThinkBlocks('prefix <thi');
+    // '<thi' is not a complete <think> so it stays as content
+    expect(partial).toEqual([
+      { type: 'content', text: 'prefix <thi' },
+    ]);
+    // Once nk> arrives it becomes thinking
+    const complete = parseThinkBlocks('prefix <think>thought</think>answer');
+    expect(complete).toEqual([
+      { type: 'content', text: 'prefix ' },
+      { type: 'thinking', text: 'thought' },
+      { type: 'content', text: 'answer' },
+    ]);
   });
 });

@@ -20,6 +20,7 @@ from ..conversation import (
     create_assistant_message,
     format_messages_for_llm,
     sanitize_json,
+    split_thinking_content,
     summarize_old_messages,
 )
 from .tool_runtime import (
@@ -390,18 +391,12 @@ class Agent:
                         partial_response, thinking_process
                     )
                     current_messages.append(assistant_msg)
+                    partial_response = assistant_msg.content
 
                     if self._pending_summary:
                         task = asyncio.create_task(self._background_summarize())
                         self._background_tasks.add(task)
                         task.add_done_callback(self._background_tasks.discard)
-
-                    if self.session_manager:
-                        self.session_manager.add_message(
-                            "assistant",
-                            partial_response,
-                            timestamp=datetime.now().strftime("%H:%M"),
-                        )
 
                 logger.debug(
                     "Generation stopped by user",
@@ -453,12 +448,7 @@ class Agent:
                                     partial_response, thinking_process
                                 )
                                 current_messages.append(assistant_msg)
-                                if self.session_manager:
-                                    self.session_manager.add_message(
-                                        "assistant",
-                                        partial_response,
-                                        timestamp=datetime.now().strftime("%H:%M"),
-                                    )
+                                partial_response = assistant_msg.content
                             logger.debug(
                                 "Generation stopped by user",
                                 extra={"partial_length": len(partial_response)},
@@ -480,18 +470,19 @@ class Agent:
                             if on_chunk:
                                 on_chunk(fallback)
 
-                self.callback_manager.on_run_end(request_id, final_content)
                 assistant_msg = create_assistant_message(
                     final_content, response.thinking or thinking_process
                 )
                 current_messages.append(assistant_msg)
+                clean_final = assistant_msg.content
+                self.callback_manager.on_run_end(request_id, clean_final)
 
                 if self._pending_summary:
                     task = asyncio.create_task(self._background_summarize())
                     self._background_tasks.add(task)
                     task.add_done_callback(self._background_tasks.discard)
 
-                return final_content, current_messages
+                return clean_final, current_messages
 
             if iteration == 0 and response.thinking:
                 thinking_process = response.thinking
@@ -509,15 +500,17 @@ class Agent:
                 }
                 for tc in response.tool_calls
             ]
+            clean_content, thinking = split_thinking_content(response.content or "")
             assistant_msg = Message(
                 role="assistant",
-                content=response.content or "",
+                content=clean_content,
                 tool_calls=tool_call_dicts,
+                thinking=thinking,
             )
             current_messages.append(assistant_msg)
             if self.session_manager:
                 self.session_manager.add_message(
-                    "assistant", assistant_msg.content, tool_calls=tool_call_dicts
+                    "assistant", clean_content, tool_calls=tool_call_dicts, thinking=thinking
                 )
 
             tool_messages, updated_messages = await self._execute_tool_calls(
@@ -530,21 +523,8 @@ class Agent:
 
             has_executed_tools = True
 
-            # Persist tool execution results - attach to last assistant message
-            if self.session_manager and tool_messages:
-                tool_results = []
-                for msg in tool_messages:
-                    tool_results.append(
-                        {
-                            "tool_call_id": msg.tool_call_id,
-                            "tool_name": msg.tool_name,
-                            "arguments": msg.tool_arguments,
-                            "content": msg.content,
-                            "error": msg.error_category,
-                        }
-                    )
-                self.messages = list(current_messages)
-                self.session_manager.add_tool_results_to_last_assistant(tool_results)
+            self.messages = list(current_messages)
+            if self.session_manager:
                 self.save_session()
 
         err_msg = "Max iterations reached. The agent could not complete the task."

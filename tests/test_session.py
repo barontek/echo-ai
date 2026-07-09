@@ -476,24 +476,6 @@ class TestSessionImportExport:
         assert session.created_at is not None
 
 
-class TestToolResultsAttachment:
-    def test_add_tool_results_no_assistant_message_is_noop(self, manager):
-        manager.create_session(session_id="tool_noop")
-        manager.add_message("user", "hello")
-        manager.add_tool_results_to_last_assistant([{"tool_call_id": "tc1", "content": "result"}])
-        assert len(manager.current_session.messages) == 1
-
-    def test_add_tool_results_empty_list_is_noop(self, manager):
-        manager.create_session(session_id="tool_empty")
-        manager.add_message("assistant", "no tools")
-        manager.add_tool_results_to_last_assistant([])
-        assert len(manager.current_session.messages) == 1
-
-    def test_add_tool_results_no_current_session_is_noop(self, manager):
-        manager.current_session = None
-        manager.add_tool_results_to_last_assistant([{"tool_call_id": "tc1", "content": "x"}])  # Should not crash
-
-
 class TestSessionEdgeCases:
     def test_load_session_empty_messages_returns_empty_list(self, manager):
         manager.create_session(session_id="empty_msgs")
@@ -549,6 +531,37 @@ class TestEncryptionErrors:
                 mgr2.load_session("wrong_pw_test")
         finally:
             set_fernet(_TEST_FERNET)
+
+
+    def test_tool_results_not_duplicated_in_tool_calls(self, manager):
+        """Tool results must NOT appear as .result in assistant tool_calls dicts;
+        they live ONLY in separate role='tool' messages."""
+        manager.create_session(session_id="dedup")
+        tool_call_id = "call_abc"
+        manager.current_session.messages.append(
+            {
+                "role": "assistant",
+                "tool_calls": [{"id": tool_call_id, "function": {"name": "test", "arguments": "{}"}}],
+            }
+        )
+        manager.current_session.messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": "result data",
+                "error_category": None,
+            }
+        )
+        manager.save_session()
+        loaded = manager.load_session("dedup")
+        assert loaded is not None
+        assistant = loaded.messages[0]
+        assert assistant["role"] == "assistant"
+        for tc in assistant["tool_calls"]:
+            assert "result" not in tc, f"tool_call should not carry embedded result: {tc}"
+        tool_msg = loaded.messages[1]
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["content"] == "result data"
 
 
 # ---------------------------------------------------------------------------

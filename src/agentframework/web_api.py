@@ -256,17 +256,43 @@ async def request_logging_middleware(request: Request, call_next):
     return response
 
 
-def _extract_tool_calls_info(tool_calls: list) -> list[dict]:
+def _extract_tool_calls_info(
+    tool_calls: list, messages: list[Any] | None = None
+) -> list[dict]:
     tool_calls_info: list[dict] = []
+
+    # Build tool_call_id -> result mapping from tool messages (role="tool")
+    result_map: dict[str, dict] = {}
+    if messages is not None:
+        for msg in messages:
+            if isinstance(msg, dict):
+                if msg.get("role") == "tool":
+                    tc_id = msg.get("tool_call_id")
+                    if tc_id:
+                        result_map[tc_id] = {
+                            "content": msg.get("content"),
+                            "error": msg.get("error_category"),
+                        }
+            elif getattr(msg, "role", None) == "tool":
+                tc_id = getattr(msg, "tool_call_id", None)
+                if tc_id:
+                    result_map[tc_id] = {
+                        "content": getattr(msg, "content", None),
+                        "error": getattr(msg, "error_category", None),
+                    }
+
     for t in tool_calls:
         name: str = "unknown"
         args: dict = {}
+        tc_id: str | None = None
         if isinstance(t, dict):
             name = t.get("function", {}).get("name", "unknown")
             raw_args = t.get("function", {}).get("arguments", {})
+            tc_id = t.get("id") or t.get("function", {}).get("id")
         else:
             name = getattr(t, "name", "unknown")
             raw_args = getattr(t, "arguments", {})
+            tc_id = getattr(t, "id", None)
 
         if isinstance(raw_args, str):
             try:
@@ -283,8 +309,8 @@ def _extract_tool_calls_info(tool_calls: list) -> list[dict]:
             args = {"raw": str(raw_args)}
 
         tc_info: dict = {"name": name, "arguments": args}
-        if isinstance(t, dict) and "result" in t:
-            tc_info["result"] = t["result"]
+        if tc_id and tc_id in result_map:
+            tc_info["result"] = result_map[tc_id]
         tool_calls_info.append(tc_info)
     return tool_calls_info
 

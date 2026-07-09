@@ -76,9 +76,41 @@ def estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
+def split_thinking_content(raw_content: str) -> tuple[str, str | None]:
+    """Extract <think>...</think> tags from content.
+
+    Returns (clean_content, thinking_text). If no thinking tags are
+    found *thinking_text* is None and *clean_content* equals *raw_content*.
+    """
+    if "<think>" not in raw_content:
+        return raw_content, None
+
+    match = re.search(r"<think>(.*?)</think>", raw_content, re.DOTALL)
+    if match:
+        thinking = match.group(1).strip()
+        clean = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
+        return clean, thinking
+
+    match = re.search(r"<think>(.*)", raw_content, re.DOTALL)
+    if match:
+        thinking = match.group(1).strip()
+        clean = raw_content[:match.start()].strip()
+        return clean, thinking
+
+    return raw_content, None
+
+
 def create_assistant_message(content: str, thinking: str | None = None) -> Message:
-    """Create an assistant message, storing thinking in a separate field."""
-    return Message(role="assistant", content=content, thinking=thinking)
+    """Create an assistant message, storing thinking in a separate field.
+
+    If *content* contains inline ``<think>…</think>`` tags they are
+    extracted into the ``thinking`` field and stripped from ``content``.
+    The explicitly passed *thinking* parameter is used only when no
+    inline tags are present.
+    """
+    clean_content, extracted = split_thinking_content(content)
+    final_thinking = extracted or thinking
+    return Message(role="assistant", content=clean_content, thinking=final_thinking)
 
 
 def format_messages_for_llm(

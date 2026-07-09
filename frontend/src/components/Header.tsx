@@ -109,7 +109,7 @@ export const Header = memo(function Header() {
           </div>
           <div style={{ marginBottom: '8px' }}>
             <button
-              disabled={!chat.activeSessionId}
+              disabled={!chat.activeSessionId || chat.messages.length === 0}
               onClick={async () => {
                 setCopyMsg(null);
                 try {
@@ -128,14 +128,14 @@ export const Header = memo(function Header() {
               }}
               style={{
                 padding: '4px 8px',
-                background: chat.activeSessionId ? 'var(--accent)' : '#666',
+                background: chat.activeSessionId && chat.messages.length > 0 ? 'var(--accent)' : '#666',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: chat.activeSessionId ? 'pointer' : 'not-allowed',
+                cursor: chat.activeSessionId && chat.messages.length > 0 ? 'pointer' : 'not-allowed',
                 fontSize: '11px',
                 width: '100%',
-                opacity: chat.activeSessionId ? 1 : 0.5,
+                opacity: chat.activeSessionId && chat.messages.length > 0 ? 1 : 0.5,
               }}
             >
               Copy session JSON

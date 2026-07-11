@@ -2679,6 +2679,78 @@ class TestUnlockFlow:
         # Fernet should not be stored on failure
         assert web_models.get_state().fernet is None
 
+    def test_unlock_wrong_password_restores_engine_fernet(self, tmp_path, monkeypatch):
+        """A failed unlock restores EncryptedJSON._engine_fernet to its prior value."""
+        import base64 as _b64
+        from cryptography.fernet import Fernet as _F, InvalidToken
+        from src.agentframework.session import EncryptedJSON
+
+        prior = _F(_b64.urlsafe_b64encode(b"\x00" * 32))
+        EncryptedJSON._engine_fernet = prior
+
+        salt_path = tmp_path / ".db_salt"
+        salt_path.write_bytes(b"\xaa" * 16)
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.derive_key",
+            lambda pwd, salt: (
+                __import__("base64").urlsafe_b64encode(b"\x01" * 32)
+            ),
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.SessionManager.list_sessions",
+            lambda self, **kw: (_ for _ in ()).throw(InvalidToken),
+        )
+
+        resp = client.post("/api/unlock", json={"password": "wrong-password"})
+        assert resp.status_code == 401
+        assert EncryptedJSON._engine_fernet is prior
+
+    def test_correct_unlock_after_failed_attempt(self, tmp_path, monkeypatch):
+        """A correct unlock works after a prior failed attempt (race regression)."""
+        import base64 as _b64
+        from cryptography.fernet import InvalidToken
+
+        salt_path = tmp_path / ".db_salt"
+        salt_path.write_bytes(b"\xaa" * 16)
+
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock._session_dir",
+            lambda: tmp_path,
+        )
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.derive_key",
+            lambda pwd, salt: _b64.urlsafe_b64encode(b"\x00" * 32),
+        )
+        monkeypatch.setattr(
+            web_api, "_create_runtime_agent",
+            lambda *a, **kw: MagicMock(session_manager=MagicMock()),
+        )
+
+        state = web_models.get_state()
+        state.agent = None
+        state.fernet = None
+
+        # First attempt — wrong password
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.SessionManager.list_sessions",
+            lambda self, **kw: (_ for _ in ()).throw(InvalidToken),
+        )
+        resp = client.post("/api/unlock", json={"password": "bad"})
+        assert resp.status_code == 401
+
+        # Second attempt — correct password (remove the mock so real code path runs)
+        monkeypatch.setattr(
+            "src.agentframework.routers.unlock.SessionManager.list_sessions",
+            lambda self, **kw: [],
+        )
+        resp = client.post("/api/unlock", json={"password": "good"})
+        assert resp.status_code == 200, resp.text
+
     def test_locked_before_unlock(self):
         """Session routes return 423 before unlocking."""
         state = web_models.get_state()

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import stat
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +18,7 @@ from src.agentframework.db_crypto import (
     derive_key,
     get_or_create_salt,
     prompt_for_fernet,
+    recover_salt_transition,
 )
 
 
@@ -102,6 +105,34 @@ class TestGetOrCreateSalt:
             get_or_create_salt(salt_path)
             assert salt_path.stat().st_mtime_ns == mtime_before
 
+    def test_concurrent_creation_returns_same_salt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            salt_path = Path(tmp) / "salt.bin"
+            results: list[bytes] = []
+            errors: list[Exception] = []
+            barrier = threading.Barrier(2, timeout=5)
+
+            def create() -> None:
+                try:
+                    barrier.wait()
+                    s = get_or_create_salt(salt_path)
+                    results.append(s)
+                except Exception as e:
+                    errors.append(e)
+
+            t1 = threading.Thread(target=create)
+            t2 = threading.Thread(target=create)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+            assert not errors, f"got {len(errors)} error(s): {errors}"
+            assert len(results) == 2
+            assert results[0] == results[1]
+            assert len(results[0]) == 17
+            assert results[0][0] == 2
+
 
 class TestPromptForFernet:
     def test_uses_env_var_when_set(self):
@@ -135,3 +166,83 @@ class TestPromptForFernet:
             salt_path = Path(tmp) / "salt.bin"
             with pytest.raises(SystemExit, match="No ECHO_DB_PASSWORD set"):
                 prompt_for_fernet(salt_path)
+
+
+def _set_user_version(db_path: Path, version: int) -> None:
+    """Set PRAGMA user_version on a test database."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(f"PRAGMA user_version = {version}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _read_uv(db_path: Path) -> int:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        conn.close()
+
+
+class TestRecoverSaltTransition:
+    """Crash-recovery for interrupted change-password (PRAGMA user_version marker)."""
+
+    def test_deletes_salt_new_when_uv_0(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            db_path = d / "agent_sessions.db"
+            sqlite3.connect(str(db_path)).close()
+            _set_user_version(db_path, 0)
+
+            (d / "salt.new").write_text("pending new salt")
+
+            recover_salt_transition(d)
+
+            assert not (d / "salt.new").exists()
+            assert _read_uv(db_path) == 0
+
+    def test_promotes_salt_new_when_uv_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            db_path = d / "agent_sessions.db"
+            sqlite3.connect(str(db_path)).close()
+            _set_user_version(db_path, 1)
+
+            (d / ".db_salt").write_text("old salt")
+            (d / "salt.new").write_text("new salt")
+
+            recover_salt_transition(d)
+
+            assert not (d / "salt.new").exists()
+            assert (d / ".db_salt").read_text() == "new salt"
+            assert _read_uv(db_path) == 0
+
+    def test_resets_uv_1_when_salt_new_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            db_path = d / "agent_sessions.db"
+            sqlite3.connect(str(db_path)).close()
+            _set_user_version(db_path, 1)
+
+            (d / ".db_salt").write_text("already-promoted salt")
+
+            recover_salt_transition(d)
+
+            assert not (d / "salt.new").exists()
+            assert _read_uv(db_path) == 0
+
+    def test_noop_when_no_salt_new_and_uv_0(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            db_path = d / "agent_sessions.db"
+            sqlite3.connect(str(db_path)).close()
+            _set_user_version(db_path, 0)
+
+            (d / ".db_salt").write_text("normal state")
+
+            recover_salt_transition(d)
+
+            assert _read_uv(db_path) == 0
+            assert (d / ".db_salt").read_text() == "normal state"

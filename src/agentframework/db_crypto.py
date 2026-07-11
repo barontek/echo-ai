@@ -18,7 +18,9 @@ import getpass
 import logging
 import os
 import secrets
+import sqlite3
 import sys
+import time
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -75,14 +77,29 @@ def derive_key(password: str, salt: bytes) -> bytes:
 def get_or_create_salt(salt_path: Path) -> bytes:
     """Return a persistent salt, creating it at *salt_path* if missing.
 
+    Uses ``O_CREAT | O_EXCL`` to prevent two processes racing on first-run
+    from silently overwriting each other's salt.  If the file already exists
+    (including if another process created it between our stat and open), the
+    existing value is read and returned.
+
     New salts are created in v2 format (version byte + 16 random bytes).
     """
-    if salt_path.exists():
+    try:
+        fd = os.open(str(salt_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        data = salt_path.read_bytes()
+        if data:
+            return data
+        # O_EXCL winner opened the file but hasn't written data yet
+        time.sleep(0.005)
         return salt_path.read_bytes()
 
     salt = _generate_v2_salt()
-    salt_path.write_bytes(salt)
-    salt_path.chmod(0o600)
+    try:
+        os.write(fd, salt)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
     return salt
 
 
@@ -151,6 +168,82 @@ def prompt_create_password(salt_path: Path) -> Fernet:
 def generate_salt() -> bytes:
     """Generate a fresh salt (v2 format) without writing it anywhere."""
     return _generate_v2_salt()
+
+
+# ---------------------------------------------------------------------------
+# Crash-recovery for change-password atomic transition
+#
+# PRAGMA user_version serves as an atomic commit marker inside the SQLite
+# file itself — since it is written by the same COMMIT as the re-encrypted
+# data, the marker and the data always agree.  A separate salt.new file
+# holds the new salt before the commit; recovery uses user_version to
+# decide whether to promote it or discard it.
+#
+# Crash-coverage table (every cell reachable by a hard crash):
+#
+#   uv | salt.new  | Recovery action
+#   ---+-----------+-----------------------------------------------------
+#    0 | absent    | no-op (steady state / after recovery completes)
+#    0 | exists    | delete salt.new (commit never completed)
+#    1 | exists    | rename salt.new → salt (commit completed, rename lost)
+#    1 | absent    | reset uv→0 (rename completed, cleanup lost)
+# ---------------------------------------------------------------------------
+
+
+def _read_user_version(db_path: Path) -> int:
+    """Read ``PRAGMA user_version`` from a SQLite database.
+
+    No encryption key is needed — this is a plaintext header field.
+    """
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            return conn.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return 0
+
+
+def _write_user_version(db_path: Path, version: int) -> None:
+    """Write *version* to ``PRAGMA user_version`` and commit."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(f"PRAGMA user_version = {version}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def recover_salt_transition(session_dir: Path) -> None:
+    """Resolve an interrupted change-password transition on process restart.
+
+    Must be called *before* any ORM or Fernet code touches the database —
+    i.e. at the top of ``SessionManager.__init__`` and at CLI startup — so
+    the correct salt file is in place before any decryption is attempted.
+    """
+    salt_path = session_dir / ".db_salt"
+    new_salt_path = session_dir / "salt.new"
+    db_path = session_dir / "agent_sessions.db"
+
+    if not new_salt_path.exists() and not db_path.exists():
+        return
+
+    uv = _read_user_version(db_path) if db_path.exists() else 0
+
+    if not new_salt_path.exists():
+        if uv == 1:
+            _write_user_version(db_path, 0)
+        return
+
+    if uv == 0:
+        new_salt_path.unlink()
+        logger.info("Recovery: discarded salt.new (commit did not complete)")
+    elif uv == 1:
+        new_salt_path.rename(salt_path)
+        salt_path.chmod(0o600)
+        _write_user_version(db_path, 0)
+        logger.info("Recovery: promoted salt.new (commit completed before crash)")
 
 
 def _wipe_str(s: str) -> None:

@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 
 from ..config import DEFAULT_SESSION_DIR, load_config
-from ..db_crypto import derive_key, generate_salt, get_or_create_salt, is_first_run
+from ..db_crypto import derive_key, generate_salt, get_or_create_salt, is_first_run, _write_user_version
 from ..rate_limit import global_unlock_failures, increment_unlock_failures, reset_unlock_failures
 from ..session import EncryptedJSON, SessionManager, db_write_lock
 from ..web_models import UNLOCK_TOKEN_HEADER, generate_token, get_state, require_unlocked
@@ -100,12 +100,14 @@ async def setup_database(request: Request, body: SetupRequest):
     key = derive_key(body.password, salt)
     fernet = Fernet(key)
 
+    old_fernet = EncryptedJSON._engine_fernet
     EncryptedJSON._engine_fernet = fernet
     test_sm: SessionManager | None = None
     try:
         test_sm = SessionManager(str(session_dir))
         test_sm.list_sessions(limit=1)
     except Exception as exc:
+        EncryptedJSON._engine_fernet = old_fernet
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
     finally:
         if test_sm is not None:
@@ -192,12 +194,14 @@ async def unlock_database(request: Request, body: UnlockRequest):
     fernet = Fernet(key)
 
     # Test the password by setting the Fernet and trying a read
+    old_fernet = EncryptedJSON._engine_fernet
     EncryptedJSON._engine_fernet = fernet
     test_sm: SessionManager | None = None
     try:
         test_sm = SessionManager(str(session_dir))
         test_sm.list_sessions(limit=1)
     except (ValueError, Exception) as exc:
+        EncryptedJSON._engine_fernet = old_fernet
         if isinstance(exc, InvalidToken) or "Incorrect database password" in str(exc):
             increment_unlock_failures()
             raise HTTPException(status_code=401, detail="Incorrect password")
@@ -284,22 +288,34 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
     new_fernet = Fernet(new_key)
 
     # -----------------------------------------------------------------
-    # 4. Re-encrypt every row inside a single DB transaction
+    # 4. Write-ahead the new salt before touching the DB.
+    #
+    #    Write salt.new via temp-file + fsync + atomic rename so that
+    #    the new salt is never left partially-written on disk.  At this
+    #    point salt.new is inert — nobody reads it — it's just a
+    #    crash-recovery marker that will be promoted only after the
+    #    re-encryption transaction commits.
+    # -----------------------------------------------------------------
+    new_salt_path = salt_path.with_name("salt.new")
+    _write_salt_atomically(new_salt_path, new_salt)
+
+    # -----------------------------------------------------------------
+    # 5. Re-encrypt every row inside a single DB transaction.
     #
     #    The entire critical section — from reading rows through to
-    #    committing the new salt and swapping state.fernet — is
-    #    serialised under db_write_lock so that no concurrent chat
-    #    write (save_session / add_message / delete_session etc.)
-    #    can interleave.  This prevents two classes of corruption:
-    #      a) a row written with the old Fernet after state.fernet
-    #         has already been swapped to the new key (unreadable);
-    #      b) the SQLAlchemy connection pool and a raw connection
-    #         fighting over the same SQLite file.
+    #    committing re-encrypted data and the PRAGMA user_version
+    #    marker — is serialised under db_write_lock so that no
+    #    concurrent chat write can interleave.
+    #
+    #    PRAGMA user_version is bumped to 1 in the SAME COMMIT as the
+    #    re-encrypted data.  Because they share one atomic SQLite
+    #    transaction, the marker and the data always agree — there is
+    #    no window where one exists without the other after a crash.
     #
     #    The lock is acquired via asyncio.to_thread because the
-    #    underlying Lock is a threading.Lock (not asyncio-compatible
-    #    natively) and the same lock is held by SessionManager's
-    #    synchronous write methods.
+    #    underlying Lock is a threading.Lock (not asyncio-compatible)
+    #    and the same lock is held by SessionManager's synchronous
+    #    write methods.
     # -----------------------------------------------------------------
     await asyncio.to_thread(db_write_lock.acquire)
     try:
@@ -369,6 +385,8 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
                         },
                     )
 
+                # Atomic marker: same COMMIT as the data above
+                conn.execute(text("PRAGMA user_version = 1"))
                 conn.commit()
         except Exception as exc:
             conn.rollback()
@@ -380,11 +398,20 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
             engine.dispose()
 
         # -----------------------------------------------------------------
-        # 5. Persist the new salt and update in-memory state
-        #    (still under db_write_lock — no write path can interleave)
+        # 6. Promote the write-ahead salt (atomic rename on POSIX).
+        #
+        #    If the process crashes here, recovery sees uv=1 + salt.new
+        #    exists and completes the rename.  If crash occurs after the
+        #    rename but before step 7, recovery sees uv=1 + no salt.new
+        #    and just resets uv to 0.
         # -----------------------------------------------------------------
-        salt_path.write_bytes(new_salt)
+        new_salt_path.rename(salt_path)
         salt_path.chmod(0o600)
+        _write_user_version(db_path, 0)
+
+        # -----------------------------------------------------------------
+        # 7. Update in-memory state (not durable — rebuilt on restart)
+        # -----------------------------------------------------------------
         state.fernet = new_fernet
         state.fernet_key = new_key
         EncryptedJSON._engine_fernet = new_fernet
@@ -431,6 +458,22 @@ async def logout(request: Request):
         logger.info("Client logged out (%d token(s) still active)", len(state.active_tokens))
 
     return {"status": "logged_out"}
+
+
+def _write_salt_atomically(path: Path, data: bytes) -> None:
+    """Write *data* to *path* using temp-file + fsync + atomic rename.
+
+    Ensures the target file is never partially written on disk even
+    if the process is killed mid-write.
+    """
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(str(tmp), os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        os.write(fd, data)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    tmp.rename(path)
 
 
 @router.get("/api/status")

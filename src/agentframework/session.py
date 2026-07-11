@@ -16,7 +16,7 @@ from sqlalchemy import Boolean, create_engine, text, String, DateTime, LargeBina
 from sqlalchemy.orm import declarative_base, sessionmaker, Mapped, mapped_column
 
 from .constants import ECHO_DATA_DIR
-from .db_crypto import prompt_for_fernet
+from .db_crypto import prompt_for_fernet, recover_salt_transition
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,9 @@ class SessionManager:
             session_dir = DEFAULT_SESSION_DIR
         self.session_dir = Path(session_dir)
         self.session_dir.mkdir(parents=True, exist_ok=True)
+
+        # Recover any interrupted change-password transition before touching the DB
+        recover_salt_transition(self.session_dir)
 
         # Configure the Fernet instance on EncryptedJSON
         if fernet is not None:

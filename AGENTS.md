@@ -51,15 +51,26 @@ cd frontend && npm run build
 
 ## Python Version
 
-- **Pin to 3.11 for local dev and CI until further notice.**
+- **Pin to 3.11 for local dev and as the CI gate.**
   Segfault rates measured across SQLAlchemy C-extension / greenlet interaction
   on uv-managed standalone CPython builds: **3.11 = 0/25, 3.12 ≈ 16 % (4/25),
   3.13 ≈ 75 % (30/40).**  Python 3.13's incremental GC and newer CPython
   compile-time changes aggravate the crash.  The `.python-version` file at
   repo root controls `uv run`; the Dockerfile is also pinned to 3.11.
-  The underlying root cause (likely a C-extension ABI issue in
-  `sqlalchemy.cyextension` / `greenlet`) is deferred — not permanently
-  abandoned, just blocked on upstream investigation.
+- **Do NOT silently remove 3.12/3.13 from CI.**  If CI workflow files exist,
+  mark them `continue-on-error: true` (not fully removed) so signal persists
+  without blocking merges.  Full removal would lose visibility of whether a
+  future dependency update fixes the crash or it gets worse.
+- **The segfault data above is from uv-managed standalone builds, not GitHub's
+  hosted-tool-cache builds.**  Before locking in this decision, reproduce the
+  stress test inside a GitHub Actions run (a scratch workflow looping
+  `test_agent_session_persistence` 20-30x across 3.11/3.12/3.13) to confirm
+  the crash rate matches CI's actual environment.
+- **Open item** (tracked here, not silently dropped): C-extension ABI
+  incompatibility in `sqlalchemy.cyextension` / `greenlet` against newer CPython
+  builds.  Not permanently abandoned — deferred pending upstream investigation.
+  If a greenlet or SQLAlchemy release notes mention CPython ABI fixes, this is
+  worth re-testing.
 - **Python 3.11** required as a floor (`requires-python = ">=3.11"`).
 - **Always use `nix develop`** (Linux) — auto-syncs deps, sets up venv, provides all tooling. On macOS/Windows, use `uv run` directly.
 - **Package management**: `uv` only. Never use `pip` directly.

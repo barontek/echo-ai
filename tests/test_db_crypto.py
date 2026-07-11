@@ -133,6 +133,47 @@ class TestGetOrCreateSalt:
             assert len(results[0]) == 17
             assert results[0][0] == 2
 
+    def test_retries_when_writer_delayed(self):
+        """Loser retries if the winner opens but delays writing past the old 5ms window."""
+        import time as _time
+
+        original_write = os.write
+
+        def _delayed_write(fd: int, data: bytes, /) -> int:
+            _time.sleep(0.05)
+            return original_write(fd, data)
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("src.agentframework.db_crypto.os.write", _delayed_write),
+        ):
+            salt_path = Path(tmp) / "salt.bin"
+            results: list[bytes] = []
+            errors: list[Exception] = []
+            barrier = threading.Barrier(2, timeout=5)
+
+            def create() -> None:
+                try:
+                    barrier.wait()
+                    s = get_or_create_salt(salt_path)
+                    results.append(s)
+                except Exception as e:
+                    errors.append(e)
+
+            writer = threading.Thread(target=create)
+            reader = threading.Thread(target=create)
+
+            writer.start()
+            reader.start()
+            writer.join()
+            reader.join()
+
+            assert not errors, f"got {len(errors)} error(s): {errors}"
+            assert len(results) == 2
+            assert results[0] == results[1]
+            assert len(results[0]) == 17
+            assert results[0][0] == 2
+
 
 class TestPromptForFernet:
     def test_uses_env_var_when_set(self):

@@ -87,12 +87,13 @@ def get_or_create_salt(salt_path: Path) -> bytes:
     try:
         fd = os.open(str(salt_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
-        data = salt_path.read_bytes()
-        if data:
-            return data
-        # O_EXCL winner opened the file but hasn't written data yet
-        time.sleep(0.005)
-        return salt_path.read_bytes()
+        deadline = time.monotonic() + 0.2
+        while time.monotonic() < deadline:
+            data = salt_path.read_bytes()
+            if data:
+                return data
+            time.sleep(0.005)
+        raise RuntimeError(f"Timed out waiting for concurrent salt write to {salt_path}")
 
     salt = _generate_v2_salt()
     try:

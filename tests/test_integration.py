@@ -1,6 +1,9 @@
 """Integration tests for the agent framework."""
 
+import base64
+
 import pytest
+from cryptography.fernet import Fernet
 from dataclasses import dataclass
 
 from src.agentframework.core import Agent, AgentConfig
@@ -117,7 +120,8 @@ async def test_agent_session_persistence(tmp_path):
         session_dir=str(tmp_path / "sessions"),
         tools=[],
     )
-    agent = Agent(config, mock_provider)
+    fernet = Fernet(base64.urlsafe_b64encode(b"\x00" * 32))
+    agent = Agent(config, mock_provider, fernet=fernet)
 
     await agent.run("First message")
     session_id = (

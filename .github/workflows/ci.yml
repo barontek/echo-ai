@@ -113,7 +113,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install test dependencies
-        run: uv pip install --system pytest pytest-timeout
+        run: uv pip install --system -e ".[dev]"
 
       - name: Run 30x stress loop
         run: |

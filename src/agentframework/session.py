@@ -1,5 +1,6 @@
 """Session management for the agent framework using SQLite."""
 
+import gc
 import json
 import logging
 import os
@@ -377,6 +378,7 @@ class SessionManager:
                     events=session.events or [],
                 )
                 db.merge(db_session)
+                gc.collect()  # preempt GC before SQLAlchemy C extensions run
                 db.commit()
 
     def truncate_history(self, index: int) -> None:

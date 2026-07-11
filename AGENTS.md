@@ -49,9 +49,18 @@ cd frontend && npm run build
 - SSE streaming: `/api/stream`
 - REST: `/api/chat`
 
-## Key Constraints
+## Python Version
 
-- **Python 3.11+** required
+- **Pin to 3.11 for local dev and CI until further notice.**
+  Segfault rates measured across SQLAlchemy C-extension / greenlet interaction
+  on uv-managed standalone CPython builds: **3.11 = 0/25, 3.12 ≈ 16 % (4/25),
+  3.13 ≈ 75 % (30/40).**  Python 3.13's incremental GC and newer CPython
+  compile-time changes aggravate the crash.  The `.python-version` file at
+  repo root controls `uv run`; the Dockerfile is also pinned to 3.11.
+  The underlying root cause (likely a C-extension ABI issue in
+  `sqlalchemy.cyextension` / `greenlet`) is deferred — not permanently
+  abandoned, just blocked on upstream investigation.
+- **Python 3.11** required as a floor (`requires-python = ">=3.11"`).
 - **Always use `nix develop`** (Linux) — auto-syncs deps, sets up venv, provides all tooling. On macOS/Windows, use `uv run` directly.
 - **Package management**: `uv` only. Never use `pip` directly.
 - **PYTHONPATH**: must be `src` when running tests (`PYTHONPATH=src pytest ...`)

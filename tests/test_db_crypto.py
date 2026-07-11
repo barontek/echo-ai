@@ -76,7 +76,8 @@ class TestGetOrCreateSalt:
             salt_path = Path(tmp) / "salt.bin"
             salt = get_or_create_salt(salt_path)
             assert salt_path.exists()
-            assert len(salt) == 16
+            assert len(salt) == 17, f"expected 17 (v2: version+16), got {len(salt)}"
+            assert salt[0] == 2, f"expected version byte 0x02, got {salt[0]}"
             mode = stat.S_IMODE(salt_path.stat().st_mode)
             assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
 

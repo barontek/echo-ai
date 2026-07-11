@@ -2,6 +2,10 @@ import { memo, useState } from 'react';
 import { useChat } from '../context';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 
+interface HeaderProps {
+  onLogout?: () => void;
+}
+
 function getInitialTheme(): 'dark' | 'light' {
   const saved = localStorage.getItem('theme');
   if (saved === 'light' || saved === 'dark') {
@@ -11,7 +15,7 @@ function getInitialTheme(): 'dark' | 'light' {
   return 'dark';
 }
 
-export const Header = memo(function Header() {
+export const Header = memo(function Header({ onLogout }: HeaderProps) {
   const chat = useChat();
   const [showDebug, setShowDebug] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -48,6 +52,11 @@ export const Header = memo(function Header() {
             ></span>
             <span>{statusText}</span>
           </div>
+          {onLogout && (
+            <button className="header-icon-btn" onClick={onLogout} title="Lock database">
+              🔒
+            </button>
+          )}
           <button className="header-icon-btn" onClick={toggleTheme} title="Toggle theme">
             {theme === 'dark' ? '☀' : '☾'}
           </button>

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from src.agentframework import web_api
 from src.agentframework import web_models
 from src.agentframework.web_api import app
-from src.agentframework.session import set_fernet, SessionManager
+from src.agentframework.session import EncryptedJSON, SessionManager
 from src.agentframework.core import Agent
 
 _TEST_FERNET = Fernet(base64.urlsafe_b64encode(b"\x00" * 32))
@@ -37,7 +37,7 @@ def _temp_session_dir():
     salt_path = Path(tmp) / ".db_salt"
     salt_path.write_bytes(b"\xaa" * 16)
     salt_path.chmod(0o600)
-    set_fernet(_TEST_FERNET)
+    EncryptedJSON._engine_fernet = _TEST_FERNET
     return tmp
 
 

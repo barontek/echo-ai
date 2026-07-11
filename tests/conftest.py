@@ -10,15 +10,15 @@ import pytest
 from cryptography.fernet import Fernet
 
 from agentframework.providers import LLMResponse, LLMToolCall
-from agentframework.session import set_fernet as _set_session_fernet
+from agentframework.session import EncryptedJSON
 
 # Deterministic Fernet key for all tests so SessionManager / EncryptedJSON
 # don't try to prompt for a password.
 _TEST_FERNET = Fernet(base64.urlsafe_b64encode(b"\x00" * 32))
 
 
-# Set session module Fernet at import time (no TTY in tests).
-_set_session_fernet(_TEST_FERNET)
+# Set EncryptedJSON class-level Fernet at import time (no TTY in tests).
+EncryptedJSON._engine_fernet = _TEST_FERNET
 
 
 def pytest_configure(config):

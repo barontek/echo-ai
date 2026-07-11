@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -32,39 +33,39 @@ DEFAULT_BACKUP_DIR = str(ECHO_DATA_DIR / "sessions" / ".backups")
 
 Base = declarative_base()
 
-_fernet: Fernet | None = None
-
-
-def get_fernet() -> Fernet:
-    if _fernet is None:
-        raise RuntimeError(
-            "No Fernet instance configured. "
-            "Create a SessionManager or set_fernet() first."
-        )
-    return _fernet
-
-
-def set_fernet(fernet: Fernet) -> None:
-    global _fernet
-    _fernet = fernet
-
 
 class EncryptedJSON(TypeDecorator):
-    """SQLAlchemy type that transparently encrypts JSON columns with Fernet."""
+    """SQLAlchemy type that transparently encrypts JSON columns with Fernet.
+
+    The Fernet instance is set on the **class** itself (``_engine_fernet``)
+    by :class:`SessionManager` at construction time.  Because there is only
+    one active database per process, a single class-level Fernet is correct.
+    """
 
     impl = LargeBinary
     cache_ok = True
 
+    _engine_fernet: Fernet | None = None
+
+    @classmethod
+    def _get_fernet(cls) -> Fernet:
+        if cls._engine_fernet is None:
+            raise RuntimeError(
+                "No Fernet instance configured. "
+                "Create a SessionManager first."
+            )
+        return cls._engine_fernet
+
     def process_bind_param(self, value: object, dialect: object) -> bytes | None:
         if value is None:
             return None
-        return get_fernet().encrypt(json.dumps(value, default=str).encode("utf-8"))
+        return self._get_fernet().encrypt(json.dumps(value, default=str).encode("utf-8"))
 
     def process_result_value(self, value: bytes | None, dialect: object) -> object | None:
         if value is None:
             return None
         try:
-            return json.loads(get_fernet().decrypt(value).decode("utf-8"))
+            return json.loads(self._get_fernet().decrypt(value).decode("utf-8"))
         except InvalidToken:
             raise ValueError("Incorrect database password") from None
 
@@ -107,7 +108,7 @@ class DBSessionModel(Base):
     __tablename__ = "agent_sessions"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    title: Mapped[str | None] = mapped_column(EncryptedJSON, nullable=True)
     title_generation_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     messages: Mapped[list[dict]] = mapped_column(EncryptedJSON, default=list)
@@ -163,15 +164,12 @@ class SessionManager:
         self.session_dir = Path(session_dir)
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
-        # Configure the module-level Fernet instance
+        # Configure the Fernet instance on EncryptedJSON
         if fernet is not None:
-            set_fernet(fernet)
-        else:
-            try:
-                get_fernet()
-            except RuntimeError:
-                salt_path = self.session_dir / ".db_salt"
-                set_fernet(prompt_for_fernet(salt_path))
+            EncryptedJSON._engine_fernet = fernet
+        elif EncryptedJSON._engine_fernet is None:
+            salt_path = self.session_dir / ".db_salt"
+            EncryptedJSON._engine_fernet = prompt_for_fernet(salt_path)
 
         # Initialize SQLite database connection with pooling
         self.db_path = self.session_dir / "agent_sessions.db"
@@ -184,11 +182,14 @@ class SessionManager:
             pool_recycle=3600,
         )
         with self.engine.connect() as conn:
-            conn.execute(text("PRAGMA journal_mode=WAL"))
-            conn.execute(text("PRAGMA synchronous=NORMAL"))
+            conn.execute(text("PRAGMA journal_mode=DELETE"))
+            conn.execute(text("PRAGMA synchronous=FULL"))
             conn.execute(text("PRAGMA busy_timeout=5000"))
             conn.commit()
         Base.metadata.create_all(self.engine)
+        # Lock down DB and session directory permissions
+        os.chmod(str(self.db_path), 0o600)
+        os.chmod(str(self.session_dir), 0o700)
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine
         )
@@ -201,6 +202,8 @@ class SessionManager:
         self._migrate_add_title_generation_attempted_column()
         # Add indexes for faster queries
         self._migrate_add_indexes()
+        # Encrypt any plaintext titles left from before V7
+        self._migrate_encrypt_titles()
 
         self.current_session: Session | None = None
 
@@ -278,6 +281,34 @@ class SessionManager:
             logger.info("Migrated agent_sessions: added indexes.")
 
         self._with_connection(migrate, "indexes")
+
+    def _migrate_encrypt_titles(self) -> None:
+        """Encrypt any plaintext titles left from before V7 encryption."""
+
+        def migrate(conn):
+            cursor = conn.execute("SELECT id, title FROM agent_sessions")
+            rows = cursor.fetchall()
+            fernet = EncryptedJSON._get_fernet()
+            updated = 0
+            for row_id, title in rows:
+                if title is None:
+                    continue
+                if isinstance(title, str):
+                    encrypted = fernet.encrypt(
+                        json.dumps(title).encode("utf-8")
+                    )
+                    conn.execute(
+                        "UPDATE agent_sessions SET title = ? WHERE id = ?",
+                        (encrypted, row_id),
+                    )
+                    updated += 1
+            if updated:
+                conn.commit()
+                logger.info(
+                    "Migrated %d plaintext title(s) to encrypted format.", updated
+                )
+
+        self._with_connection(migrate, "'title' encryption")
 
     def log_event(self, event_type: str, data: dict | None = None) -> None:
         """Log an event to the session's event log."""
@@ -384,27 +415,43 @@ class SessionManager:
             query = db.query(DBSessionModel)
 
             if search:
-                query = query.filter(DBSessionModel.title.ilike(f"%{search}%"))
-
-            total = query.count()
-
-            for db_session in (
-                query.order_by(DBSessionModel.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-                .all()
-            ):
-                sessions.append(
-                    Session(
-                        id=db_session.id,  # type: ignore
-                        title=db_session.title,  # type: ignore
-                        title_generation_attempted=db_session.title_generation_attempted,  # type: ignore
-                        created_at=db_session.created_at,  # type: ignore
-                        messages=db_session.messages or [],  # type: ignore
-                        metadata=db_session.session_metadata or {},  # type: ignore
-                        events=db_session.events or [],  # type: ignore
+                # Titles are encrypted, so filter in-memory
+                all_rows = query.order_by(DBSessionModel.created_at.desc()).all()
+                for db_session in all_rows:
+                    title = db_session.title  # Decrypted by EncryptedJSON
+                    if title and search.lower() in title.lower():
+                        sessions.append(
+                            Session(
+                                id=db_session.id,  # type: ignore
+                                title=title,
+                                title_generation_attempted=db_session.title_generation_attempted,  # type: ignore
+                                created_at=db_session.created_at,  # type: ignore
+                                messages=db_session.messages or [],  # type: ignore
+                                metadata=db_session.session_metadata or {},  # type: ignore
+                                events=db_session.events or [],  # type: ignore
+                            )
+                        )
+                total = len(sessions)
+                sessions = sessions[offset : offset + limit]
+            else:
+                total = query.count()
+                for db_session in (
+                    query.order_by(DBSessionModel.created_at.desc())
+                    .offset(offset)
+                    .limit(limit)
+                    .all()
+                ):
+                    sessions.append(
+                        Session(
+                            id=db_session.id,  # type: ignore
+                            title=db_session.title,  # type: ignore
+                            title_generation_attempted=db_session.title_generation_attempted,  # type: ignore
+                            created_at=db_session.created_at,  # type: ignore
+                            messages=db_session.messages or [],  # type: ignore
+                            metadata=db_session.session_metadata or {},  # type: ignore
+                            events=db_session.events or [],  # type: ignore
+                        )
                     )
-                )
         return sessions, total
 
     def add_message(self, role: str, content: str, **kwargs) -> None:
@@ -580,14 +627,24 @@ class SessionManager:
         """Try to clean up the engine pool on garbage collection."""
         if hasattr(self, "engine") and self.engine is not None:
             try:
+                with self.engine.connect() as conn:
+                    conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+                    conn.commit()
                 self.engine.dispose()
             except Exception:
                 pass
 
     def close(self) -> None:
-        """Dispose of the database engine and any connections in its pool."""
+        """Dispose of the database engine and any connections in its pool.
+
+        Runs a final WAL checkpoint before closing to ensure no sidecar
+        files linger with stale data.
+        """
         if hasattr(self, "engine") and self.engine is not None:
             try:
+                with self.engine.connect() as conn:
+                    conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+                    conn.commit()
                 self.engine.dispose()
                 logger.debug("Successfully disposed of SQLAlchemy engine.")
             except Exception as e:

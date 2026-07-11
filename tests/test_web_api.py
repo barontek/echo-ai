@@ -24,6 +24,13 @@ from pathlib import Path
 client = TestClient(app, raise_server_exceptions=False)
 
 
+@pytest.fixture(autouse=True)
+def _reset_state():
+    state = web_api.get_state()
+    state.active_tokens.clear()
+    yield
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

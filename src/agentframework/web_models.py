@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +13,24 @@ from pydantic import BaseModel, Field
 from .core import Agent
 
 logger = logging.getLogger(__name__)
+
+UNLOCK_TOKEN_HEADER = "X-Unlock-Token"
+
+# Public paths that don't require an unlock token
+PUBLIC_PATHS = {
+    "/api/unlock",
+    "/api/setup",
+    "/api/status",
+    "/health",
+    "/health/detailed",
+    "/api/preferences",
+    "/api/config",
+    "/api/models",
+    "/api/review",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
 
 
 @dataclass
@@ -23,6 +42,7 @@ class AppState:
     fernet_key: bytes | None = None
     current_session_id: str | None = None
     message_history: list[dict[str, Any]] = field(default_factory=list)
+    active_tokens: set[str] = field(default_factory=set)
 
 
 # Module-level state container (initialized on startup)
@@ -35,6 +55,11 @@ def get_state() -> AppState:
     if _state is None:
         _state = AppState()
     return _state
+
+
+def generate_token() -> str:
+    """Generate a random bearer token for a client session."""
+    return secrets.token_urlsafe(32)
 
 
 def require_unlocked():

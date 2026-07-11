@@ -28,8 +28,9 @@ from sqlalchemy import create_engine, text
 
 from ..config import DEFAULT_SESSION_DIR, load_config
 from ..db_crypto import derive_key, generate_salt, get_or_create_salt, is_first_run
-from ..session import SessionManager, db_write_lock, set_fernet
-from ..web_models import get_state, require_unlocked
+from ..rate_limit import global_unlock_failures, increment_unlock_failures, reset_unlock_failures
+from ..session import EncryptedJSON, SessionManager, db_write_lock
+from ..web_models import UNLOCK_TOKEN_HEADER, generate_token, get_state, require_unlocked
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,9 @@ router = APIRouter(tags=["Unlock"])
 
 UNLOCK_LIMIT = 5
 UNLOCK_WINDOW = 60
+GLOBAL_UNLOCK_LIMIT = 20
+GLOBAL_UNLOCK_WINDOW = 60
+_BACKOFF_THRESHOLD = 10  # consecutive global failures before exponential backoff begins
 
 
 class UnlockRequest(BaseModel):
@@ -96,7 +100,7 @@ async def setup_database(request: Request, body: SetupRequest):
     key = derive_key(body.password, salt)
     fernet = Fernet(key)
 
-    set_fernet(fernet)
+    EncryptedJSON._engine_fernet = fernet
     test_sm: SessionManager | None = None
     try:
         test_sm = SessionManager(str(session_dir))
@@ -123,23 +127,48 @@ async def setup_database(request: Request, body: SetupRequest):
     except Exception as exc:
         logger.warning("Could not create runtime agent on setup: %s", exc)
 
-    return {"status": "setup_ok"}
+    # Generate an unlock token for the caller
+    token = generate_token()
+    state.active_tokens.add(token)
+
+    return {"status": "setup_ok", "token": token}
 
 
 @router.post("/api/unlock")
 async def unlock_database(request: Request, body: UnlockRequest):
     """Derive Fernet from password and unlock the database.
 
-    Rate-limited to 5 attempts per minute per IP.
+    Rate-limited to 5 attempts per minute per IP, plus a global
+    limit of 20 attempts per minute across all IPs.  After 10
+    consecutive global failures exponential backoff kicks in,
+    doubling the lockout for each subsequent batch of 10 failures.
     """
     from .. import web_api as _web_api
 
-    # Rate-limit this endpoint with a separate key namespace
     client_ip = request.client.host if request.client else "unknown"
-    allowed, _ = await _web_api._rate_limiter.check(
+
+    # Global rate limit (all IPs combined)
+    global_allowed, _ = await _web_api._rate_limiter.check(
+        "unlock:global", GLOBAL_UNLOCK_LIMIT, GLOBAL_UNLOCK_WINDOW,
+    )
+    if not global_allowed:
+        # Exponential backoff: after _BACKOFF_THRESHOLD consecutive failures,
+        # multiply the lockout window by 2^((failures - threshold) // threshold)
+        failures = global_unlock_failures()
+        if failures >= _BACKOFF_THRESHOLD:
+            multiplier = 2 ** ((failures - _BACKOFF_THRESHOLD) // _BACKOFF_THRESHOLD + 1)
+            backoff_window = GLOBAL_UNLOCK_WINDOW * multiplier
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many unlock attempts. Please wait {backoff_window} seconds.",
+            )
+        raise HTTPException(status_code=429, detail="Too many unlock attempts. Please wait.")
+
+    # Per-IP rate limit
+    ip_allowed, _ = await _web_api._rate_limiter.check(
         f"unlock:{client_ip}", UNLOCK_LIMIT, UNLOCK_WINDOW,
     )
-    if not allowed:
+    if not ip_allowed:
         raise HTTPException(status_code=429, detail="Too many unlock attempts. Please wait.")
 
     session_dir = _session_dir()
@@ -162,21 +191,23 @@ async def unlock_database(request: Request, body: UnlockRequest):
     key = derive_key(body.password, salt)
     fernet = Fernet(key)
 
-    # Test the password by setting the module-level Fernet and trying a read
-    set_fernet(fernet)
+    # Test the password by setting the Fernet and trying a read
+    EncryptedJSON._engine_fernet = fernet
     test_sm: SessionManager | None = None
     try:
         test_sm = SessionManager(str(session_dir))
         test_sm.list_sessions(limit=1)
     except (ValueError, Exception) as exc:
         if isinstance(exc, InvalidToken) or "Incorrect database password" in str(exc):
+            increment_unlock_failures()
             raise HTTPException(status_code=401, detail="Incorrect password")
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
     finally:
         if test_sm is not None:
             test_sm.close()
 
-    # Success — store on app state
+    # Success — reset global failure counter and store on app state
+    reset_unlock_failures()
     state = get_state()
     state.fernet = fernet
     state.fernet_key = key
@@ -194,7 +225,11 @@ async def unlock_database(request: Request, body: UnlockRequest):
     except Exception as exc:
         logger.warning("Could not create runtime agent on unlock: %s", exc)
 
-    return {"status": "unlocked"}
+    # Generate an unlock token for the caller
+    token = generate_token()
+    state.active_tokens.add(token)
+
+    return {"status": "unlocked", "token": token}
 
 
 @router.post("/api/change-password")
@@ -274,15 +309,16 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
         )
         try:
             with engine.connect() as conn:
-                conn.execute(text("PRAGMA journal_mode=WAL"))
-                conn.execute(text("PRAGMA synchronous=NORMAL"))
+                conn.execute(text("PRAGMA journal_mode=DELETE"))
+                conn.execute(text("PRAGMA synchronous=FULL"))
 
                 rows = conn.execute(
-                    text("SELECT id, messages, session_metadata, events FROM agent_sessions")
+                    text("SELECT id, title, messages, session_metadata, events FROM agent_sessions")
                 ).fetchall()
 
                 for row in rows:
                     row_id = row._mapping["id"]
+                    title_raw = row._mapping["title"]
                     msg_raw = row._mapping["messages"]
                     meta_raw = row._mapping["session_metadata"]
                     evt_raw = row._mapping["events"]
@@ -294,6 +330,9 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
                     decrypted_events: list = []
                     if evt_raw is not None:
                         decrypted_events = json.loads(current_fernet.decrypt(evt_raw).decode("utf-8"))
+                    decrypted_title: str | None = None
+                    if title_raw is not None:
+                        decrypted_title = json.loads(current_fernet.decrypt(title_raw).decode("utf-8"))
 
                     new_msg_raw = new_fernet.encrypt(
                         json.dumps(decrypted_messages, default=str).encode("utf-8")
@@ -308,14 +347,26 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
                         if evt_raw is not None
                         else None
                     )
+                    new_title_raw = (
+                        new_fernet.encrypt(json.dumps(decrypted_title).encode("utf-8"))
+                        if title_raw is not None
+                        else None
+                    )
 
                     conn.execute(
                         text(
                             "UPDATE agent_sessions "
-                            "SET messages = :msg, session_metadata = :meta, events = :evt "
+                            "SET title = :title, messages = :msg, "
+                            "session_metadata = :meta, events = :evt "
                             "WHERE id = :id"
                         ),
-                        {"msg": new_msg_raw, "meta": new_meta_raw, "evt": new_evt_raw, "id": row_id},
+                        {
+                            "title": new_title_raw,
+                            "msg": new_msg_raw,
+                            "meta": new_meta_raw,
+                            "evt": new_evt_raw,
+                            "id": row_id,
+                        },
                     )
 
                 conn.commit()
@@ -336,13 +387,50 @@ async def change_password(body: ChangePasswordRequest, _=Depends(require_unlocke
         salt_path.chmod(0o600)
         state.fernet = new_fernet
         state.fernet_key = new_key
-        set_fernet(new_fernet)
+        EncryptedJSON._engine_fernet = new_fernet
     finally:
         db_write_lock.release()
 
     logger.info("Database password changed — all sessions re-encrypted with new key")
 
     return {"status": "password_changed"}
+
+
+@router.post("/api/logout")
+async def logout(request: Request):
+    """Invalidate the caller's unlock token.
+
+    If no active tokens remain, the agent is destroyed and the database
+    is effectively re-locked until a new token is issued via
+    ``POST /api/unlock``.
+    """
+    state = get_state()
+    if state.agent is None:
+        raise HTTPException(status_code=423, detail="Database is not unlocked")
+
+    token = request.headers.get(UNLOCK_TOKEN_HEADER, "")
+    if token:
+        state.active_tokens.discard(token)
+
+    if not state.active_tokens:
+        # No more active tokens — destroy agent to re-lock
+        if state.agent:
+            try:
+                if state.agent.session_manager:
+                    state.agent.session_manager.close()
+                state.agent.close()
+            except Exception as exc:
+                logger.debug("Error closing agent on logout: %s", exc)
+        state.agent = None
+        state.fernet = None
+        state.fernet_key = None
+        state.current_session_id = None
+        state.message_history.clear()
+        logger.info("Database re-locked — no active tokens remaining")
+    else:
+        logger.info("Client logged out (%d token(s) still active)", len(state.active_tokens))
+
+    return {"status": "logged_out"}
 
 
 @router.get("/api/status")

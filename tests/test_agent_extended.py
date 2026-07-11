@@ -11,10 +11,10 @@ from src.agentframework.core.agent import _extract_thinking
 from src.agentframework.tools import Tool, ToolResult
 from src.agentframework.providers import LLMProvider, LLMResponse, LLMToolCall
 from src.agentframework.conversation import Message
-from src.agentframework.session import set_fernet, SessionManager
+from src.agentframework.session import EncryptedJSON, SessionManager
 
 # Fernet so session tests work without a TTY / ECHO_DB_PASSWORD.
-set_fernet(Fernet(base64.urlsafe_b64encode(b"\x00" * 32)))
+EncryptedJSON._engine_fernet = Fernet(base64.urlsafe_b64encode(b"\x00" * 32))
 
 
 class SimpleProvider(LLMProvider):

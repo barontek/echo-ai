@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import hmac
 import json
 import logging
 import os
@@ -35,7 +36,9 @@ from .web_models import (
     ChatRequest,
     ConfigPayload,
     PreferencesPayload,
+    PUBLIC_PATHS,
     RouteRequest,
+    UNLOCK_TOKEN_HEADER,
     get_state,
     require_unlocked,
 )
@@ -192,7 +195,7 @@ async def auth_middleware(request: Request, call_next):
                 status_code=401, content={"detail": "Invalid authentication scheme"}
             )
         token = auth.removeprefix("Bearer ")
-        if token != api_key:
+        if not hmac.compare_digest(token, api_key):
             return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
 
     return await call_next(request)
@@ -226,6 +229,38 @@ async def rate_limit_middleware(request: Request, call_next):
     response.headers["X-RateLimit-Remaining"] = str(remaining)
     response.headers["X-RateLimit-Limit"] = str(_RATE_LIMIT_REQUESTS)
     return response
+
+
+@app.middleware("http")
+async def unlock_token_middleware(request: Request, call_next):
+    """Require a valid unlock token on protected /api/* paths.
+
+    The unlock token is issued by ``POST /api/unlock`` or
+    ``POST /api/setup``.  Public paths (status, health, model
+    listing, etc.) are exempt.
+
+    If the database is locked (no agent), the token check is
+    skipped and ``require_unlocked()`` in each route handler
+    will reject the request with 423 instead.
+    """
+    path = request.url.path
+
+    # Skip public paths
+    if path in PUBLIC_PATHS or path.startswith("/ws"):
+        return await call_next(request)
+
+    if path.startswith("/api/"):
+        state = get_state()
+        # Only require token if database is unlocked and tokens exist
+        if state.agent is not None and state.active_tokens:
+            token = request.headers.get(UNLOCK_TOKEN_HEADER, "")
+            if not token or token not in state.active_tokens:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or missing unlock token"},
+                )
+
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -828,6 +863,15 @@ def run_server(host: str | None = None, port: int | None = None):
         host = os.environ.get("ECHO_HOST", "127.0.0.1")
     if port is None:
         port = DEFAULT_WEB_PORT
+    if host not in ("127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"):
+        logger.warning(
+            "Binding to %s:%d — the server is exposed beyond localhost. "
+            "Use a reverse proxy with TLS (e.g. nginx + Let's Encrypt, "
+            "Caddy, or cloudflare tunnel) to protect API keys and session "
+            "data in transit.",
+            host,
+            port,
+        )
     logger.info("Listening on %s:%d", host, port)
     # The database password is now resolved lazily via POST /api/unlock.
     uvicorn.run(app, host=host, port=port, reload=False, log_level="info")

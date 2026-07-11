@@ -16,7 +16,31 @@ def _same_file(path_a: str, path_b: str) -> bool:
         return False
 
 
+def _connected_db_path(conn: sqlite3.Connection) -> str | None:
+    """Return the resolved path of the main database attached to *conn*.
+
+    Uses ``PRAGMA database_list`` to get the actual path SQLite resolved,
+    which is immune to symlink swaps after the connection was established.
+    """
+    try:
+        cursor = conn.execute("PRAGMA database_list")
+        row = cursor.fetchone()
+        if row and len(row) >= 3:
+            return os.path.realpath(row[2]) if row[2] else None
+    except sqlite3.Error:
+        pass
+    return None
+
+
 def _is_session_db(session_db_path: str | None, db_path: str) -> bool:
+    """Check whether *db_path* resolves to the session database.
+
+    Uses a pre-connect realpath check plus a fallback inode comparison
+    for robustness against bind-mounts and filesystem edge cases.
+    This check is performed **before** opening — the **post-connect**
+    verification happens inside the tool's ``execute`` method to close
+    the TOCTOU window (see :meth:`SQLiteQueryTool.execute`).
+    """
     if not session_db_path:
         return False
     resolved = os.path.realpath(db_path)
@@ -63,6 +87,7 @@ class SQLiteQueryTool(Tool):
 
     async def execute(self, db_path: str, query: str, **kwargs) -> ToolResult:
         """Execute the SQLite query."""
+        # Pre-open check (best-effort — closes the TOCTOU window only partially)
         if _is_session_db(self.session_db_path, db_path):
             return ToolResult(error="Access to the session database via this tool is not permitted.")
 
@@ -91,8 +116,16 @@ class SQLiteQueryTool(Tool):
             # For massive queries we'd use a threadpool, but this is a lightweight agent tool
             conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
             conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
 
+            # Post-connect verification: check the actual file SQLite opened.
+            # This closes the TOCTOU window — even if a symlink was swapped
+            # between the pre-check above and sqlite3.connect(), the PRAGMA
+            # returns the path SQLite actually resolved at open time.
+            actual = _connected_db_path(conn)
+            if actual and self.session_db_path and actual == os.path.realpath(self.session_db_path):
+                return ToolResult(error="Access to the session database via this tool is not permitted.")
+
+            cursor = conn.cursor()
             cursor.execute(query)
             rows = cursor.fetchmany(100) # Limit to 100 rows to prevent context blowing up
 
@@ -140,6 +173,7 @@ class SQLiteSchemaTool(Tool):
 
     async def execute(self, db_path: str, **kwargs) -> ToolResult:
         """Extract the SQLite schema."""
+        # Pre-open check
         if _is_session_db(self.session_db_path, db_path):
             return ToolResult(error="Access to the session database via this tool is not permitted.")
 
@@ -149,6 +183,12 @@ class SQLiteSchemaTool(Tool):
         conn = None
         try:
             conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+
+            # Post-connect TOCTOU check
+            actual = _connected_db_path(conn)
+            if actual and self.session_db_path and actual == os.path.realpath(self.session_db_path):
+                return ToolResult(error="Access to the session database via this tool is not permitted.")
+
             cursor = conn.cursor()
 
             # Fetch table names

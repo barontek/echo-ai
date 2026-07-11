@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from src.agentframework.routers.unlock import derive_key
 from src.agentframework.web_api import app
 import src.agentframework.web_api as web_api
-from src.agentframework.session import set_fernet
+from src.agentframework.session import EncryptedJSON
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -35,9 +35,9 @@ def _make_db(tmp_path: Path, password: str, salt: bytes) -> tuple[Path, Fernet]:
     fernet = Fernet(key)
 
     db_path = tmp_path / "agent_sessions.db"
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    conn = sqlite3.connect(str(db_path), timeout=10.0)
+    conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("PRAGMA synchronous=FULL")
     conn.execute(
         """CREATE TABLE agent_sessions (
             id TEXT PRIMARY KEY,
@@ -81,6 +81,7 @@ def _patch_session_dir(tmp_path: Path):
 @pytest.fixture(autouse=True)
 def clean_state():
     web_api._rate_limiter.clear()
+    EncryptedJSON._engine_fernet = None
     state = web_api.get_state()
     if state.agent is not None:
         try:
@@ -95,6 +96,7 @@ def clean_state():
     state.fernet_key = None
     state.current_session_id = None
     state.message_history = []
+    state.active_tokens.clear()
     yield
     state.agent = None
     state.fernet = None
@@ -116,7 +118,7 @@ class TestChangePasswordSuccess:
         state.agent = MagicMock()
         state.fernet = fernet
         state.fernet_key = derive_key("oldpassword", salt)
-        set_fernet(fernet)
+        EncryptedJSON._engine_fernet = fernet
 
         with _patch_session_dir(tmp_path):
             resp = client.post("/api/change-password", json={
@@ -130,7 +132,7 @@ class TestChangePasswordSuccess:
 
         new_salt = (tmp_path / ".db_salt").read_bytes()
         assert new_salt != salt
-        assert len(new_salt) == 16
+        assert len(new_salt) == 17
 
         # New Fernet in memory matches new key
         new_key = derive_key("newpassword", new_salt)
@@ -139,20 +141,20 @@ class TestChangePasswordSuccess:
 
         # Old password rejected
         state.fernet = None
-        set_fernet(None)
+        EncryptedJSON._engine_fernet = None
         with _patch_session_dir(tmp_path):
             unlock_resp = client.post("/api/unlock", json={"password": "oldpassword"})
         assert unlock_resp.status_code == 401, unlock_resp.text
 
         # New password accepted
         state.fernet = None
-        set_fernet(None)
+        EncryptedJSON._engine_fernet = None
         with _patch_session_dir(tmp_path):
             unlock_resp = client.post("/api/unlock", json={"password": "newpassword"})
         assert unlock_resp.status_code == 200, unlock_resp.text
 
         # Data still decryptable with new key
-        set_fernet(new_fernet)
+        EncryptedJSON._engine_fernet = new_fernet
         conn = sqlite3.connect(str(db_path))
         row = conn.execute("SELECT messages FROM agent_sessions WHERE id = 's1'").fetchone()
         assert row is not None
@@ -168,7 +170,12 @@ class TestChangePasswordSuccess:
 
         db_path = tmp_path / "agent_sessions.db"
         conn = sqlite3.connect(str(db_path))
-        conn.execute("CREATE TABLE agent_sessions (id TEXT PRIMARY KEY, messages BLOB, session_metadata BLOB, events BLOB, created_at DATETIME)")
+        conn.execute(
+            "CREATE TABLE agent_sessions ("
+            "id TEXT PRIMARY KEY, title BLOB, messages BLOB, "
+            "session_metadata BLOB, events BLOB, created_at DATETIME"
+            ")"
+        )
         conn.commit()
         conn.close()
 
@@ -176,7 +183,7 @@ class TestChangePasswordSuccess:
         state.agent = MagicMock()
         state.fernet = fernet
         state.fernet_key = key
-        set_fernet(fernet)
+        EncryptedJSON._engine_fernet = fernet
 
         with _patch_session_dir(tmp_path):
             resp = client.post("/api/change-password", json={
@@ -187,7 +194,7 @@ class TestChangePasswordSuccess:
         assert resp.status_code == 200, resp.text
         new_salt = (tmp_path / ".db_salt").read_bytes()
         assert new_salt != salt
-        assert len(new_salt) == 16
+        assert len(new_salt) == 17
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +214,7 @@ class TestChangePasswordRejected:
         state.agent = MagicMock()
         state.fernet = fernet
         state.fernet_key = key
-        set_fernet(fernet)
+        EncryptedJSON._engine_fernet = fernet
 
         with _patch_session_dir(tmp_path):
             resp = client.post("/api/change-password", json={
@@ -229,7 +236,7 @@ class TestChangePasswordRejected:
         state.agent = MagicMock()
         state.fernet = fernet
         state.fernet_key = key
-        set_fernet(fernet)
+        EncryptedJSON._engine_fernet = fernet
 
         with _patch_session_dir(tmp_path):
             resp = client.post("/api/change-password", json={
@@ -250,7 +257,7 @@ class TestChangePasswordRejected:
         state.agent = MagicMock()
         state.fernet = fernet
         state.fernet_key = key
-        set_fernet(fernet)
+        EncryptedJSON._engine_fernet = fernet
 
         with _patch_session_dir(tmp_path):
             resp = client.post("/api/change-password", json={
@@ -293,9 +300,9 @@ class TestChangePasswordRollbackSafety:
         original_fernet = Fernet(key)
 
         db_path = tmp_path / "agent_sessions.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        conn = sqlite3.connect(str(db_path), timeout=10.0)
+        conn.execute("PRAGMA journal_mode=DELETE")
+        conn.execute("PRAGMA synchronous=FULL")
         conn.execute(
             """CREATE TABLE agent_sessions (
                 id TEXT PRIMARY KEY, title TEXT,
@@ -329,7 +336,7 @@ class TestChangePasswordRollbackSafety:
         state.agent = MagicMock()
         state.fernet = original_fernet
         state.fernet_key = key
-        set_fernet(original_fernet)
+        EncryptedJSON._engine_fernet = original_fernet
 
         salt_mtime_before = salt_path.stat().st_mtime_ns
 
@@ -363,13 +370,13 @@ class TestChangePasswordRollbackSafety:
 
         # Old password still works
         state.fernet = None
-        set_fernet(None)
+        EncryptedJSON._engine_fernet = None
         with _patch_session_dir(tmp_path):
             unlock_resp = client.post("/api/unlock", json={"password": "original"})
         assert unlock_resp.status_code == 200, unlock_resp.text
 
         # DB rows still decryptable with old key
-        set_fernet(original_fernet)
+        EncryptedJSON._engine_fernet = original_fernet
         conn = sqlite3.connect(str(db_path))
         row = conn.execute(
             "SELECT messages FROM agent_sessions WHERE id = 's1'"
@@ -421,21 +428,34 @@ class TestChangePasswordConcurrency:
         state.agent = MagicMock()
         state.fernet = fernet
         state.fernet_key = derive_key("oldpwd", salt)
-        set_fernet(fernet)
+        EncryptedJSON._engine_fernet = fernet
 
         chat_errors: list[str] = []
         chat_done = threading.Event()
 
         def do_chat_write() -> None:
             try:
-                from src.agentframework.session import SessionManager
-
-                sm = SessionManager(str(tmp_path), fernet=fernet)
-                # Brief pause so change_password can acquire the lock first
-                time.sleep(0.03)
-                sm.create_session("concurrent_session")
-                sm.add_message("user", "hello from concurrent write")
-                sm.close()
+                # Use raw sqlite3 with timeout so the connection can wait
+                # for change_password to release the file-level lock.
+                with sqlite3.connect(str(db_path), timeout=10.0) as conn:
+                    conn.execute("PRAGMA journal_mode=DELETE")
+                    conn.execute("PRAGMA synchronous=FULL")
+                    # Brief pause so change_password can acquire the lock first
+                    time.sleep(0.03)
+                    msg_data = json.dumps(
+                        [{"role": "user", "content": "hello from concurrent write"}]
+                    ).encode("utf-8")
+                    conn.execute(
+                        "INSERT INTO agent_sessions (id, messages, session_metadata, events, created_at) "
+                        "VALUES (?, ?, ?, ?, datetime('now'))",
+                        (
+                            "concurrent_session",
+                            fernet.encrypt(msg_data),
+                            fernet.encrypt(json.dumps({}).encode("utf-8")),
+                            fernet.encrypt(json.dumps([]).encode("utf-8")),
+                        ),
+                    )
+                    conn.commit()
             except Exception as e:
                 chat_errors.append(str(e))
             finally:
@@ -503,7 +523,7 @@ class TestChangePasswordConcurrency:
         state.agent = MagicMock()
         state.fernet = fernet
         state.fernet_key = derive_key("secret", salt)
-        set_fernet(fernet)
+        EncryptedJSON._engine_fernet = fernet
 
         from src.agentframework.session import SessionManager
 

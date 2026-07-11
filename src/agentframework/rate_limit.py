@@ -91,3 +91,29 @@ class RateLimiter:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+
+# ---------------------------------------------------------------------------
+# Global unlock-failure counter (in-memory, per-process).
+# Tracks consecutive failed unlock attempts across ALL IPs for exponential
+# backoff.  Reset on successful unlock.
+# ---------------------------------------------------------------------------
+
+_unlock_failures: int = 0
+
+
+def global_unlock_failures() -> int:
+    """Return the current global unlock-failure counter."""
+    return _unlock_failures
+
+
+def increment_unlock_failures() -> None:
+    """Increment the global unlock-failure counter."""
+    global _unlock_failures
+    _unlock_failures += 1
+
+
+def reset_unlock_failures() -> None:
+    """Reset the global unlock-failure counter (called on successful unlock)."""
+    global _unlock_failures
+    _unlock_failures = 0

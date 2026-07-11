@@ -18,7 +18,7 @@ from src.agentframework.session import (
     Session,
     SessionManager,
     ChangeTracker,
-    set_fernet,
+    EncryptedJSON,
 )
 
 
@@ -29,7 +29,7 @@ _TEST_FERNET = Fernet(_TEST_KEY)
 @pytest.fixture(scope="module", autouse=True)
 def _setup_fernet():
     """Set a deterministic Fernet key for all tests in this module."""
-    set_fernet(_TEST_FERNET)
+    EncryptedJSON._engine_fernet = _TEST_FERNET
     yield
     # Don't bother restoring — each test run gets a fresh Python process.
 
@@ -515,13 +515,13 @@ class TestEncryptionErrors:
 
         # Swap to a different key and try to load
         wrong_key = Fernet(base64.urlsafe_b64encode(b"\xff" * 32))
-        set_fernet(wrong_key)
+        EncryptedJSON._engine_fernet = wrong_key
         try:
             with pytest.raises(ValueError, match="Incorrect database password"):
                 with SessionManager(session_dir) as mgr2:
                     mgr2.load_session("wrong_pw_test")
         finally:
-            set_fernet(_TEST_FERNET)
+            EncryptedJSON._engine_fernet = _TEST_FERNET
 
 
     def test_tool_results_not_duplicated_in_tool_calls(self, manager):

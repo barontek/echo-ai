@@ -381,8 +381,11 @@ class SessionManager:
                     events=session.events or [],
                 )
                 db.merge(db_session)
-                gc.collect()  # preempt GC before SQLAlchemy C extensions run
-                db.commit()
+                gc.disable()
+                try:
+                    db.commit()
+                finally:
+                    gc.enable()
 
     def truncate_history(self, index: int) -> None:
         """Truncate session history to the given index (exclusive), dropping all subsequent messages."""

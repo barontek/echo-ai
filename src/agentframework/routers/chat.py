@@ -261,7 +261,7 @@ async def websocket_chat(websocket: WebSocket):
             active_agent._ensure_session()
             if active_agent.session_manager.current_session:
                 sid = active_agent.session_manager.current_session.id
-                logger.warning(
+                logger.debug(
                     "ws:trace run_agent session_start=%s messages=%d",
                     sid,
                     len(active_agent.messages),

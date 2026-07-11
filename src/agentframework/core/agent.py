@@ -225,7 +225,7 @@ class Agent:
                 "user", user_input, timestamp=datetime.now().strftime("%H:%M")
             )
 
-        logger.warning(
+        logger.debug(
             "agent:trace run_streaming input=%s msgs_before=%d session=%s",
             user_input[:30],
             len(self.messages),

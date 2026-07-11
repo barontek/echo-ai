@@ -57,6 +57,7 @@ cd frontend && npm run build
 - **PYTHONPATH**: must be `src` when running tests (`PYTHONPATH=src pytest ...`)
 - **Pre-commit**: runs on `git commit`. Run manually with `pre-commit run --all-files`.
 - **Pyright strict** typing required on all backend code.
+- **Never dismiss a failing check as "pre-existing" or "unrelated" without verification.** If `make verify`, lint, typecheck, or any test fails, treat it as caused by the current change until proven otherwise (e.g. via `git stash` + rerun, or `git blame` on the failing line). Do not skip, xfail, comment out, or silently ignore a failing test/check to get a green run — surface it and state explicitly what's failing and why before proceeding.
 - All new functions: explicit error logging, complete parameter typing, return type hints.
 - Use `pytest.mark.asyncio` for async backend tests.
 - Provide functional code diffs only — no conversational filler.

@@ -21,7 +21,13 @@ const { mockApi } = vi.hoisted(() => ({
     updateConfig: vi.fn().mockResolvedValue(undefined),
     getPreferences: vi.fn().mockResolvedValue({}),
     setPreferences: vi.fn().mockResolvedValue(undefined),
-    getConfig: vi.fn().mockResolvedValue({ provider: 'ollama', model: 'qwen3:4b-instruct', temperature: 0.3, max_iterations: 50, session_enabled: true }),
+    getConfig: vi.fn().mockResolvedValue({
+      provider: 'ollama',
+      model: 'qwen3:4b-instruct',
+      temperature: 0.3,
+      max_iterations: 50,
+      session_enabled: true,
+    }),
     healthCheck: vi.fn().mockResolvedValue({ status: 'healthy', version: '0.1.0' }),
   },
 }));
@@ -30,15 +36,20 @@ vi.mock('../api/client', () => ({
   api: mockApi,
 }));
 
-vi.stubGlobal('WebSocket', vi.fn(() => ({
-  send: vi.fn(),
-  close: vi.fn(),
-  readyState: 1,
-  set onopen(fn: () => void) { setTimeout(fn, 0); },
-  set onmessage(_fn: ((event: MessageEvent) => void) | null) {},
-  set onclose(_fn: ((event: CloseEvent) => void) | null) {},
-  set onerror(_fn: ((event: Event) => void) | null) {},
-})));
+vi.stubGlobal(
+  'WebSocket',
+  vi.fn(() => ({
+    send: vi.fn(),
+    close: vi.fn(),
+    readyState: 1,
+    set onopen(fn: () => void) {
+      setTimeout(fn, 0);
+    },
+    set onmessage(_fn: ((event: MessageEvent) => void) | null) {},
+    set onclose(_fn: ((event: CloseEvent) => void) | null) {},
+    set onerror(_fn: ((event: Event) => void) | null) {},
+  }))
+);
 
 describe('Components', () => {
   beforeEach(() => {
@@ -231,9 +242,7 @@ describe('parseThinkBlocks — streaming thinking classification', () => {
   });
 
   it('classifies content before, after, and between multiple think blocks', () => {
-    const blocks = parseThinkBlocks(
-      'start <think>first</think> middle <think>second</think> end',
-    );
+    const blocks = parseThinkBlocks('start <think>first</think> middle <think>second</think> end');
     expect(blocks).toEqual([
       { type: 'content', text: 'start ' },
       { type: 'thinking', text: 'first' },
@@ -253,16 +262,12 @@ describe('parseThinkBlocks — streaming thinking classification', () => {
 
   it('handles only thinking without content', () => {
     const blocks = parseThinkBlocks('<think>just thinking</think>');
-    expect(blocks).toEqual([
-      { type: 'thinking', text: 'just thinking' },
-    ]);
+    expect(blocks).toEqual([{ type: 'thinking', text: 'just thinking' }]);
   });
 
   it('returns a single content block when no thinking is present', () => {
     const blocks = parseThinkBlocks('plain response without thinking');
-    expect(blocks).toEqual([
-      { type: 'content', text: 'plain response without thinking' },
-    ]);
+    expect(blocks).toEqual([{ type: 'content', text: 'plain response without thinking' }]);
   });
 
   it('progressive chunks: tag split across multiple appends', () => {
@@ -297,17 +302,13 @@ describe('parseThinkBlocks — streaming thinking classification', () => {
 
   it('progressive chunks: empty content after thinking', () => {
     const blocks = parseThinkBlocks('<think>I am thinking</think>');
-    expect(blocks).toEqual([
-      { type: 'thinking', text: 'I am thinking' },
-    ]);
+    expect(blocks).toEqual([{ type: 'thinking', text: 'I am thinking' }]);
   });
 
   it('progressive chunks: partial <think tag not yet classified as thinking', () => {
     const partial = parseThinkBlocks('prefix <thi');
     // '<thi' is not a complete <think> so it stays as content
-    expect(partial).toEqual([
-      { type: 'content', text: 'prefix <thi' },
-    ]);
+    expect(partial).toEqual([{ type: 'content', text: 'prefix <thi' }]);
     // Once nk> arrives it becomes thinking
     const complete = parseThinkBlocks('prefix <think>thought</think>answer');
     expect(complete).toEqual([

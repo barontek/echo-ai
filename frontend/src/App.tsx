@@ -1,7 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from './api/client';
 import { ChatProvider } from './context';
-import { ApprovalDialog, Header, Sidebar, MessageList, ChatInput, UnlockScreen, SetupScreen } from './components';
+import {
+  ApprovalDialog,
+  Header,
+  Sidebar,
+  MessageList,
+  ChatInput,
+  UnlockScreen,
+  SetupScreen,
+} from './components';
 import './App.css';
 
 function App() {
@@ -15,7 +23,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    api.getStatus()
+    api
+      .getStatus()
       .then((s) => {
         setLocked(s.locked);
         setNeedsSetup(s.needs_setup);
@@ -40,7 +49,14 @@ function App() {
   }
 
   if (needsSetup) {
-    return <SetupScreen onComplete={() => { setNeedsSetup(false); setLocked(false); }} />;
+    return (
+      <SetupScreen
+        onComplete={() => {
+          setNeedsSetup(false);
+          setLocked(false);
+        }}
+      />
+    );
   }
 
   if (locked) {

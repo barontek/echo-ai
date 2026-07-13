@@ -1,5 +1,6 @@
 import { memo, useState } from 'react';
 import { useChat } from '../context';
+import { api } from '../api/client';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 interface HeaderProps {
@@ -124,7 +125,12 @@ export const Header = memo(function Header({ onLogout }: HeaderProps) {
               onClick={async () => {
                 setCopyMsg(null);
                 try {
-                  const res = await fetch(`/api/sessions/${chat.activeSessionId}/debug-export`);
+                  const headers: Record<string, string> = {};
+                  const token = api.unlockTokenValue;
+                  if (token) headers['X-Unlock-Token'] = token;
+                  const res = await fetch(`/api/sessions/${chat.activeSessionId}/debug-export`, {
+                    headers,
+                  });
                   if (!res.ok) {
                     const body = await res.json().catch(() => null);
                     throw new Error(body?.detail || `HTTP ${res.status}`);
@@ -139,11 +145,13 @@ export const Header = memo(function Header({ onLogout }: HeaderProps) {
               }}
               style={{
                 padding: '4px 8px',
-                background: chat.activeSessionId && chat.messages.length > 0 ? 'var(--accent)' : '#666',
+                background:
+                  chat.activeSessionId && chat.messages.length > 0 ? 'var(--accent)' : '#666',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: chat.activeSessionId && chat.messages.length > 0 ? 'pointer' : 'not-allowed',
+                cursor:
+                  chat.activeSessionId && chat.messages.length > 0 ? 'pointer' : 'not-allowed',
                 fontSize: '11px',
                 width: '100%',
                 opacity: chat.activeSessionId && chat.messages.length > 0 ? 1 : 0.5,
@@ -192,9 +200,7 @@ export const Header = memo(function Header({ onLogout }: HeaderProps) {
         </div>
       )}
 
-      {showChangePassword && (
-        <ChangePasswordDialog onClose={() => setShowChangePassword(false)} />
-      )}
+      {showChangePassword && <ChangePasswordDialog onClose={() => setShowChangePassword(false)} />}
     </>
   );
 });

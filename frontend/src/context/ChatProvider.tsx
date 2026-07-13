@@ -123,7 +123,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               break;
 
             case 'approval_request':
-              debugLog('approval_request', { tool_name: data.tool_name, request_id: data.request_id });
+              debugLog('approval_request', {
+                tool_name: data.tool_name,
+                request_id: data.request_id,
+              });
               setIsStreaming(false);
               if (data.request_id && data.tool_name) {
                 setPendingApproval({
@@ -139,9 +142,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               debugLog('title_updated', data);
               if (data.session_id && data.title) {
                 setSessions((prev) =>
-                  prev.map((s) =>
-                    s.id === data.session_id ? { ...s, title: data.title! } : s,
-                  ),
+                  prev.map((s) => (s.id === data.session_id ? { ...s, title: data.title! } : s))
                 );
               }
               break;
@@ -210,16 +211,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     },
                   ];
                 }
-                  return [
-                    ...prev,
-                    {
-                      role: 'assistant',
-                      content: data.content || '',
-                      has_tools: data.has_tools,
-                      tool_calls: data.tool_calls,
-                      timestamp: data.timestamp,
-                    },
-                  ];
+                return [
+                  ...prev,
+                  {
+                    role: 'assistant',
+                    content: data.content || '',
+                    has_tools: data.has_tools,
+                    tool_calls: data.tool_calls,
+                    timestamp: data.timestamp,
+                  },
+                ];
               });
               if (data.session_id) {
                 setActiveSessionId(data.session_id);
@@ -268,7 +269,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           );
           debugLog('ws:reconnect:scheduled', { delay });
           setTimeout(() => {
-            if (gen === wsGenRef.current && (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)) {
+            if (
+              gen === wsGenRef.current &&
+              (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED)
+            ) {
               connectRef.current();
             }
           }, delay);
@@ -322,7 +326,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setIsStreaming(true);
         isReadyRef.current = false;
       } else {
-        debugLog('ws:queue-or-reconnect', { readyState: ws?.readyState, isReady: isReadyRef.current });
+        debugLog('ws:queue-or-reconnect', {
+          readyState: ws?.readyState,
+          isReady: isReadyRef.current,
+        });
         messageQueueRef.current.push(payloadStr);
         if (!ws || ws.readyState === WebSocket.CLOSED) {
           debugLog('ws:reconnect-needed');
@@ -341,9 +348,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     connect();
     // Refetch session state after reconnection
     if (activeSessionIdRef.current) {
-      api.loadSession(activeSessionIdRef.current).then((data) => {
-        setMessages(combineAssistantMessages(data.messages));
-      }).catch(console.error);
+      api
+        .loadSession(activeSessionIdRef.current)
+        .then((data) => {
+          setMessages(combineAssistantMessages(data.messages));
+        })
+        .catch(console.error);
     }
   }, [connect]);
 
@@ -355,16 +365,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const resolveApproval = useCallback(
-    (requestId: string, approved: boolean) => {
-      const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'approval_response', request_id: requestId, approved }));
-      }
-      setPendingApproval(null);
-    },
-    []
-  );
+  const resolveApproval = useCallback((requestId: string, approved: boolean) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'approval_response', request_id: requestId, approved }));
+    }
+    setPendingApproval(null);
+  }, []);
 
   const editMessage = useCallback(
     (index: number, newText: string, msgId?: string) => {
@@ -410,15 +417,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setModels(modelsData);
 
         // Validate saved provider; fall back to first available
-        const savedProvider = prefsData.provider && providers.includes(prefsData.provider)
-          ? prefsData.provider
-          : providers[0];
+        const savedProvider =
+          prefsData.provider && providers.includes(prefsData.provider)
+            ? prefsData.provider
+            : providers[0];
         setCurrentProvider(savedProvider);
 
         // Validate saved model; fall back to first available model
-        const savedModel = prefsData.model && modelsData.includes(prefsData.model)
-          ? prefsData.model
-          : modelsData[0] || '';
+        const savedModel =
+          prefsData.model && modelsData.includes(prefsData.model)
+            ? prefsData.model
+            : modelsData[0] || '';
         setCurrentModel(savedModel);
 
         // Persist resolved values to overwrite any stale data (e.g. "new-model" from a test)
@@ -497,20 +506,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [activeSessionId]
   );
 
-  const renameSession = useCallback(
-    async (sessionId: string, newTitle: string) => {
-      debugLog('renameSession:start', { sessionId, newTitle });
-      try {
-        await api.renameSession(sessionId, newTitle);
-        setSessions((prev) =>
-          prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
-        );
-      } catch (err) {
-        console.error('[Chat] Failed to rename session:', err);
-      }
-    },
-    []
-  );
+  const renameSession = useCallback(async (sessionId: string, newTitle: string) => {
+    debugLog('renameSession:start', { sessionId, newTitle });
+    try {
+      await api.renameSession(sessionId, newTitle);
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s)));
+    } catch (err) {
+      console.error('[Chat] Failed to rename session:', err);
+    }
+  }, []);
 
   const selectModel = useCallback(
     (model: string) => {
@@ -545,59 +549,62 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [messages, sendMessage]
   );
 
-  const value = useMemo<ChatContextValue>(() => ({
-    sessions,
-    activeSessionId,
-    currentModel,
-    currentProvider,
-    models,
-    providers,
-    messages,
-    connectionStatus,
-    isConnected,
-    isStreaming,
-    currentThinking: '',
-    sidebarOpen,
-    setSidebarOpen,
-    sendMessage,
-    stopGeneration,
-    editMessage,
-    retryMessage,
-    createSession,
-    selectSession,
-    deleteSession,
-    renameSession,
-    selectModel,
-    selectProvider,
-    reconnect,
-    pendingApproval,
-    resolveApproval,
-  }), [
-    sessions,
-    activeSessionId,
-    currentModel,
-    currentProvider,
-    models,
-    providers,
-    messages,
-    connectionStatus,
-    isConnected,
-    isStreaming,
-    sidebarOpen,
-    sendMessage,
-    stopGeneration,
-    editMessage,
-    retryMessage,
-    createSession,
-    selectSession,
-    deleteSession,
-    renameSession,
-    selectModel,
-    selectProvider,
-    reconnect,
-    pendingApproval,
-    resolveApproval,
-  ]);
+  const value = useMemo<ChatContextValue>(
+    () => ({
+      sessions,
+      activeSessionId,
+      currentModel,
+      currentProvider,
+      models,
+      providers,
+      messages,
+      connectionStatus,
+      isConnected,
+      isStreaming,
+      currentThinking: '',
+      sidebarOpen,
+      setSidebarOpen,
+      sendMessage,
+      stopGeneration,
+      editMessage,
+      retryMessage,
+      createSession,
+      selectSession,
+      deleteSession,
+      renameSession,
+      selectModel,
+      selectProvider,
+      reconnect,
+      pendingApproval,
+      resolveApproval,
+    }),
+    [
+      sessions,
+      activeSessionId,
+      currentModel,
+      currentProvider,
+      models,
+      providers,
+      messages,
+      connectionStatus,
+      isConnected,
+      isStreaming,
+      sidebarOpen,
+      sendMessage,
+      stopGeneration,
+      editMessage,
+      retryMessage,
+      createSession,
+      selectSession,
+      deleteSession,
+      renameSession,
+      selectModel,
+      selectProvider,
+      reconnect,
+      pendingApproval,
+      resolveApproval,
+    ]
+  );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }

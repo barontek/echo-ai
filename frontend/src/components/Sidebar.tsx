@@ -40,7 +40,11 @@ export const Sidebar = memo(function Sidebar() {
     setSidebarOpen(false);
   };
 
-  const handleStartRename = (sessionId: string, currentTitle: string | null, e: React.MouseEvent) => {
+  const handleStartRename = (
+    sessionId: string,
+    currentTitle: string | null,
+    e: React.MouseEvent
+  ) => {
     e.stopPropagation();
     setRenamingId(sessionId);
     setRenameValue(currentTitle || '');
@@ -209,7 +213,11 @@ export const Sidebar = memo(function Sidebar() {
         ))}
         {filteredSessions.length === 0 && (
           <div className="empty-state" style={{ padding: '20px', fontSize: '13px' }}>
-            {searchTerm ? `No matching conversations for "${searchTerm}"` : sessions.length === 0 ? 'No conversations yet' : 'No matching conversations'}
+            {searchTerm
+              ? `No matching conversations for "${searchTerm}"`
+              : sessions.length === 0
+                ? 'No conversations yet'
+                : 'No matching conversations'}
           </div>
         )}
       </div>

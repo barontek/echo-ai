@@ -61,8 +61,8 @@ export function SetupScreen({ onComplete }: Props) {
         <div className="unlock-subtitle">Create a database password</div>
 
         <div className="setup-note">
-          This password encrypts your conversation history. If you forget it, your
-          existing sessions cannot be recovered.
+          This password encrypts your conversation history. If you forget it, your existing sessions
+          cannot be recovered.
         </div>
 
         <form onSubmit={handleSubmit}>

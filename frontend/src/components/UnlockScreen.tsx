@@ -21,7 +21,9 @@ export function UnlockScreen({ onUnlocked }: Props) {
       onUnlocked();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
-      if (msg.toLowerCase().includes('429') || msg.toLowerCase().includes('too many')) {
+      if (msg === '__BACKEND_UNREACHABLE__') {
+        setError('Backend is not running');
+      } else if (msg.toLowerCase().includes('429') || msg.toLowerCase().includes('too many')) {
         setError('Too many attempts, please wait.');
       } else {
         setError('Incorrect password');

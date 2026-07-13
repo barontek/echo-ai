@@ -84,8 +84,14 @@ export const MessageList = memo(function MessageList() {
                   <div className="message-content">
                     {(() => {
                       const blocks = parseThinkBlocks(msg.content);
-                      const thinkingText = blocks.filter(b => b.type === 'thinking').map(b => b.text).join('\n');
-                      const contentText = blocks.filter(b => b.type === 'content').map(b => b.text).join('\n');
+                      const thinkingText = blocks
+                        .filter((b) => b.type === 'thinking')
+                        .map((b) => b.text)
+                        .join('\n');
+                      const contentText = blocks
+                        .filter((b) => b.type === 'content')
+                        .map((b) => b.text)
+                        .join('\n');
                       return (
                         <>
                           {thinkingText && (
@@ -93,16 +99,28 @@ export const MessageList = memo(function MessageList() {
                               <summary className="thinking-label">Thinking</summary>
                               <div
                                 className="markdown-content"
-                                ref={idx === messages.length - 1 ? (el) => { thinkingContainerRef.current = el; } : undefined}
-                                onScroll={idx === messages.length - 1 ? handleThinkingScroll : undefined}
+                                ref={
+                                  idx === messages.length - 1
+                                    ? (el) => {
+                                        thinkingContainerRef.current = el;
+                                      }
+                                    : undefined
+                                }
+                                onScroll={
+                                  idx === messages.length - 1 ? handleThinkingScroll : undefined
+                                }
                               >
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{thinkingText}</ReactMarkdown>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {thinkingText}
+                                </ReactMarkdown>
                               </div>
                             </details>
                           )}
                           {contentText && (
                             <div className="markdown-content">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{contentText}</ReactMarkdown>
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {contentText}
+                              </ReactMarkdown>
                             </div>
                           )}
                         </>

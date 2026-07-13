@@ -154,7 +154,9 @@ export function ChangePasswordDialog({ onClose }: Props) {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '16px', justifyContent: 'center' }}>
+            <div
+              style={{ display: 'flex', gap: '12px', marginTop: '16px', justifyContent: 'center' }}
+            >
               <button
                 className="confirm-cancel"
                 type="button"

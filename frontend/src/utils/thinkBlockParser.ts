@@ -1,5 +1,5 @@
 export function parseThinkBlocks(
-  content: string,
+  content: string
 ): Array<{ type: 'thinking' | 'content'; text: string }> {
   const blocks: Array<{ type: 'thinking' | 'content'; text: string }> = [];
   let remaining = content;

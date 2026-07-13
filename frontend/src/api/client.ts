@@ -3,7 +3,10 @@ import type { Session, Config, Message, ApiError } from '../types';
 
 const API_BASE = ''; // Use relative path - goes through Vite proxy in dev
 
-const API_TIMEOUT = Math.max(1000, parseInt(import.meta.env.VITE_API_TIMEOUT || '10000', 10) || 10000);
+const API_TIMEOUT = Math.max(
+  1000,
+  parseInt(import.meta.env.VITE_API_TIMEOUT || '10000', 10) || 10000
+);
 
 const UNLOCK_TOKEN_HEADER = 'X-Unlock-Token';
 
@@ -32,11 +35,16 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError<ApiError>) => {
-        const message = error.response?.data?.error || error.message || 'Unknown error';
+        // No response — backend not reachable
+        if (!error.response) {
+          return Promise.reject(new Error('__BACKEND_UNREACHABLE__'));
+        }
+
+        const message = error.response.data?.error || error.message || 'Unknown error';
         console.error(`API Error: ${message}`);
 
         // If we get 401 and have a token, the token is invalid/expired
-        if (error.response?.status === 401 && this.unlockToken) {
+        if (error.response.status === 401 && this.unlockToken) {
           this.unlockToken = null;
           if (this.onTokenExpired) {
             this.onTokenExpired();
@@ -56,6 +64,11 @@ class ApiClient {
   /** Return whether a valid unlock token is held. */
   get isUnlocked(): boolean {
     return this.unlockToken !== null;
+  }
+
+  /** Return the current unlock token, or null. */
+  get unlockTokenValue(): string | null {
+    return this.unlockToken;
   }
 
   /** Store the unlock token from a setup or unlock response. */
@@ -134,14 +147,19 @@ class ApiClient {
   }
 
   async unlock(password: string): Promise<void> {
-    const res = await this.client.post<{ status: string; token?: string }>('/api/unlock', { password });
+    const res = await this.client.post<{ status: string; token?: string }>('/api/unlock', {
+      password,
+    });
     if (res.data.token) {
       this.setUnlockToken(res.data.token);
     }
   }
 
   async setup(password: string, confirm: string): Promise<void> {
-    const res = await this.client.post<{ status: string; token?: string }>('/api/setup', { password, confirm });
+    const res = await this.client.post<{ status: string; token?: string }>('/api/setup', {
+      password,
+      confirm,
+    });
     if (res.data.token) {
       this.setUnlockToken(res.data.token);
     }
@@ -155,14 +173,17 @@ class ApiClient {
     }
   }
 
-  async changePassword(currentPassword: string, newPassword: string, confirm: string): Promise<void> {
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+    confirm: string
+  ): Promise<void> {
     await this.client.post('/api/change-password', {
       current_password: currentPassword,
       new_password: newPassword,
       confirm,
     });
   }
-
 }
 
 export const api = new ApiClient();

@@ -186,7 +186,7 @@ async def auth_middleware(request: Request, call_next):
     if request.url.path in ("/health", "/health/detailed"):
         return await call_next(request)
 
-    if request.url.path.startswith("/api/") or request.url.path == "/ws/chat":
+    if request.url.path.startswith("/api/"):
         auth = request.headers.get("Authorization")
         if not auth:
             return JSONResponse(status_code=401, content={"detail": "Missing authentication"})

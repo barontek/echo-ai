@@ -71,24 +71,7 @@ export const Header = memo(function Header({ onLogout }: HeaderProps) {
         </div>
       </div>
       {showDebug && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '60px',
-            right: '20px',
-            width: '350px',
-            maxHeight: '280px',
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            padding: '12px',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            color: 'var(--text-primary)',
-            zIndex: 9999,
-            overflow: 'auto',
-          }}
-        >
+        <div className="debug-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <strong>Debug Panel</strong>
             <button

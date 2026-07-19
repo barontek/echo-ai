@@ -31,7 +31,11 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Load environment variables from .env if present
-if [ -f ".env" ]; then
+if [ -f "$HOME/.echo-ai/.env" ]; then
+    set -a
+    source "$HOME/.echo-ai/.env"
+    set +a
+elif [ -f ".env" ]; then
     set -a
     source .env
     set +a

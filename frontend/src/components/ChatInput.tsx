@@ -56,6 +56,10 @@ export const ChatInput = memo(function ChatInput({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => {
+            const el = document.querySelector<HTMLElement>('.message-list');
+            if (el) el.scrollTop = el.scrollHeight;
+          }}
           placeholder={placeholderText}
           disabled={disabled || isStreaming}
           rows={1}

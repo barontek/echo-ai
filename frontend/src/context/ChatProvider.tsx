@@ -445,11 +445,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     connect();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          debugLog('visibilitychange:reconnect');
+          reconnect();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       debugLog('unmount');
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       wsRef.current?.close();
     };
-  }, [connect]);
+  }, [connect, reconnect]);
 
   const createSession = useCallback(async () => {
     debugLog('createSession:start');

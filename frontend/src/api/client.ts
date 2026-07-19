@@ -44,7 +44,7 @@ class ApiClient {
         console.error(`API Error: ${message}`);
 
         // If we get 401 and have a token, the token is invalid/expired
-        if (error.response.status === 401 && this.unlockToken) {
+        if (error.response.status === 401) {
           this.unlockToken = null;
           if (this.onTokenExpired) {
             this.onTokenExpired();

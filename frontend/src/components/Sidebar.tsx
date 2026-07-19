@@ -1,4 +1,4 @@
-import { Fragment, memo, useState, useEffect, useRef } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { useChat } from '../context';
 
 export const Sidebar = memo(function Sidebar() {

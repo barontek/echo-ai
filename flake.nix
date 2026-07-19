@@ -164,6 +164,61 @@
           '';
         };
 
+        agent-web-dev = pkgs.writeShellApplication {
+          name = "agent-web-dev";
+          runtimeInputs = [ pkgs.uv pkgs.nodejs_22 pkgs.git pkgs.gnumake ];
+          excludeShellChecks = [ "SC1091" ];
+
+          text = ''
+            # Walk up to the flake root
+            PROJECT_ROOT="$PWD"
+            while [ ! -f "$PROJECT_ROOT/flake.nix" ]; do
+              NEXT="$(dirname "$PROJECT_ROOT")"
+              if [ "$NEXT" = "$PROJECT_ROOT" ]; then
+                echo "Error: Cannot find flake.nix — run this from the project tree." >&2
+                exit 1
+              fi
+              PROJECT_ROOT="$NEXT"
+            done
+
+            cd "$PROJECT_ROOT"
+
+            export PYTHONPATH="$PWD/src"
+
+            if [ -f "$HOME/.echo-ai/.env" ]; then
+                set -a
+                . "$HOME/.echo-ai/.env"
+                set +a
+            fi
+
+            echo "Syncing backend dependencies..."
+            uv sync --extra dev --extra otel --extra ui --extra web-scraping
+
+            echo ""
+            echo "Starting Echo AI development servers..."
+            echo "  Backend:  http://localhost:8080"
+            echo "  Frontend: http://localhost:5173"
+            echo ""
+
+            # Start backend in background
+            uv run uvicorn agentframework.web_api:app --host 0.0.0.0 --port 8080 --reload &
+            BACKEND_PID=$!
+
+            cleanup() {
+              echo ""
+              echo "Shutting down backend (PID $BACKEND_PID)..."
+              kill "$BACKEND_PID" 2>/dev/null
+              wait "$BACKEND_PID" 2>/dev/null
+              exit 0
+            }
+            trap cleanup SIGINT SIGTERM EXIT
+
+            # Start frontend in foreground
+            cd frontend
+            npm run dev
+          '';
+        };
+
         devShell = pkgs.mkShell {
           packages = [
             pythonSet.python
@@ -230,6 +285,16 @@
         devShells.default = devShell;
 
         apps.default = {
+          type = "app";
+          program = "${agent-web-dev}/bin/agent-web-dev";
+        };
+
+        apps.dev = {
+          type = "app";
+          program = "${agent-web-dev}/bin/agent-web-dev";
+        };
+
+        apps.serve = {
           type = "app";
           program = "${combined}/bin/agent-web";
         };

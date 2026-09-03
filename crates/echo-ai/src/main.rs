@@ -127,18 +127,20 @@ fn run(parsed: Parsed) -> Result<(), String> {
         logging::set_level(logging::Level::Debug);
     }
 
-    // Loaded (and validated) now so config errors surface before the
-    // mode runners exist; consumed by them in Phases 5 and 6.
-    let _config = load_config(&config_path)?;
+    let config = load_config(&config_path)?;
 
     match mode {
-        Mode::Web => Err(format!(
-            "web mode is not ported yet (planned for Phase 5; loaded config from {config_path})"
-        )),
-        Mode::Cli => Err(format!(
-            "cli mode is not ported yet (planned for Phase 6; loaded config from {config_path})"
+        Mode::Web => run_web(config),
+        Mode::Cli => Err(String::from(
+            "cli mode is not ported yet (planned for Phase 6)",
         )),
     }
+}
+
+fn run_web(config: Config) -> Result<(), String> {
+    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    rt.block_on(echo_ai_server::run_server(config))
+        .map_err(|e| e.to_string())
 }
 
 /// Loads config, failing fast on a missing *explicitly configured* file;
@@ -218,9 +220,9 @@ mod tests {
     }
 
     #[test]
-    fn run_defaults_config_path_to_implicit_and_reaches_mode_dispatch() {
-        let parsed = parse(&[]).expect("args parse");
+    fn run_cli_mode_reports_unported() {
+        let parsed = parse(&["--cli"]).expect("args parse");
         let err = run(parsed).expect_err("unported mode must fail");
-        assert!(err.contains("Phase 5"), "unexpected error: {err}");
+        assert!(err.contains("Phase 6"), "unexpected error: {err}");
     }
 }

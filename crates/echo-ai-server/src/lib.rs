@@ -19,3 +19,66 @@
 // reports them at warn (deny.toml) and the review doc records the
 // exception.
 #![allow(clippy::multiple_crate_versions)]
+
+pub mod routes;
+pub mod state;
+pub mod tls;
+pub mod ws;
+
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use echo_ai_core::config::Config;
+use echo_ai_core::session::SessionManager;
+
+use crate::state::AppState;
+use crate::tls::{TlsSettings, rustls_config, serve_plain, serve_tls};
+
+/// Runs the server.
+///
+/// # Errors
+/// `Error::Config` when the provider is invalid; `Error::Crypto` when
+/// `TLS` setup fails; `Error::Session` on bind/serve failures.
+pub async fn run_server(config: Config) -> echo_ai_core::Result<()> {
+    let data_dir = default_data_dir();
+    let session = if config.session.enabled {
+        let password = std::env::var("ECHO_AI_PASSWORD").unwrap_or_default();
+        Some(Arc::new(SessionManager::open(&data_dir, &password)?))
+    } else {
+        None
+    };
+
+    let state = AppState::build(config.clone(), session, data_dir.clone())?;
+    let frontend_dir = std::env::var("ECHO_AI_FRONTEND")
+        .map_or_else(|_| PathBuf::from("frontend/dist"), PathBuf::from);
+
+    let app = routes::router(state.clone(), frontend_dir);
+    let addr = SocketAddr::new(
+        config
+            .server
+            .bind
+            .parse()
+            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+        config.server.port,
+    );
+
+    let settings = TlsSettings::from(&config.server);
+    if settings.enabled {
+        let tls = rustls_config(&data_dir, &settings).await?;
+        serve_tls(addr, tls, app).await
+    } else {
+        serve_plain(addr, app).await
+    }
+}
+
+/// The default data directory (`~/.config/echo-ai`, C-compatible).
+fn default_data_dir() -> PathBuf {
+    std::env::var("ECHO_AI_DATA_DIR").map_or_else(
+        |_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| String::from("."));
+            PathBuf::from(home).join(".config/echo-ai")
+        },
+        PathBuf::from,
+    )
+}

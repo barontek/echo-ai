@@ -14,7 +14,7 @@ use crate::agent::message::ToolCall;
 use crate::error::Error;
 
 /// A message sent to a provider (provider-agnostic shape).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct LlmMessage {
     /// `system`, `user`, `assistant`, or `tool`.
     pub role: String,

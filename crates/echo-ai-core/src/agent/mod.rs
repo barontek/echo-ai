@@ -1,9 +1,12 @@
 //! Agent subsystem: the conversation loop and its data model.
 //!
-//! `message.rs` (the model) lands in Phase 1 because the session store
-//! persists it; the run loop, prompt building, title generation, and
-//! context windowing land in Phase 4.
+//! `message.rs` is the persisted model; `agent.rs` is the LLM ↔ tool
+//! loop with streaming events, approval gating, and title generation;
+//! `context.rs` handles window trimming and summarization.
 //!
-//! Depends on: `serde`.
+//! Depends on: `tokio`, `tokio-util`, crate `llm`, `safety`, `tools`,
+//! `session`, `change_tracker`.
 
+pub mod context;
 pub mod message;
+pub mod run;

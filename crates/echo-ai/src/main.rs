@@ -131,9 +131,7 @@ fn run(parsed: Parsed) -> Result<(), String> {
 
     match mode {
         Mode::Web => run_web(config),
-        Mode::Cli => Err(String::from(
-            "cli mode is not ported yet (planned for Phase 6)",
-        )),
+        Mode::Cli => run_cli(config),
     }
 }
 
@@ -141,6 +139,12 @@ fn run_web(config: Config) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(echo_ai_server::run_server(config))
         .map_err(|e| e.to_string())
+}
+
+fn run_cli(config: Config) -> Result<(), String> {
+    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    rt.block_on(echo_ai_tui::run_tui(config, None))
+        .map_err(|e| e)
 }
 
 /// Loads config, failing fast on a missing *explicitly configured* file;
@@ -220,9 +224,10 @@ mod tests {
     }
 
     #[test]
-    fn run_cli_mode_reports_unported() {
+    fn cli_mode_reaches_tui_dispatch() {
+        // The TUI run requires a terminal; the dispatch itself is what
+        // we assert: parse of --cli selects Mode::Cli.
         let parsed = parse(&["--cli"]).expect("args parse");
-        let err = run(parsed).expect_err("unported mode must fail");
-        assert!(err.contains("Phase 6"), "unexpected error: {err}");
+        assert_eq!(parsed.mode, Mode::Cli);
     }
 }

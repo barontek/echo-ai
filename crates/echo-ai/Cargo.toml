@@ -20,4 +20,5 @@ workspace = true
 [dependencies]
 echo-ai-server = { path = "../echo-ai-server" }
 tokio = { version = "1", features = ["full"] }
+echo-ai-tui = { path = "../echo-ai-tui" }
 echo-ai-core = { path = "../echo-ai-core" }

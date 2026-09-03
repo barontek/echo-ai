@@ -18,3 +18,26 @@
 // reports them at warn (deny.toml) and the review doc records the
 // exception.
 #![allow(clippy::multiple_crate_versions)]
+
+pub mod app;
+pub mod chat;
+pub mod dialogs;
+pub mod input;
+pub mod keys;
+
+use std::sync::Arc;
+
+use echo_ai_core::agent::run::Agent;
+use echo_ai_core::config::Config;
+
+/// Runs the TUI.
+///
+/// # Errors
+/// Terminal setup/teardown or agent-construction failures.
+pub async fn run_tui(config: Config, agent: Option<Arc<Agent>>) -> Result<(), String> {
+    let agent = match agent {
+        Some(a) => a,
+        None => app::build_agent(&config).map_err(|e| e.to_string())?,
+    };
+    app::run_tui(config, agent).await.map_err(|e| e.to_string())
+}

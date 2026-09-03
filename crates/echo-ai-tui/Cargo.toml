@@ -14,3 +14,11 @@ categories.workspace = true
 workspace = true
 
 [dependencies]
+echo-ai-core = { path = "../echo-ai-core" }
+
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = "0.3"
+ratatui = "0.29"
+crossterm = "0.28"
+serde_json = "1"

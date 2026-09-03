@@ -1,0 +1,76 @@
+.TH ECHO-AI 1 "September 2026" "echo-ai 0.1.0" "User Commands"
+.SH NAME
+echo-ai \- agentic AI assistant with a web UI, terminal UI, and tool access
+.SH SYNOPSIS
+.B echo-ai
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B echo-ai
+is an agentic AI assistant: a conversation loop over an LLM provider
+(Ollama, OpenAI-compatible endpoints, OpenCode Zen/Go, or Codex) with
+access to workspace tools (file read/write/edit, shell, git, web search
+and fetch, notes, memory, SQLite, and a browser).
+.PP
+Two frontends exist: the web server (default, \fB--web\fR) serving a
+chat UI over HTTPS with a WebSocket protocol, and a terminal UI
+(\fB--cli\fR) built with ratatui.
+.SH OPTIONS
+.TP
+.BR \-\-web
+Run the web server (default).
+.TP
+.BR \-\-cli
+Run the terminal UI.
+.TP
+.BR \-\-config " " \fIPATH\fR
+Load configuration from \fIPATH\fR. Defaults are used when the file
+does not exist unless an explicit path was given.
+.TP
+.BR \-\-debug
+Enable debug logging (JSON lines on stderr).
+.SH CONFIGURATION
+Configuration is TOML; the default location is \fBconfig.toml\fR next to
+the binary. See \fBconfig.toml.example\fR for all options. Notable
+sections:
+.TP
+.B [agent]
+provider, model, temperature, max_iterations, effort.
+.TP
+.B [server]
+port (8443), bind (127.0.0.1), tls (true), optional custom
+tls_cert/tls_key.
+.TP
+.B [safety]
+mode, workspace pinning, blocklists, allow_network,
+web_fetch_max_chars.
+.TP
+.B [session]
+enabled; the data directory is \fB~/.config/echo-ai\fR
+(C-compatible layout: vault files, TLS keys, session database).
+.SH FILES
+.TP
+.B ~/.config/echo-ai/
+Vault (\fBsalt\fR, \fB.pepper\fR, \fB.verifier\fR), session database
+(\fBecho-ai.db\fR), and generated TLS material (\fBtls/\fR, mode 0600).
+.TP
+.B ~/.config/echo-ai/notes/
+Personal markdown notes (the \fBnotes\fR tool).
+.SH ENVIRONMENT
+.TP
+.B ECHO_AI_PASSWORD
+Unlock password for the session vault (headless setup).
+.TP
+.B ECHO_AI_DATA_DIR
+Override the data directory.
+.TP
+.B ECHO_AI_FRONTEND
+Override the frontend static files directory.
+.TP
+.B ECHO_AI_BROWSER
+Browser binary for the browser tools (default: chromium).
+.SH EXIT STATUS
+0 on success; nonzero on configuration or server errors.
+.SH SEE ALSO
+The project documentation under
+.B docs/
+(plans, reviews, verification evidence).

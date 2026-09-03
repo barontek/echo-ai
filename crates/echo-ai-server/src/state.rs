@@ -103,7 +103,14 @@ impl AppState {
         let http: Arc<dyn HttpClient> = Arc::new(ReqwestClient::new());
         let index = Arc::new(SemanticIndex::new());
         let search = SearchProvider::from_config(&config).map(Arc::new);
-        let registry = Arc::new(Registry::build(&config, search, index.clone()));
+        let browser = Arc::new(echo_ai_core::browser::BrowserManager::new());
+        let registry = Arc::new(Registry::build(
+            &config,
+            search,
+            index.clone(),
+            browser.clone(),
+        ));
+        let _ = &browser;
         let tracker = Arc::new(Mutex::new(ChangeTracker::new()));
 
         let codex_token = session

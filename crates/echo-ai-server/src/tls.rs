@@ -7,7 +7,7 @@
 //! re-imports are never needed. Custom certificates (`[server]
 //! tls_cert`/`tls_key`) override the generated ones.
 //!
-//! Depends on: `rcgen`, `rustls-pemfile`, `axum-server` (rustls).
+//! Depends on: `rcgen`, `axum-server` (rustls).
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};

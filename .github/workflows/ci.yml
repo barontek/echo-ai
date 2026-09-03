@@ -79,9 +79,11 @@ jobs:
         # -Zmiri-disable-isolation: tests read the wall clock (message
         # timestamps, Fernet freshness); Miri's default isolation blocks
         # clock_gettime(REALTIME).
-        # --skip session:: : rusqlite is a bundled C FFI that Miri cannot
-        # interpret; the session store is covered by the sanitizer stages.
-        run: nix develop -c bash -c 'MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test -p echo-ai-core --all-features --locked -- --skip session::'
+        # --skip: rusqlite is bundled C FFI and subprocess tests need
+        # real pipes/socketpairs — neither is Miri-interpretable; the
+        # session store and process runner are covered by the sanitizer
+        # stages instead.
+        run: nix develop -c bash -c 'MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test -p echo-ai-core --all-features --locked -- --skip session:: --skip tools::git:: --skip tools::shell:: --skip tools::process::'
 
   audit:
     runs-on: ubuntu-latest

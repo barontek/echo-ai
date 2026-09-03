@@ -40,6 +40,7 @@ impl Registry {
     /// * `cfg` — for tool enablement and search provider config.
     /// * `search` — the configured web search backend.
     /// * `index` — the shared semantic-search index.
+    /// * `browser` — the shared browser manager (browser tools).
     ///
     /// The session store and change tracker are NOT held here: tools
     /// receive them per-execution through the `ToolContext`, so one
@@ -48,6 +49,7 @@ impl Registry {
         cfg: &Config,
         search: Option<Arc<SearchProvider>>,
         index: Arc<SemanticIndex>,
+        browser: Arc<crate::browser::BrowserManager>,
     ) -> Self {
         let mut registry = Self::default();
 
@@ -84,6 +86,34 @@ impl Registry {
         register(Arc::new(Memory));
         register(Arc::new(SemanticSearch::new(index.clone())));
         register(Arc::new(IngestDocument::new(index)));
+
+        // Browser tools (shared, lazily-launched instance).
+        register(Arc::new(crate::browser::tools::BrowserNavigate::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::BrowserGetContent::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::BrowserClick::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::BrowserType::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::BrowserScroll::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::BrowserWait::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::BrowserScreenshot::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::BrowserRunScript::new(
+            browser.clone(),
+        )));
+        register(Arc::new(crate::browser::tools::StealthFetch));
+        register(Arc::new(crate::browser::tools::OpenInBrowser::new(browser)));
 
         // Enablement filtering.
         if !cfg.tools.enabled.is_empty() {
@@ -145,7 +175,12 @@ mod tests {
 
     #[test]
     fn builds_all_default_tools() {
-        let registry = Registry::build(&Config::default(), None, Arc::new(SemanticIndex::new()));
+        let registry = Registry::build(
+            &Config::default(),
+            None,
+            Arc::new(SemanticIndex::new()),
+            Arc::new(crate::browser::BrowserManager::new()),
+        );
         let names = registry.names();
         for expected in [
             "read_file",
@@ -185,7 +220,12 @@ mod tests {
     fn enablement_filter_applies() {
         let mut cfg = Config::default();
         cfg.tools.enabled = vec![String::from("read_file"), String::from("bash")];
-        let registry = Registry::build(&cfg, None, Arc::new(SemanticIndex::new()));
+        let registry = Registry::build(
+            &cfg,
+            None,
+            Arc::new(SemanticIndex::new()),
+            Arc::new(crate::browser::BrowserManager::new()),
+        );
         assert_eq!(registry.len(), 2);
         assert!(registry.get("read_file").is_some());
         assert!(registry.get("write_file").is_none());
@@ -196,14 +236,24 @@ mod tests {
         let mut cfg = Config::default();
         cfg.search.provider = String::from("duckduckgo");
         let provider = Arc::new(SearchProvider::from_config(&cfg).expect("provider"));
-        let registry = Registry::build(&cfg, Some(provider), Arc::new(SemanticIndex::new()));
+        let registry = Registry::build(
+            &cfg,
+            Some(provider),
+            Arc::new(SemanticIndex::new()),
+            Arc::new(crate::browser::BrowserManager::new()),
+        );
         assert!(registry.get("web_search").is_some());
         assert!(registry.get("deep_search").is_some());
     }
 
     #[test]
     fn unknown_tool_lookup_returns_none() {
-        let registry = Registry::build(&Config::default(), None, Arc::new(SemanticIndex::new()));
+        let registry = Registry::build(
+            &Config::default(),
+            None,
+            Arc::new(SemanticIndex::new()),
+            Arc::new(crate::browser::BrowserManager::new()),
+        );
         assert!(registry.get("no_such_tool").is_none());
     }
 }

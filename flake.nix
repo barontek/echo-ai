@@ -31,6 +31,37 @@
         };
       in
       {
+        packages.default = pkgs.rustPlatform.buildRustPackage {
+          pname = "echo-ai";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          buildAndTestSubdir = "crates/echo-ai";
+          # The server embeds no frontend build; the dist directory is
+          # copied as-is (pure static files, no node build step).
+          preBuild = ''
+            mkdir -p frontend
+            cp -r frontend/dist frontend/dist
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin $out/share/man/man1 $out/share/echo-ai
+            cp target/release/echo-ai $out/bin/echo-ai
+            cp man/echo-ai.1 $out/share/man/man1/echo-ai.1
+            cp -r frontend/dist $out/share/echo-ai/frontend
+            runHook postInstall
+          '';
+          meta = {
+            description = "Agentic AI assistant with web and terminal UIs";
+            license = pkgs.lib.licenses.mit;
+          };
+        };
+
+        apps.default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/echo-ai";
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             # rust-overlay's rustup shim FIRST so its cargo/rustc proxies

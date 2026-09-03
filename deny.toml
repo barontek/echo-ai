@@ -5,6 +5,14 @@
 [advisories]
 yanked = "deny"
 version = 2
+# RUSTSEC-2024-0436: dtolnay's `paste` (build-time macro proc crate,
+# used by ratatui) is archived/unmaintained but has no runtime surface
+# and no successor.
+# RUSTSEC-2025-0134: `rustls-pemfile` (transitive via axum-server) is
+# unmaintained but is the standard PEM loader pinned by the rustls
+# ecosystem; we do not depend on it directly.
+# Both recorded in AGENTS_COMPLIANCE_REVIEW.md.
+ignore = ["RUSTSEC-2024-0436", "RUSTSEC-2025-0134"]
 
 [bans]
 multiple-versions = "warn"
@@ -21,4 +29,7 @@ allow = [
     "CC0-1.0",
     "MPL-2.0",
     "0BSD",
+    # webpki-roots (via reqwest/rustls) — a permissive data license from
+    # the Linux Foundation, widely used in the Rust TLS ecosystem.
+    "CDLA-Permissive-2.0",
 ]

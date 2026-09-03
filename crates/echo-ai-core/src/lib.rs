@@ -24,6 +24,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 pub mod agent;
+pub mod browser;
 pub mod change_tracker;
 pub mod config;
 pub mod error;

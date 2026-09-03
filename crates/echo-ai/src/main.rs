@@ -144,7 +144,6 @@ fn run_web(config: Config) -> Result<(), String> {
 fn run_cli(config: Config) -> Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(echo_ai_tui::run_tui(config, None))
-        .map_err(|e| e)
 }
 
 /// Loads config, failing fast on a missing *explicitly configured* file;

@@ -1,14 +1,26 @@
 //! Echo AI binary: CLI entry point and mode dispatcher.
 //!
-//! Mirrors `~/echo-ai-c/src/main.c`: parses flags, then hands control to
-//! the web server (`--web`, the default) or the TUI (`--cli`). The C
-//! version's `--chat` REPL is deliberately not ported, and plugin loading
-//! is not part of this binary (plugins were cut from the Rust port).
+//! Mirrors `~/echo-ai-c/src/main.c`: parses flags, loads config, then
+//! hands control to the web server (`--web`, the default) or the TUI
+//! (`--cli`). The C version's `--chat` REPL is deliberately not ported,
+//! and plugin loading is not part of this binary (plugins were cut from
+//! the Rust port).
 //!
 //! Depends on: `echo-ai-core`, `echo-ai-server`, `echo-ai-tui` (wired in
 //! as their phases land).
 
+// TODO(multiple_crate_versions): hashbrown 0.14/0.17 (rusqlite vs toml
+// indexmap) and syn 2/3 are unavoidable transitive pairs; `cargo deny`
+// reports them at warn (deny.toml) and the review doc records the
+// exception.
+#![allow(clippy::multiple_crate_versions)]
+
+use std::path::Path;
 use std::process::ExitCode;
+
+use echo_ai_core::Error;
+use echo_ai_core::config::Config;
+use echo_ai_core::utils::logging;
 
 const USAGE: &str = "\
 Usage: echo-ai [OPTIONS]
@@ -112,25 +124,35 @@ fn run(parsed: Parsed) -> Result<(), String> {
     } = parsed;
 
     if debug {
-        // Full debug-level logging setup lands with Phase 1 (config).
-        eprintln!("echo-ai: debug logging enabled");
+        logging::set_level(logging::Level::Debug);
     }
 
-    // Phase 1 wires real config loading; until then, fail fast when an
-    // explicitly configured file is missing so a typo'd --config path is
-    // caught immediately rather than surfacing as a confusing mode error.
-    if config_path != "config.toml" && !std::path::Path::new(&config_path).exists() {
-        return Err(format!("config file not found: {config_path}"));
-    }
+    // Loaded (and validated) now so config errors surface before the
+    // mode runners exist; consumed by them in Phases 5 and 6.
+    let _config = load_config(&config_path)?;
 
     match mode {
-        Mode::Web => Err(String::from(
-            "web mode is not ported yet (planned for Phase 5)",
+        Mode::Web => Err(format!(
+            "web mode is not ported yet (planned for Phase 5; loaded config from {config_path})"
         )),
-        Mode::Cli => Err(String::from(
-            "cli mode is not ported yet (planned for Phase 6)",
+        Mode::Cli => Err(format!(
+            "cli mode is not ported yet (planned for Phase 6; loaded config from {config_path})"
         )),
     }
+}
+
+/// Loads config, failing fast on a missing *explicitly configured* file;
+/// the default path loads clean defaults instead.
+fn load_config(path: &str) -> Result<Config, String> {
+    let config_path = Path::new(path);
+    if config_path != Path::new("config.toml") && !config_path.exists() {
+        return Err(format!("config file not found: {path}"));
+    }
+    Config::load(config_path).map_err(|e| match e {
+        Error::Config(msg) => msg,
+        Error::Io { path, source } => format!("{}: {source}", path.display()),
+        other => other.to_string(),
+    })
 }
 
 #[cfg(test)]

@@ -13,3 +13,8 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+// TODO(multiple_crate_versions): hashbrown 0.14/0.17 (rusqlite vs toml
+// indexmap) and syn 2/3 are unavoidable transitive pairs; `cargo deny`
+// reports them at warn (deny.toml) and the review doc records the
+// exception.
+#![allow(clippy::multiple_crate_versions)]

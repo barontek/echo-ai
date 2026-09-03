@@ -1,0 +1,80 @@
+# Echo AI configuration (TOML).
+#
+# Copy this file to `config.toml` (or pass --config PATH) and edit.
+# Every section is optional — omitted sections use the defaults shown
+# here. Comments after `#` are allowed.
+
+[agent]
+# provider = "ollama"            # ollama | openai | openai_compatible | opencode_zen | opencode_go
+# model = "llama3.1"             # required by providers that need one
+# system_prompt = ""
+# temperature = 0.7              # 0.0 - 2.0
+# timeout_secs = 300
+# effort = "medium"              # low | medium | high | xhigh | max | none
+# max_iterations = 20
+# max_context_messages = 80
+# max_context_chars = 60000
+# max_tool_result_chars = 8000
+
+[ollama]
+# base_url = "http://localhost:11434"
+# num_ctx = 4096
+# keep_alive_secs = 120
+
+[openai]
+# oauth = true                   # Codex is OAuth-only; no API keys
+
+[openai_compatible]
+# base_url = "http://localhost:1234"   # LM Studio, vLLM, llama.cpp
+# token = ""                     # or use [providers] below
+
+[opencode_zen]
+# base_url = "https://opencode.ai/zen/v1"
+
+[opencode_go]
+# base_url = "https://opencode.ai/zen/go/v1"
+
+[safety]
+# mode = "restricted"            # restricted | approve_all | unrestricted
+# workspace = ""                 # empty = current directory
+# allow_network = true
+# max_file_size = 10485760       # 10 MiB
+# web_fetch_max_chars = 25000
+# max_execution_time_secs = 300
+# blocked_extensions = []        # empty = built-in defaults (.key, .pem, .env, ...)
+# blocked_paths = []             # empty = built-in defaults (/etc/passwd, ...)
+# require_approval_for = ["bash", "write_file", "edit", "git", "python_execute", "delegate"]
+# ask_user_timeout_secs = 60
+
+[session]
+# enabled = false                # true = persist sessions + password unlock
+
+[tools]
+# enabled = []                   # empty = all tools enabled
+
+[browser]
+# headless = false
+
+[search]
+# provider = "duckduckgo"        # brave | duckduckgo | tavily
+# api_key = ""
+
+# Bearer tokens per provider (opencode_zen and opencode_go share "opencode").
+[providers]
+# opencode = "op-..."
+# openai_compatible = "..."
+
+[server]
+# port = 8443
+# bind = "127.0.0.1"
+# tls = true                     # built-in HTTPS with a local cert
+# tls_cert = ""                  # optional custom PEM cert/key
+# tls_key = ""
+
+[tui]
+# style = "dark"                 # dark | light | highcontrast | none
+# density = "compact"            # compact | spacious
+# accent = "#7aa2f7"
+# transparent = false
+# [tui.keybindings]
+# keymap_new.open = "ctrl+n"     # example override

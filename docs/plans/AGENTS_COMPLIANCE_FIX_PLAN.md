@@ -25,14 +25,18 @@
 
 ## Phase 1 — Core plane (config, utils, safety, session, change_tracker)
 
-- [ ] P1A config.rs: TOML config structs (serde, `Default` per section), `--config` loading, `config.toml.example`.
-- [ ] P1B utils: string_utils, logging (JSON-lines), metrics (port silent-drop fault tests), circuit_breaker (port tests), rate_limiter (SQLite-backed, port tests), callbacks, http_client.
-- [ ] P1C html pipeline (7 modules): port html_extract + unicode/entities/tags/outbuf/writer/assembly; fuzz targets for html_extract; SAFETY/lint template from C's html_assembly.c.
-- [ ] P1D safety.rs: path/URL/command/socket checks, workspace pinning, approval gating, audit log; port test_safety + test_safety_conf.
-- [ ] P1E session: schema MUST match C (shared data dir). db, encryption (Fernet exact format, scrypt salt||pepper, verifier files, 0600 key handling), manager (port add_message/load_session_locked regression tests), serialize (load/decrypt, save/encrypt, export/import), list, purge, branch, branch_info, memory (fault-injection test — carried gap), migration (crash-safe password migration).
-- [ ] P1F change_tracker: 64-slot undo/redo, port fault-injection tests (C had solid coverage).
-- [ ] P1G fuzz: config-free now; session_deserialize, fernet_token targets.
-- [ ] P1H error conventions: thiserror per module, anyhow at application boundaries.
+- [x] P1A config.rs: TOML config structs (serde, `Default` per section), `--config` loading (fail-fast on explicit missing path; defaults for absent default file), `config.toml.example`. Config loading wired into the bin.
+- [x] P1B utils: string_utils, logging (JSON-lines, leveled, thread-safe), metrics (Prometheus text; updates to unknown names dropped silently — the C fault-injection property survives by construction), circuit_breaker (monotonic-clock state machine), rate_limiter (in-memory per-IP fixed window + rolling unlock throttle — SQLite persistence deliberately not ported, documented in module docs). `callbacks` deferred to Phase 4, `http_client` to Phase 3 (both land with their consumers).
+- [ ] P1C html pipeline (7 modules): NOT STARTED — deferred to the next milestone (extractor design is a self-contained chunk; see tracker).
+- [x] P1D safety.rs: workspace pinning (canonicalize-deepest + prefix check, symlink-escape tested), blocklists (configured-replaces-defaults semantics, C default lists verbatim), destructive-command screen, approval gating by mode, size cap.
+- [x] P1E session: schema byte-compatible with C (`agent_sessions`, `provider_oauth`, `user_memory`, journal_mode=DELETE + synchronous=FULL, data dir 0700, salt/.pepper/.verifier 0600). Fernet exact format (0x80 | BE ts | IV | AES-128-CBC PKCS7 | HMAC-SHA256; scrypt N=2^18 r=8 p=1; key split 0..16 sign / 16..32 encrypt; future-timestamp rejection). Manager CRUD + list/purge/rename/events + OAuth store + memory (absent-vs-error distinction by type — C gap resolved-by-construction) + crash-safe password migration (marker/verifier.new/transactional re-encrypt/state-row recovery; interrupted-migration recovery tests both pre- and post-commit). Fault-injection: save-rollback test (abort trigger leaves committed row intact); migration crash-window tests.
+- [x] P1F change_tracker: 64-slot undo/redo, redo-cleared-on-new-track, failed-restore rolls the undo stack back (fault-injection test).
+- [ ] P1G fuzz targets: NOT STARTED — cargo-fuzz harnesses land with the next milestone alongside P1C (session_deserialize, fernet_token, html_extract).
+- [x] P1H error conventions: thiserror `Error` enum in core (`error.rs`), anyhow available at boundaries, crate-level unwrap/expect deny outside tests with documented scoped allows (HMAC 16-byte-key invariant, mutex-poison fail-fast policy).
+
+Notes:
+- Known gaps re-baselined: `memory_get` absent-vs-error and session add-message rollback are resolved-by-construction (typed `Option`/transaction); `config` mid-list cleanup is moot (serde); `change_tracker` restore-rollback test added. `delegate` loop phase and `semantic_search` add-term rollback remain carried to Phase 3.
+- Exceptions recorded: `hashbrown` 0.14/0.17 + `syn` 2/3 transitive duplicates (crate-root scoped allow + `cargo deny` at warn, see review doc); Miri runs with `-Zmiri-disable-isolation` and `--skip session::` (rusqlite is bundled C FFI; covered by sanitizer stages).
 
 ## Phase 2 — LLM providers
 
@@ -91,7 +95,7 @@
 | Phase | Items | Status |
 |---|---|---|
 | 0 | R0-R7 | `[x]` all done |
-| 1 | P1A-P1H | pending |
+| 1 | P1A-P1H | `[x]` done except P1C (html pipeline) and P1G (fuzz) — deferred to next milestone |
 | 2 | P2A-P2F | pending |
 | 3 | P3A-P3H | pending |
 | 4 | P4A-P4D | pending |

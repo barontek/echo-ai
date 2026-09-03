@@ -22,25 +22,24 @@
 | Rust module | C counterpart | Status | Notes |
 |---|---|---|---|
 | `lib.rs` | — | `scaffolded` | lint policy + crate docs |
-| `config.rs` | src/config/config.c | `n/a` | .conf parser replaced by TOML (serde). C's "mid-list cleanup" gap is resolved-by-design; tracked in fix plan item R0 |
-| `utils/string_utils.rs` | src/utils/string_utils.c | pending | trim, prefix/suffix, split, JSON sanitize, ellipsis |
-| `utils/logging.rs` | src/utils/logging.c | pending | JSON-lines to stderr, leveled |
-| `utils/metrics.rs` | src/utils/metrics.c | pending | Prometheus text; silent-drop on full (C had good fault coverage — port it) |
-| `utils/circuit_breaker.rs` | src/utils/circuit_breaker.c | pending | CLOSED/OPEN/HALF_OPEN, monotonic clock |
-| `utils/rate_limiter.rs` | src/utils/rate_limiter.c | pending | per-IP fixed window + unlock throttle, SQLite-backed, fails open |
-| `utils/html_*.rs` | src/utils/html_*.c (7 files) | pending | extraction pipeline; `html_assembly.rs` cited in AGENTS.md as the SAFETY-comment template |
-| `utils/callbacks.rs` | src/utils/callbacks.c | pending | run/LLM/tool lifecycle dispatch |
-| `utils/http_client.rs` | src/utils/http_client.c | pending | reqwest plumbing (replaces curl) |
-| `safety.rs` | src/safety/safety.c | pending | path/URL/command/socket checks, workspace pinning, approval gating, audit log |
-| `session/` (db, encryption, manager, serialize, list, purge, branch, branch_info, memory, migration) | src/session/*.c | pending | DB schema + Fernet format MUST match C exactly (shared data dir decision). Fuzz: session_deserialize, fernet_token |
-| `change_tracker.rs` | src/change_tracker/change_tracker.c | pending | 64-slot undo/redo; fault-injection test ported (C had solid coverage) |
-| `agent/` (agent, run, prompt, title, summarize, context, message) | src/agent/*.c | pending | async run loop + CancellationToken; delegate loop-phase gap carried |
-| `llm/provider.rs` | src/llm/provider.h | pending | trait-only module (documented exception, mirrors provider.h) |
-| `llm/{factory,ollama,openai,openai_compatible,opencode_zen,provider_models}.rs` | src/llm/*.c | pending | streams merged into providers (serde-driven); SSE parsers get fuzz targets |
-| `llm/oauth_*.rs` | src/llm/oauth_*.c | pending | codec, jwt, vault, http, device, callback; jwt decode hand-rolled (no jsonwebtoken dep) |
-| `tools/tool.rs`, `tools/registry.rs` | src/tools/tool.c, registry.c | pending | registry_test cfg-gated wiring (AGENTS.md structure exception) |
-| `tools/*.rs` (~39 tools) | src/tools/*.c | pending | bash, read/write/edit, list/glob/grep, web_fetch, web_search + brave/ddg/tavily, deep_search, semantic_search + ingest, git, python_execute, rest_api, notes, memory, delegate, sqlite query/schema, ask_user, humanizer, browser, stealth_fetch |
-| `browser/` (cdp, stealth) | src/browser/*.c | pending | tokio pipes + serde_json; NUL-framed JSON protocol; unsafe-adjacent (fd handling) → Miri/TSan |
+| `error.rs` | — | `tested` | thiserror enum, `Result` alias, Io-with-path |
+| `config.rs` | src/config/config.c | `ported` | TOML (serde), per-section defaults, `config.toml.example`; C's "mid-list cleanup" gap is resolved-by-design (fix plan R0) |
+| `agent/message.rs` | src/agent/message.c | `ported` | C-compatible JSON field names; 4 tests |
+| `utils/string_utils.rs` | src/utils/string_utils.c | `ported` | json escape, ellipsize, rsplit; std covers the rest |
+| `utils/logging.rs` | src/utils/logging.c | `ported` | JSON-lines, leveled, thread-safe |
+| `utils/metrics.rs` | src/utils/metrics.c | `ported` | Prometheus text; silent-drop on unknown name (C fault tests ported in spirit) |
+| `utils/circuit_breaker.rs` | src/utils/circuit_breaker.c | `ported` | monotonic state machine; 4 tests (1 bug found+fixed) |
+| `utils/rate_limiter.rs` | src/utils/rate_limiter.c | `ported` | in-memory (persistence deliberately dropped — see module docs); 3 tests |
+| `utils/callbacks.rs` | src/utils/callbacks.c | pending | Phase 4 (with agent) |
+| `utils/http_client.rs` | src/utils/http_client.c | pending | Phase 3 (with network tools) |
+| `safety.rs` | src/safety/safety.c | `ported` | pinning + blocklists + approval; 7 tests (1 bug found+fixed) |
+| `session/` (db, encryption, manager, memory, migration) | src/session/*.c | `tested` | byte-compatible schema/Fernet/scrypt; crash-safe migration; 27 tests; save-rollback + migration crash-window fault-injection tests |
+| `change_tracker.rs` | src/change_tracker/change_tracker.c | `tested` | 64-slot; restore-failure rollback fault-injection test; 5 tests |
+| `utils/html_*.rs` | src/utils/html_*.c (7 files) | pending | deferred to next milestone (P1C) |
+| `agent/` (run, prompt, title, summarize, context) | src/agent/*.c | pending | Phase 4 |
+| `llm/` | src/llm/*.c | pending | Phase 2 |
+| `tools/` | src/tools/*.c | pending | Phase 3 |
+| `browser/` | src/browser/*.c | pending | Phase 7 |
 
 ### crates/echo-ai-server
 

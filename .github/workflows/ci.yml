@@ -76,7 +76,12 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v16
       - uses: DeterminateSystems/magic-nix-cache-action@v9
       - name: miri test (echo-ai-core)
-        run: nix develop -c cargo +nightly miri test -p echo-ai-core --all-features --locked
+        # -Zmiri-disable-isolation: tests read the wall clock (message
+        # timestamps, Fernet freshness); Miri's default isolation blocks
+        # clock_gettime(REALTIME).
+        # --skip session:: : rusqlite is a bundled C FFI that Miri cannot
+        # interpret; the session store is covered by the sanitizer stages.
+        run: nix develop -c bash -c 'MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test -p echo-ai-core --all-features --locked -- --skip session::'
 
   audit:
     runs-on: ubuntu-latest

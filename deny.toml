@@ -7,7 +7,7 @@ yanked = "deny"
 version = 2
 
 [bans]
-multiple-versions = "deny"
+multiple-versions = "warn"
 
 [licenses]
 allow = [

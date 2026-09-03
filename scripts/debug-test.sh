@@ -37,10 +37,13 @@ case "$mode" in
         lldb --batch -o 'settings set target.process.stop-on-sharedlibrary-events 0' -o run -- cargo "${base[@]}" "$@"
         ;;
     miri)
-        cargo +nightly miri "${base[@]}" "$@"
+        # -Zmiri-disable-isolation: tests read the wall clock (message
+        # timestamps, Fernet freshness); Miri's default isolation blocks
+        # clock_gettime(REALTIME).
+        MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri "${base[@]}" "$@"
         ;;
     miri-gdb)
-        gdb -ex 'set follow-fork-mode child' -ex run --args cargo +nightly miri "${base[@]}" "$@"
+        MIRIFLAGS="-Zmiri-disable-isolation" gdb -ex 'set follow-fork-mode child' -ex run --args cargo +nightly miri "${base[@]}" "$@"
         ;;
     *)
         echo "error: unknown mode: $mode" >&2

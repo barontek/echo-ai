@@ -30,6 +30,7 @@ pub mod error;
 pub mod llm;
 pub mod safety;
 pub mod session;
+pub mod tools;
 pub mod utils;
 
 pub use error::{Error, Result};

@@ -402,6 +402,113 @@ impl SessionManager {
         migration::migrate(self, new_password)
     }
 
+    /// Returns the value for a user-memory key (`Ok(None)` = absent).
+    ///
+    /// # Errors
+    /// `Error::Sqlite` on query failures.
+    pub fn memory_get(&self, key: &str) -> Result<Option<String>> {
+        super::memory::memory_get(&self.conn(), key)
+    }
+
+    /// Upserts a user-memory fact.
+    ///
+    /// # Errors
+    /// `Error::Invalid`/`Error::Sqlite` per the memory module contract.
+    pub fn memory_set(&self, key: &str, value: &str) -> Result<()> {
+        super::memory::memory_set(&self.conn(), key, value)
+    }
+
+    /// Deletes a user-memory fact (true when removed).
+    ///
+    /// # Errors
+    /// `Error::Sqlite` on query failures.
+    pub fn memory_delete(&self, key: &str) -> Result<bool> {
+        super::memory::memory_delete(&self.conn(), key)
+    }
+
+    /// Lists all user-memory facts.
+    ///
+    /// # Errors
+    /// `Error::Sqlite` on query failures.
+    pub fn memory_list(&self) -> Result<Vec<(String, String)>> {
+        super::memory::memory_list(&self.conn())
+    }
+
+    /// Runs a read-only query (the `sqlite_query` tool's surface).
+    /// Returns an array of row objects with column names.
+    ///
+    /// # Errors
+    /// `Error::Sqlite` on prepare/step failures.
+    pub fn query_read_only(&self, sql: &str) -> Result<serde_json::Value> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| Error::Sqlite(e.to_string()))?;
+        let col_count = stmt.column_count();
+        let rows = stmt
+            .query_map([], |row| {
+                let mut obj = serde_json::Map::new();
+                for i in 0..col_count {
+                    let name = row.as_ref().column_name(i).unwrap_or("").to_string();
+                    let v: rusqlite::types::Value = row.get(i)?;
+                    obj.insert(name, sqlite_value_to_json(v));
+                }
+                Ok(serde_json::Value::Object(obj))
+            })
+            .map_err(|e| Error::Sqlite(e.to_string()))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| Error::Sqlite(e.to_string()))?);
+        }
+        Ok(serde_json::Value::Array(out))
+    }
+
+    /// Describes the schema: each table's name, `CREATE` SQL, and
+    /// columns (the `sqlite_schema` tool's surface).
+    ///
+    /// # Errors
+    /// `Error::Sqlite` on query failures.
+    pub fn schema_info(&self) -> Result<serde_json::Value> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .map_err(|e| Error::Sqlite(e.to_string()))?;
+        let tables = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|e| Error::Sqlite(e.to_string()))?;
+        let mut out = Vec::new();
+        for t in tables {
+            let (name, sql) = t.map_err(|e| Error::Sqlite(e.to_string()))?;
+            let mut cols = Vec::new();
+            let mut pragma = conn
+                .prepare(&format!("PRAGMA table_info({name})"))
+                .map_err(|e| Error::Sqlite(e.to_string()))?;
+            let col_rows = pragma
+                .query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "name": row.get::<_, String>(1)?,
+                        "type": row.get::<_, String>(2)?,
+                        "notnull": row.get::<_, i64>(3)? != 0,
+                        "pk": row.get::<_, i64>(5)? != 0,
+                    }))
+                })
+                .map_err(|e| Error::Sqlite(e.to_string()))?;
+            for c in col_rows {
+                cols.push(c.map_err(|e| Error::Sqlite(e.to_string()))?);
+            }
+            out.push(serde_json::json!({
+                "name": name,
+                "sql": sql,
+                "columns": cols,
+            }));
+        }
+        Ok(serde_json::Value::Array(out))
+    }
+
     /// Test-only access to the raw connection (fault-injection tests
     /// tamper with the schema to force DB failures).
     #[cfg(test)]
@@ -442,6 +549,20 @@ fn now_epoch_secs() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => i64::try_from(d.as_secs()).unwrap_or(i64::MAX),
         Err(_) => 0,
+    }
+}
+
+/// Converts a `rusqlite` value into a JSON value (blobs become base64).
+fn sqlite_value_to_json(v: rusqlite::types::Value) -> serde_json::Value {
+    use base64::Engine as _;
+    match v {
+        rusqlite::types::Value::Null => serde_json::Value::Null,
+        rusqlite::types::Value::Integer(i) => serde_json::json!(i),
+        rusqlite::types::Value::Real(f) => serde_json::json!(f),
+        rusqlite::types::Value::Text(t) => serde_json::json!(t),
+        rusqlite::types::Value::Blob(b) => {
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode(b))
+        }
     }
 }
 

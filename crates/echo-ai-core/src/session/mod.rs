@@ -23,6 +23,8 @@ pub mod manager;
 pub mod memory;
 pub mod migration;
 
+pub use manager::SessionManager;
+
 /// A persisted conversation.
 #[derive(Debug, Clone, Default)]
 pub struct Session {

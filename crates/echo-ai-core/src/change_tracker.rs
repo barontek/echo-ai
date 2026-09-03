@@ -21,21 +21,30 @@ pub const MAX_STACK: usize = 64;
 pub struct FileSnapshot {
     /// Absolute or workspace-relative path of the file.
     pub path: PathBuf,
-    /// Exact bytes captured before the write.
-    pub contents: Vec<u8>,
+    /// Exact bytes captured before the write; `None` when the file did
+    /// not exist (restore then removes it).
+    pub contents: Option<Vec<u8>>,
 }
 
 impl FileSnapshot {
-    /// Captures the current on-disk state of `path`.
+    /// Captures the current on-disk state of `path`. A missing file
+    /// yields a snapshot with `contents: None` (its "previous state" is
+    /// absence — undoing a file creation removes the file).
     ///
     /// # Errors
-    /// `Error::Io` when the file cannot be read.
+    /// `Error::Io` when the file exists but cannot be read.
     pub fn capture(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
-        let contents = std::fs::read(&path).map_err(|e| Error::Io {
-            path: path.clone(),
-            source: e,
-        })?;
+        let contents = match std::fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                return Err(Error::Io {
+                    path: path.clone(),
+                    source: e,
+                });
+            }
+        };
         Ok(Self { path, contents })
     }
 }
@@ -127,7 +136,16 @@ impl ChangeTracker {
             .pop()
             .ok_or_else(|| Error::Invalid(String::from("nothing to restore")))?;
         let current = FileSnapshot::capture(&snapshot.path);
-        match std::fs::write(&snapshot.path, &snapshot.contents) {
+        let write_result = match &snapshot.contents {
+            Some(bytes) => std::fs::write(&snapshot.path, bytes),
+            // The file did not exist before: restoring means removing it.
+            None => match std::fs::remove_file(&snapshot.path) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            },
+        };
+        match write_result {
             Ok(()) => {
                 if let Ok(current) = current {
                     to.push(current);
@@ -164,12 +182,12 @@ mod tests {
         std::fs::write(&path, "v2").expect("modify");
 
         let undone = ct.undo().expect("undo");
-        assert_eq!(undone.contents, b"v1");
+        assert_eq!(undone.contents.as_deref(), Some(b"v1".as_slice()));
         assert_eq!(std::fs::read_to_string(&path).expect("read"), "v1");
         assert!(ct.can_redo());
 
         let redone = ct.redo().expect("redo");
-        assert_eq!(redone.contents, b"v2");
+        assert_eq!(redone.contents.as_deref(), Some(b"v2".as_slice()));
         assert_eq!(std::fs::read_to_string(&path).expect("read"), "v2");
         let _ = std::fs::remove_file(&path);
     }
@@ -204,7 +222,8 @@ mod tests {
         std::fs::write(&path, "final").expect("write");
         let newest = ct.undo().expect("undo");
         assert_eq!(
-            newest.contents, b"v68",
+            newest.contents.as_deref(),
+            Some(b"v68".as_slice()),
             "oldest entries dropped, newest kept"
         );
         let _ = std::fs::remove_file(&path);
@@ -238,5 +257,20 @@ mod tests {
         let mut ct = ChangeTracker::new();
         assert!(ct.undo().is_err());
         assert!(ct.redo().is_err());
+    }
+
+    #[test]
+    fn undo_of_new_file_removes_it() {
+        let path = std::env::temp_dir().join(format!("echo-ct-new-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut ct = ChangeTracker::new();
+        // Snapshot the *absence*, then create the file.
+        ct.track(FileSnapshot::capture(&path).expect("capture absence"))
+            .expect("track");
+        std::fs::write(&path, "created").expect("create");
+        let undone = ct.undo().expect("undo");
+        assert!(undone.contents.is_none());
+        assert!(!path.exists(), "undo of a creation removes the file");
+        let _ = std::fs::remove_file(&path);
     }
 }

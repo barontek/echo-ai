@@ -8,6 +8,7 @@
 //! Depends on: crate `error`, `tokio` (rate limiter tests).
 
 pub mod circuit_breaker;
+pub mod html;
 pub mod logging;
 pub mod metrics;
 pub mod rate_limiter;

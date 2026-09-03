@@ -54,6 +54,7 @@
             # rusqlite "bundled" compiles sqlite3 from source via `cc`,
             # and ring (rustls) needs a C compiler too.
             gcc
+            python3 # the python_execute tool runs scripts in the workspace
             # node is only needed for the frontend build (Phase 7); kept in
             # the shell so `npm ci && npm run build` works without leaving
             # nix develop.

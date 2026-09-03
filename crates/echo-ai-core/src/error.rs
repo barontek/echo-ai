@@ -56,8 +56,9 @@ pub enum Error {
     },
 }
 
-/// Convenience alias used across the core crate.
-pub type Result<T> = std::result::Result<T, Error>;
+/// Convenience alias used across the core crate (defaults to the
+/// crate-wide error; modules may override the error type).
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Builds an [`Error::Io`] from an operation on `path`.
 pub fn io_error(path: impl Into<PathBuf>, source: std::io::Error) -> Error {

@@ -27,6 +27,7 @@ pub mod agent;
 pub mod change_tracker;
 pub mod config;
 pub mod error;
+pub mod llm;
 pub mod safety;
 pub mod session;
 pub mod utils;

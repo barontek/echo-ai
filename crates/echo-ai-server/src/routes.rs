@@ -96,8 +96,30 @@ fn gate(state: &AppState, headers: &HeaderMap, query: &Query<Value>) -> Option<R
     None
 }
 
-fn require_session(state: &AppState) -> Option<&echo_ai_core::session::SessionManager> {
-    state.session.as_deref()
+/// Rate-limit-only gate for the public routes (`/api/setup`,
+/// `/api/unlock`) — they are reachable before any vault or token
+/// exists.
+fn gate_public(state: &AppState, headers: &HeaderMap, query: &Query<Value>) -> Option<Response> {
+    let _ = query;
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map_or_else(|| String::from("unknown"), String::from);
+    if !state.rate_limiter.check(&ip) {
+        return Some((StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded").into_response());
+    }
+    None
+}
+
+/// The shared session slot (a poisoned lock is an invariant
+/// violation; fail fast).
+#[allow(clippy::expect_used)] // poisoned slot = invariant violation
+fn require_session(state: &AppState) -> Option<Arc<echo_ai_core::session::SessionManager>> {
+    state
+        .session
+        .lock()
+        .expect("session slot lock poisoned")
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -137,10 +159,15 @@ async fn health_detailed(
     if let Some(resp) = gate(&state, &headers, &query) {
         return resp;
     }
-    let sessions = state
-        .session
-        .as_ref()
-        .map_or(0, |sm| sm.list_sessions().map_or(0, |l| l.len()));
+    let sessions = {
+        #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+        state
+            .session
+            .lock()
+            .expect("session slot lock poisoned")
+            .as_ref()
+            .map_or(0, |sm| sm.list_sessions().map_or(0, |l| l.len()))
+    };
     Json(json!({
         "status": "ok",
         "sessions": sessions,
@@ -151,11 +178,13 @@ async fn health_detailed(
 
 /// `GET /api/config`: public config (provider names, model, limits).
 async fn public_config(State(state): State<Arc<AppState>>) -> Json<Value> {
+    #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+    let session_enabled = state.session.lock().expect("session slot lock").is_some();
     Json(json!({
         "provider": state.config.agent.provider,
         "model": state.config.agent.model,
         "providers": echo_ai_core::llm::factory::PROVIDERS,
-        "session_enabled": state.session.is_some(),
+        "session_enabled": session_enabled,
         "safety": {
             "mode": format!("{:?}", state.safety.mode).to_lowercase(),
             "allow_network": state.safety.allow_network,
@@ -183,18 +212,31 @@ async fn setup(
     query: Query<Value>,
     Json(body): Json<PasswordBody>,
 ) -> Response {
-    if let Some(resp) = gate(&state, &headers, &query) {
+    if let Some(resp) = gate_public(&state, &headers, &query) {
         return resp;
     }
     if !state.needs_setup() {
         return (StatusCode::CONFLICT, "already initialized").into_response();
     }
-    let Ok(sm) = echo_ai_core::session::SessionManager::open(&state.data_dir, &body.password)
-    else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "vault creation failed").into_response();
+    // Create the vault with the submitted password and fill the shared
+    // session slot (the agent's tools and every handler see it via the
+    // same `Arc`).
+    let sm = match echo_ai_core::session::SessionManager::open(&state.data_dir, &body.password) {
+        Ok(sm) => sm,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("vault creation failed: {e}"),
+            )
+                .into_response();
+        }
     };
-    // Rebuild the app state with the session manager attached.
-    let _ = sm;
+    {
+        #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+        let mut slot = state.session.lock().expect("session slot lock poisoned");
+        *slot = Some(Arc::new(sm));
+    }
+    state.mark_setup_done();
     (StatusCode::OK, "setup complete").into_response()
 }
 
@@ -205,10 +247,10 @@ async fn unlock(
     query: Query<Value>,
     Json(body): Json<PasswordBody>,
 ) -> Response {
-    if let Some(resp) = gate(&state, &headers, &query) {
+    if let Some(resp) = gate_public(&state, &headers, &query) {
         return resp;
     }
-    let Some(sm) = &state.session else {
+    let Some(sm) = require_session(&state) else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             "session persistence disabled",
@@ -248,7 +290,7 @@ async fn change_password(
     if let Some(resp) = gate(&state, &headers, &query) {
         return resp;
     }
-    let Some(sm) = &state.session else {
+    let Some(sm) = require_session(&state) else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             "session persistence disabled",
@@ -647,7 +689,7 @@ async fn chat(
 
 /// Persists a run's transcript into the session store (if enabled).
 fn maybe_persist(state: &AppState, session_id: Option<&str>, result: &AgentResult) {
-    let Some(sm) = &state.session else {
+    let Some(sm) = require_session(state) else {
         return;
     };
     let Some(id) = session_id else {

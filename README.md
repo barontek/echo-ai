@@ -37,5 +37,5 @@ workspace = current directory.
 - `crates/echo-ai-server` — axum REST/SSE/WS server with built-in TLS
 - `crates/echo-ai-tui` — ratatui terminal interface
 - `crates/echo-ai` — the binary (mode dispatcher)
-- `frontend/dist` — the vendored static frontend (no build step)
+- `frontend/` — the vendored React frontend (C-project source); `npm ci && npm run build` produces `frontend/dist`, which the server serves (built by CI and the nix package; `dist` is gitignored)
 - `man/echo-ai.1` — manual page

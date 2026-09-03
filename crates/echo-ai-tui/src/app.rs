@@ -66,7 +66,7 @@ pub fn build_agent(config: &Config) -> Result<Arc<Agent>, echo_ai_core::error::E
         config: AgentConfig::from(config),
         safety,
         app_config: config.clone(),
-        session: None,
+        session: Arc::new(std::sync::Mutex::new(None)),
         tracker: None,
         ask_user: None,
         http,

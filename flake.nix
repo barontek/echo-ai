@@ -37,11 +37,14 @@
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           buildAndTestSubdir = "crates/echo-ai";
-          # The server embeds no frontend build; the dist directory is
-          # copied as-is (pure static files, no node build step).
+          nativeBuildInputs = [ pkgs.nodejs_22 ];
+          # The vendored React frontend needs its build step; `dist` is
+          # gitignored, so the nix build must produce it.
           preBuild = ''
-            mkdir -p frontend
-            cp -r frontend/dist frontend/dist
+            cd frontend
+            npm ci --no-audit --no-fund
+            npm run build
+            cd ..
           '';
           installPhase = ''
             runHook preInstall

@@ -1,0 +1,1569 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ChatProvider, useChat } from '../context';
+import { BranchPill } from '../components/BranchPill';
+
+const { mockApi, wsCalls, wsOnOpenTimers } = vi.hoisted(() => ({
+  mockApi: {
+    getSessions: vi.fn().mockResolvedValue([
+      { id: 'session-1', title: 'First Chat', created_at: '2024-01-01' },
+      { id: 'session-2', title: 'Second Chat', created_at: '2024-01-02' },
+    ]),
+    getModels: vi.fn().mockResolvedValue(['qwen3:4b-instruct', 'llama3.2:latest']),
+    getProviders: vi.fn().mockResolvedValue({ providers: ['ollama', 'openai', 'opencode_zen'], effortSupported: ['openai'] }),
+    getOpenAIOAuthStatus: vi.fn().mockResolvedValue({ state: 'signed_out' }),
+    createSession: vi.fn().mockResolvedValue({ session_id: 'new-session-456' }),
+    loadSession: vi.fn().mockResolvedValue({
+      session_id: 'session-1',
+      title: 'First Chat',
+      messages: [
+        { role: 'user', content: 'Hello', timestamp: '10:00' },
+        { role: 'assistant', content: 'Hi there!', timestamp: '10:01' },
+      ],
+    }),
+    deleteSession: vi.fn().mockResolvedValue(undefined),
+    renameSession: vi.fn().mockResolvedValue(undefined),
+    updateConfig: vi.fn().mockResolvedValue(undefined),
+    getConfig: vi.fn().mockResolvedValue({
+      provider: 'ollama',
+      model: 'qwen3:4b-instruct',
+      temperature: 0.3,
+      max_iterations: 50,
+      session_enabled: true,
+    }),
+    healthCheck: vi.fn().mockResolvedValue({ status: 'healthy', version: '0.1.0' }),
+  },
+  wsCalls: [] as string[],
+  /* Pending onopen timers across all mock ws instances: a timer scheduled
+   * by one test can otherwise fire into the next test's wsCalls. */
+  wsOnOpenTimers: [] as ReturnType<typeof setTimeout>[],
+}));
+
+vi.mock('../api/client', () => ({
+  api: mockApi,
+}));
+
+const MOCK_WS_STATICS = { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 };
+
+function installPrimaryWebSocketMock(): void {
+  vi.stubGlobal(
+    'WebSocket',
+    Object.assign(
+      /* Regular function (not an arrow) so `new WebSocket(...)` works;
+       * the returned object replaces `this`, mimicking the real API. */
+      vi.fn(function () {
+        const handlers: Record<string, ((...args: unknown[]) => unknown) | null | undefined> = {};
+        return {
+          send: vi.fn((data: string) => {
+            wsCalls.push(data);
+          }),
+          close: vi.fn(),
+          readyState: 1,
+          get onopen() {
+            return handlers.onopen;
+          },
+          set onopen(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+            handlers.onopen = fn;
+            if (fn) {
+              wsOnOpenTimers.push(setTimeout(() => fn(), 0));
+            }
+          },
+          get onclose() {
+            return handlers.onclose;
+          },
+          set onclose(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+            handlers.onclose = fn;
+          },
+          get onmessage() {
+            return handlers.onmessage;
+          },
+          set onmessage(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+            handlers.onmessage = fn;
+          },
+          get onerror() {
+            return handlers.onerror;
+          },
+          set onerror(fn: ((...args: unknown[]) => unknown) | null | undefined) {
+            handlers.onerror = fn;
+          },
+        };
+      }),
+      MOCK_WS_STATICS
+    )
+  );
+}
+
+installPrimaryWebSocketMock();
+
+describe('Session History Bug Tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    /* Drop stale ws-open timers from earlier tests before re-installing
+     * the primary WebSocket mock, so a previous test's onopen can't
+     * append to this test's wsCalls. */
+    wsOnOpenTimers.splice(0).forEach(clearTimeout);
+    /* Re-install the primary WebSocket mock: individual tests may have
+     * stubbed the global themselves, and stubGlobal leaves the last
+     * stub in place for later tests. */
+    installPrimaryWebSocketMock();
+    if (typeof localStorage !== 'undefined') localStorage.clear();
+    wsCalls.length = 0;
+    mockApi.getSessions.mockResolvedValue([
+      { id: 'session-1', title: 'First Chat', created_at: '2024-01-01' },
+      { id: 'session-2', title: 'Second Chat', created_at: '2024-01-02' },
+    ]);
+    mockApi.loadSession.mockResolvedValue({
+      session_id: 'session-1',
+      title: 'First Chat',
+      messages: [
+        { role: 'user', content: 'Hello', timestamp: '10:00' },
+        { role: 'assistant', content: 'Hi there!', timestamp: '10:01' },
+      ],
+    });
+    mockApi.getProviders.mockResolvedValue({
+      providers: ['ollama', 'openai', 'opencode_zen'],
+      effortSupported: ['openai'],
+    });
+    mockApi.getModels.mockResolvedValue(['qwen3:4b-instruct', 'llama3.2:latest']);
+    mockApi.getOpenAIOAuthStatus.mockResolvedValue({ state: 'signed_out' });
+  });
+
+  describe('BUG: Session history not appearing', () => {
+    it('should show sessions in sidebar after loading', async () => {
+      function TestSidebar() {
+        const { sessions } = useChat();
+        return (
+          <div>
+            {sessions.map((s) => (
+              <span key={s.id} data-testid={`session-${s.id}`}>
+                {s.title}
+              </span>
+            ))}
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestSidebar />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(mockApi.getSessions).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-session-1')).toBeInTheDocument();
+      });
+
+      expect(screen.getByTestId('session-session-1').textContent).toBe('First Chat');
+    });
+
+    it('should display loaded session messages', async () => {
+      function TestComponent() {
+        const { messages, selectSession } = useChat();
+        return (
+          <div>
+            <button onClick={() => selectSession('session-1')}>Load</button>
+            <span data-testid="msg-count">{messages.length}</span>
+            {messages.map((m, i) => (
+              <span key={i} data-testid={`msg-${i}`}>
+                {m.role}:{m.content}
+              </span>
+            ))}
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      expect(screen.getByTestId('msg-count').textContent).toBe('0');
+
+      await userEvent.click(screen.getByText('Load'));
+
+      await waitFor(() => {
+        expect(mockApi.loadSession).toHaveBeenCalledWith('session-1');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('msg-count').textContent).toBe('2');
+      });
+
+      expect(screen.getByTestId('msg-0').textContent).toBe('user:Hello');
+      expect(screen.getByTestId('msg-1').textContent).toBe('assistant:Hi there!');
+    });
+
+    it('should switch between sessions without accumulating messages', async () => {
+      mockApi.loadSession
+        .mockResolvedValueOnce({
+          session_id: 'session-1',
+          title: 'First',
+          messages: [{ role: 'user', content: 'Msg1', timestamp: '10:00' }],
+        })
+        .mockResolvedValueOnce({
+          session_id: 'session-2',
+          title: 'Second',
+          messages: [{ role: 'user', content: 'Msg2', timestamp: '11:00' }],
+        });
+
+      function TestComponent() {
+        const { messages, selectSession, activeSessionId } = useChat();
+        return (
+          <div>
+            <span data-testid="active-session">{activeSessionId || 'none'}</span>
+            <span data-testid="msg-count">{messages.length}</span>
+            <span data-testid="first-msg">{messages[0]?.content || ''}</span>
+            <button onClick={() => selectSession('session-1')}>Load1</button>
+            <button onClick={() => selectSession('session-2')}>Load2</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Load1'));
+      await waitFor(() => {
+        expect(screen.getByTestId('active-session').textContent).toBe('session-1');
+      });
+      expect(screen.getByTestId('msg-count').textContent).toBe('1');
+      expect(screen.getByTestId('first-msg').textContent).toBe('Msg1');
+
+      await userEvent.click(screen.getByText('Load2'));
+      await waitFor(() => {
+        expect(screen.getByTestId('active-session').textContent).toBe('session-2');
+      });
+      expect(screen.getByTestId('msg-count').textContent).toBe('1');
+      expect(screen.getByTestId('first-msg').textContent).toBe('Msg2');
+    });
+
+    it('should clear messages when creating new session', async () => {
+      function TestComponent() {
+        const { messages, createSession } = useChat();
+        return (
+          <div>
+            <span data-testid="msg-count">{messages.length}</span>
+            <button onClick={createSession}>New Chat</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('New Chat'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('msg-count').textContent).toBe('0');
+      });
+    });
+  });
+
+  describe('BUG: AI not replying to messages', () => {
+    it('should queue message when WebSocket not ready', async () => {
+      function TestComponent() {
+        const { sendMessage, messages } = useChat();
+        return (
+          <div>
+            <span data-testid="msg-count">{messages.length}</span>
+            <button onClick={() => sendMessage('Hello AI')}>Send</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      // Even if WS is not fully ready, message should be added to queue
+      await userEvent.click(screen.getByText('Send'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('msg-count').textContent).toBe('1');
+      });
+    });
+
+    it('should add user message to messages immediately when sending', async () => {
+      function TestComponent() {
+        const { sendMessage, messages } = useChat();
+        return (
+          <div>
+            <span data-testid="msg-count">{messages.length}</span>
+            <span data-testid="first-content">{messages[0]?.content || ''}</span>
+            <button onClick={() => sendMessage('My message')}>Send</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Send'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('msg-count').textContent).toBe('1');
+      });
+      expect(screen.getByTestId('first-content').textContent).toBe('My message');
+    });
+
+    it('should handle send when WebSocket is closed gracefully', async () => {
+      // Test that sendMessage doesn't crash even if WS is not available
+      function TestComponent() {
+        const { sendMessage } = useChat();
+        return (
+          <div>
+            <button onClick={() => sendMessage('Test')}>Send</button>
+          </div>
+        );
+      }
+
+      // Should not throw
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Send'));
+      // Message should be added to queue and attempted to send
+      expect(screen.getByText('Send')).toBeInTheDocument();
+    });
+  });
+
+  describe('Data flow verification', () => {
+    it('should load models on mount', async () => {
+      function TestComponent() {
+        const { models } = useChat();
+        return <span data-testid="model-count">{models.length}</span>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(mockApi.getModels).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('model-count').textContent).toBe('2');
+      });
+    });
+
+    it('should track current model', async () => {
+      localStorage.setItem(
+        'echo-ai-chat-preferences',
+        JSON.stringify({ model: 'qwen3:4b-instruct' })
+      );
+
+      function TestComponent() {
+        const { currentModel } = useChat();
+        return <span data-testid="current-model">{currentModel}</span>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('current-model').textContent).toBe('qwen3:4b-instruct');
+      });
+    });
+
+    it('should restore model from stored preferences on mount', async () => {
+      localStorage.setItem(
+        'echo-ai-chat-preferences',
+        JSON.stringify({ model: 'llama3.2:latest' })
+      );
+
+      function TestComponent() {
+        const { currentModel } = useChat();
+        return <span data-testid="pref-model">{currentModel}</span>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('pref-model').textContent).toBe('llama3.2:latest');
+      });
+    });
+
+    it('should persist model to localStorage on selectModel', async () => {
+      function TestComponent() {
+        const { selectModel } = useChat();
+        return <button onClick={() => selectModel('gpt-4')}>Use GPT-4</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Use GPT-4'));
+
+      await waitFor(() => {
+        const prefs = JSON.parse(localStorage.getItem('echo-ai-chat-preferences') || '{}');
+        expect(prefs).toEqual({ model: 'gpt-4', provider: 'ollama', models: { ollama: 'gpt-4' } });
+      });
+    });
+
+    it('should restore the last model for each provider', async () => {
+      mockApi.getProviders.mockResolvedValueOnce({ providers: ['ollama', 'openai'], effortSupported: ['openai'] });
+      localStorage.setItem(
+        'echo-ai-chat-preferences',
+        JSON.stringify({
+          provider: 'ollama',
+          model: 'qwen3:4b-instruct',
+          models: { ollama: 'qwen3:4b-instruct', openai: 'gpt-4o-mini' },
+        })
+      );
+      mockApi.getModels.mockImplementation((provider?: string) =>
+        Promise.resolve(provider === 'openai' ? ['gpt-4o-mini', 'gpt-4o'] : ['qwen3:4b-instruct', 'llama3.2:latest'])
+      );
+
+      function TestComponent() {
+        const { currentProvider, currentModel, selectProvider } = useChat();
+        return (
+          <>
+            <span data-testid="selected-provider">{currentProvider}</span>
+            <span data-testid="selected-model">{currentModel}</span>
+            <button onClick={() => selectProvider('openai')}>OpenAI</button>
+            <button onClick={() => selectProvider('ollama')}>Ollama</button>
+          </>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-model').textContent).toBe('qwen3:4b-instruct');
+      });
+      await userEvent.click(screen.getByText('OpenAI'));
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-provider').textContent).toBe('openai');
+        expect(screen.getByTestId('selected-model').textContent).toBe('gpt-4o-mini');
+      });
+      await userEvent.click(screen.getByText('Ollama'));
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-provider').textContent).toBe('ollama');
+        expect(screen.getByTestId('selected-model').textContent).toBe('qwen3:4b-instruct');
+      });
+    });
+
+    it('does not restore OpenAI while signed out', async () => {
+      localStorage.setItem(
+        'echo-ai-chat-preferences',
+        JSON.stringify({
+          provider: 'openai',
+          model: 'gpt-5-codex',
+          models: { openai: 'gpt-5-codex' },
+        })
+      );
+      mockApi.getProviders.mockResolvedValueOnce({ providers: ['ollama', 'openai'], effortSupported: ['openai'] });
+      mockApi.getOpenAIOAuthStatus.mockResolvedValueOnce({ state: 'signed_out' });
+
+      function TestComponent() {
+        const { currentProvider, currentModel } = useChat();
+        return (
+          <>
+            <span data-testid="restored-provider">{currentProvider}</span>
+            <span data-testid="restored-model">{currentModel}</span>
+          </>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('restored-model').textContent).toBe('qwen3:4b-instruct');
+      });
+      expect(screen.getByTestId('restored-provider').textContent).toBe('ollama');
+      expect(mockApi.getOpenAIOAuthStatus).toHaveBeenCalled();
+      expect(mockApi.getModels).not.toHaveBeenCalledWith('openai', expect.anything());
+    });
+
+    it('keeps models in response order and ignores an older provider completion', async () => {
+      let resolveOpenAI: ((models: string[]) => void) | undefined;
+      let resolveZen: ((models: string[]) => void) | undefined;
+      let openAISignal: AbortSignal | undefined;
+      mockApi.getModels.mockImplementation((provider?: string, signal?: AbortSignal) => {
+        if (provider === 'openai') {
+          openAISignal = signal;
+          return new Promise<string[]>((resolve) => {
+            resolveOpenAI = resolve;
+          });
+        }
+        if (provider === 'opencode_zen') {
+          return new Promise<string[]>((resolve) => {
+            resolveZen = resolve;
+          });
+        }
+        return Promise.resolve(['qwen3:4b-instruct']);
+      });
+
+      function TestComponent() {
+        const { currentProvider, currentModel, models, selectProvider } = useChat();
+        return (
+          <>
+            <span data-testid="ordered-provider">{currentProvider}</span>
+            <span data-testid="ordered-model">{currentModel}</span>
+            <span data-testid="ordered-models">{models.join(',')}</span>
+            <button onClick={() => void selectProvider('openai')}>OpenAI request</button>
+            <button onClick={() => void selectProvider('opencode_zen')}>Zen request</button>
+          </>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('ordered-model').textContent).toBe('qwen3:4b-instruct')
+      );
+
+      fireEvent.click(screen.getByText('OpenAI request'));
+      expect(screen.getByTestId('ordered-provider').textContent).toBe('ollama');
+      expect(screen.getByTestId('ordered-models').textContent).toBe('qwen3:4b-instruct');
+      fireEvent.click(screen.getByText('Zen request'));
+      expect(openAISignal?.aborted).toBe(true);
+
+      await act(async () => {
+        resolveZen?.(['zen-second', 'zen-first']);
+      });
+      expect(screen.getByTestId('ordered-provider').textContent).toBe('opencode_zen');
+      expect(screen.getByTestId('ordered-model').textContent).toBe('zen-second');
+      expect(screen.getByTestId('ordered-models').textContent).toBe('zen-second,zen-first');
+
+      await act(async () => {
+        resolveOpenAI?.(['stale-openai']);
+      });
+      expect(screen.getByTestId('ordered-provider').textContent).toBe('opencode_zen');
+      expect(screen.getByTestId('ordered-models').textContent).toBe('zen-second,zen-first');
+      const stored = JSON.parse(localStorage.getItem('echo-ai-chat-preferences') || '{}');
+      expect(stored.provider).not.toBe('openai');
+      expect(wsCalls).not.toContainEqual(expect.stringContaining('"provider":"openai"'));
+    });
+
+    it('keeps startup sessions and providers when a provider is selected early', async () => {
+      let resolveProviders: ((providers: {
+        providers: string[];
+        effortSupported: string[];
+      }) => void) | undefined;
+      mockApi.getProviders.mockImplementationOnce(
+        () =>
+          new Promise<{ providers: string[]; effortSupported: string[] }>((resolve) => {
+            resolveProviders = resolve;
+          })
+      );
+      mockApi.getModels.mockImplementation((provider?: string) =>
+        Promise.resolve(provider === 'opencode_zen' ? ['zen-model'] : ['ollama-model'])
+      );
+
+      function TestComponent() {
+        const { sessions, providers, currentProvider, selectProvider } = useChat();
+        return (
+          <>
+            <span data-testid="startup-session-count">{sessions.length}</span>
+            <span data-testid="startup-providers">{providers.join(',')}</span>
+            <span data-testid="startup-provider">{currentProvider}</span>
+            <button onClick={() => void selectProvider('opencode_zen')}>Select early</button>
+          </>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+      fireEvent.click(screen.getByText('Select early'));
+      await waitFor(() =>
+        expect(screen.getByTestId('startup-provider').textContent).toBe('opencode_zen')
+      );
+
+      await act(async () => {
+        resolveProviders?.({ providers: ['ollama', 'openai', 'opencode_zen'], effortSupported: ['openai'] });
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('startup-session-count').textContent).toBe('2')
+      );
+      expect(screen.getByTestId('startup-providers').textContent).toBe(
+        'ollama,openai,opencode_zen'
+      );
+      expect(screen.getByTestId('startup-provider').textContent).toBe('opencode_zen');
+    });
+
+    it('should handle empty sessions list', async () => {
+      mockApi.getSessions.mockResolvedValueOnce([]);
+
+      function TestComponent() {
+        const { sessions } = useChat();
+        return <span data-testid="session-count">{sessions.length}</span>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-count').textContent).toBe('0');
+      });
+    });
+
+    it('should handle session with no messages', async () => {
+      mockApi.loadSession.mockResolvedValueOnce({
+        session_id: 'empty-session',
+        title: 'Empty',
+        messages: [],
+      });
+
+      function TestComponent() {
+        const { selectSession, messages } = useChat();
+        return (
+          <div>
+            <span data-testid="msg-count">{messages.length}</span>
+            <button onClick={() => selectSession('empty-session')}>Load</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Load'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('msg-count').textContent).toBe('0');
+      });
+    });
+
+    it('should delete session via API and refresh list', async () => {
+      function TestComponent() {
+        const { deleteSession } = useChat();
+        return <button onClick={() => deleteSession('session-1')}>Delete</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Delete'));
+
+      await waitFor(() => {
+        expect(mockApi.deleteSession).toHaveBeenCalledWith('session-1');
+      });
+    });
+
+    it('renameSession calls API with session_id and new_title', async () => {
+      function TestComponent() {
+        const { renameSession } = useChat();
+        return <button onClick={() => renameSession('session-1', 'Renamed Chat')}>Rename</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Rename'));
+
+      await waitFor(() => {
+        expect(mockApi.renameSession).toHaveBeenCalledWith('session-1', 'Renamed Chat');
+      });
+    });
+
+    it('renameSession updates title in sessions list after rename', async () => {
+      function TestComponent() {
+        const { sessions, renameSession } = useChat();
+        return (
+          <div>
+            <span data-testid="session-title">
+              {sessions.find((s) => s.id === 'session-1')?.title}
+            </span>
+            <button onClick={() => renameSession('session-1', 'Renamed Chat')}>Rename</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-title').textContent).toBe('First Chat');
+      });
+
+      await userEvent.click(screen.getByText('Rename'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-title').textContent).toBe('Renamed Chat');
+      });
+    });
+
+    it('renameSession handles API error without crashing', async () => {
+      mockApi.renameSession.mockRejectedValueOnce(new Error('API error'));
+
+      function TestComponent() {
+        const { renameSession } = useChat();
+        return <button onClick={() => renameSession('session-1', 'Will Fail')}>RenameError</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('RenameError'));
+
+      await waitFor(() => {
+        expect(mockApi.renameSession).toHaveBeenCalledWith('session-1', 'Will Fail');
+      });
+    });
+
+    it('renameSession with empty string still calls API (backend validates min_length)', async () => {
+      function TestComponent() {
+        const { renameSession } = useChat();
+        return <button onClick={() => renameSession('session-1', '')}>RenameEmpty</button>;
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('RenameEmpty'));
+
+      await waitFor(() => {
+        expect(mockApi.renameSession).toHaveBeenCalledWith('session-1', '');
+      });
+    });
+  });
+
+  describe('Session Continuity Tests', () => {
+    it('should refresh session list after chat completes', async () => {
+      let onmessageHandler: ((event: { data: string }) => void) | null = null;
+      const mockWs = {
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+        set onopen(fn: () => void) {
+          setTimeout(fn, 0);
+        },
+        get onmessage() {
+          return onmessageHandler;
+        },
+        set onmessage(fn: ((event: { data: string }) => void) | null) {
+          onmessageHandler = fn;
+        },
+      };
+
+      vi.stubGlobal(
+        'WebSocket',
+        Object.assign(vi.fn(() => mockWs), MOCK_WS_STATICS)
+      );
+
+      function TestComponent() {
+        const { sendMessage } = useChat();
+        return (
+          <div>
+            <button onClick={() => sendMessage('test')}>Send</button>
+          </div>
+        );
+      }
+
+      render(
+        <ChatProvider>
+          <TestComponent />
+        </ChatProvider>
+      );
+
+      await userEvent.click(screen.getByText('Send'));
+
+      // Simulate 'done' message from server
+      if (onmessageHandler) {
+        (onmessageHandler as (event: { data: string }) => void)({
+          data: JSON.stringify({
+            type: 'done',
+            content: 'response',
+            session_id: 'chat-123',
+          }),
+        });
+      }
+
+      // Session list should be refreshed after chat completes
+      await waitFor(() => {
+        expect(mockApi.getSessions).toHaveBeenCalled();
+      });
+    });
+  });
+});
+
+describe('Reasoning effort setting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    /* Same hygiene as the main describe: drop stale ws-open timers and
+     * re-install the primary WebSocket mock, since earlier tests stub the
+     * global themselves and leave the last stub in place. */
+    wsOnOpenTimers.splice(0).forEach(clearTimeout);
+    installPrimaryWebSocketMock();
+    if (typeof localStorage !== 'undefined') localStorage.clear();
+    wsCalls.length = 0;
+    mockApi.getProviders.mockResolvedValue({
+      providers: ['ollama', 'openai', 'opencode_zen'],
+      effortSupported: ['openai'],
+      effortOptions: {
+        openai: ['low', 'medium', 'high', 'xhigh', 'max', 'none'],
+      },
+    });
+    mockApi.getModels.mockResolvedValue(['qwen3:4b-instruct', 'llama3.2:latest']);
+    mockApi.getOpenAIOAuthStatus.mockResolvedValue({ state: 'signed_out' });
+    mockApi.getSessions.mockResolvedValue([]);
+    mockApi.loadSession.mockResolvedValue({ session_id: 's', title: 't', messages: [] });
+  });
+
+  it('shows the effort selector only when the current provider supports it', async () => {
+    const { ChatInput } = await import('../components/ChatInput');
+    function TestComponent() {
+      const { currentProvider, selectProvider, supportsEffort } = useChat();
+      return (
+        <>
+          <span data-testid="provider">{currentProvider}</span>
+          <span data-testid="supports">{String(supportsEffort)}</span>
+          <button onClick={() => void selectProvider('openai')}>OpenAI</button>
+          <ChatInput />
+        </>
+      );
+    }
+    render(
+      <ChatProvider>
+        <TestComponent />
+      </ChatProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('provider').textContent).toBe('ollama');
+    });
+    expect(screen.getByTestId('supports').textContent).toBe('false');
+    expect(screen.queryByRole('combobox', { name: 'Reasoning effort' })).toBeNull();
+
+    await userEvent.click(screen.getByText('OpenAI'));
+    await waitFor(() => {
+      expect(screen.getByTestId('supports').textContent).toBe('true');
+    });
+    expect(screen.getByRole('combobox', { name: 'Reasoning effort' })).toBeDefined();
+  });
+
+  it('selecting an effort persists it and resends the config over the live socket', async () => {
+    function TestComponent() {
+      const { currentEffort, selectProvider, selectEffort } = useChat();
+      return (
+        <>
+          <span data-testid="effort">{currentEffort}</span>
+          <button onClick={() => void selectProvider('openai')}>OpenAI</button>
+          <button onClick={() => selectEffort('low')}>Effort low</button>
+          <button onClick={() => selectEffort('')}>Effort default</button>
+        </>
+      );
+    }
+    render(
+      <ChatProvider>
+        <TestComponent />
+      </ChatProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('effort').textContent).toBe('');
+    });
+    await userEvent.click(screen.getByText('OpenAI'));
+    await waitFor(() => {
+      expect(mockApi.getModels).toHaveBeenCalledWith('openai', expect.anything());
+    });
+    wsCalls.length = 0;
+    await userEvent.click(screen.getByText('Effort low'));
+    expect(screen.getByTestId('effort').textContent).toBe('low');
+    await waitFor(() => {
+      const prefs = JSON.parse(localStorage.getItem('echo-ai-chat-preferences') || '{}');
+      expect(prefs.effort).toBe('low');
+    });
+    expect(
+      wsCalls.some((c) => c.includes('"provider":"openai"') && c.includes('"effort":"low"'))
+    ).toBe(true);
+
+    wsCalls.length = 0;
+    await userEvent.click(screen.getByText('Effort default'));
+    expect(screen.getByTestId('effort').textContent).toBe('');
+    await waitFor(() => {
+      const prefs = JSON.parse(localStorage.getItem('echo-ai-chat-preferences') || '{}');
+      expect(prefs.effort).toBeUndefined();
+    });
+    expect(wsCalls.some((c) => c.includes('"effort":'))).toBe(false);
+  });
+
+  it('restores a saved effort and sends it in the initial config message', async () => {
+    localStorage.setItem(
+      'echo-ai-chat-preferences',
+      JSON.stringify({
+        provider: 'ollama',
+        model: 'qwen3:4b-instruct',
+        models: { ollama: 'qwen3:4b-instruct' },
+        effort: 'high',
+      })
+    );
+    function TestComponent() {
+      const { currentEffort } = useChat();
+      return <span data-testid="effort">{currentEffort}</span>;
+    }
+    render(
+      <ChatProvider>
+        <TestComponent />
+      </ChatProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('effort').textContent).toBe('high');
+    });
+    await waitFor(() => {
+      expect(wsCalls.some((c) => c.includes('"effort":"high"'))).toBe(true);
+    });
+  });
+
+  it('drops an invalid saved effort instead of sending it', async () => {
+    localStorage.setItem(
+      'echo-ai-chat-preferences',
+      JSON.stringify({
+        provider: 'ollama',
+        model: 'qwen3:4b-instruct',
+        models: { ollama: 'qwen3:4b-instruct' },
+        effort: 'extreme',
+      })
+    );
+    function TestComponent() {
+      const { currentEffort } = useChat();
+      return <span data-testid="effort">{currentEffort}</span>;
+    }
+    render(
+      <ChatProvider>
+        <TestComponent />
+      </ChatProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('effort').textContent).toBe('');
+    });
+    await waitFor(() => {
+      expect(wsCalls.some((c) => c.includes('"effort"'))).toBe(false);
+    });
+  });
+
+  it('renders per-provider effort options (ollama and zen have no xhigh)', async () => {
+    mockApi.getProviders.mockResolvedValueOnce({
+      providers: ['ollama', 'openai', 'opencode_zen'],
+      effortSupported: ['ollama', 'openai', 'opencode_zen'],
+      effortOptions: {
+        openai: ['low', 'medium', 'high', 'xhigh', 'max', 'none'],
+        ollama: ['low', 'medium', 'high', 'max', 'none'],
+        opencode_zen: ['low', 'medium', 'high', 'max', 'none'],
+      },
+    });
+    const { ChatInput } = await import('../components/ChatInput');
+    function TestComponent() {
+      const { selectProvider } = useChat();
+      return (
+        <>
+          <button onClick={() => void selectProvider('ollama')}>Ollama</button>
+          <button onClick={() => void selectProvider('openai')}>OpenAI</button>
+          <button onClick={() => void selectProvider('opencode_zen')}>Zen</button>
+          <ChatInput />
+        </>
+      );
+    }
+    render(
+      <ChatProvider>
+        <TestComponent />
+      </ChatProvider>
+    );
+
+    await userEvent.click(screen.getByText('Ollama'));
+    const ollamaSelect = await screen.findByRole('combobox', { name: 'Reasoning effort' });
+    expect(within(ollamaSelect).getByRole('option', { name: 'max' })).toBeDefined();
+    expect(within(ollamaSelect).queryByRole('option', { name: 'xhigh' })).toBeNull();
+
+    await userEvent.click(screen.getByText('Zen'));
+    const zenSelect = await screen.findByRole('combobox', { name: 'Reasoning effort' });
+    expect(within(zenSelect).getByRole('option', { name: 'none' })).toBeDefined();
+    expect(within(zenSelect).queryByRole('option', { name: 'xhigh' })).toBeNull();
+
+    await userEvent.click(screen.getByText('OpenAI'));
+    const openaiSelect = await screen.findByRole('combobox', { name: 'Reasoning effort' });
+    expect(within(openaiSelect).getByRole('option', { name: 'xhigh' })).toBeDefined();
+    expect(within(openaiSelect).getByRole('option', { name: 'max' })).toBeDefined();
+    expect(within(openaiSelect).getByRole('option', { name: 'none' })).toBeDefined();
+  });
+
+  it('drops an effort the switched-to provider does not accept', async () => {
+    function TestComponent() {
+      const { currentEffort, selectProvider, selectEffort } = useChat();
+      return (
+        <>
+          <span data-testid="effort">{currentEffort}</span>
+          <button onClick={() => void selectProvider('openai')}>OpenAI</button>
+          <button onClick={() => void selectProvider('opencode_zen')}>Zen</button>
+          <button onClick={() => selectEffort('xhigh')}>Effort xhigh</button>
+        </>
+      );
+    }
+    render(
+      <ChatProvider>
+        <TestComponent />
+      </ChatProvider>
+    );
+
+    await userEvent.click(screen.getByText('OpenAI'));
+    await waitFor(() => {
+      expect(mockApi.getModels).toHaveBeenCalledWith('openai', expect.anything());
+    });
+    await userEvent.click(screen.getByText('Effort xhigh'));
+    await waitFor(() => {
+      expect(screen.getByTestId('effort').textContent).toBe('xhigh');
+    });
+
+    await userEvent.click(screen.getByText('Zen'));
+    await waitFor(() => {
+      expect(screen.getByTestId('effort').textContent).toBe('');
+    });
+  });
+});
+
+describe('Branching (edit/regenerate/switch)', () => {
+  /* Custom WebSocket mock that exposes the onmessage handler so tests can
+   * push server frames (history, branch_info, done) and still records
+   * client sends in wsCalls. */
+  let onmessageHandler: ((event: { data: string }) => void) | null;
+
+  function installControlledWebSocketMock(): void {
+    onmessageHandler = null;
+    /* Regular function (not an arrow) so `new WebSocket(...)` works; the
+     * returned object replaces `this`, mimicking the real API. */
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(
+        vi.fn(function () {
+          return {
+            send: vi.fn((data: string) => {
+              wsCalls.push(data);
+            }),
+            close: vi.fn(),
+            readyState: 1,
+            set onopen(fn: () => void) {
+              setTimeout(fn, 0);
+            },
+            get onmessage() {
+              return onmessageHandler;
+            },
+            set onmessage(fn: ((event: { data: string }) => void) | null) {
+              onmessageHandler = fn;
+            },
+          };
+        }),
+        MOCK_WS_STATICS
+      )
+    );
+  }
+
+  function pushFrame(frame: Record<string, unknown>): void {
+    if (!onmessageHandler) throw new Error('ws onmessage not registered');
+    onmessageHandler({ data: JSON.stringify(frame) });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wsOnOpenTimers.splice(0).forEach(clearTimeout);
+    installControlledWebSocketMock();
+    if (typeof localStorage !== 'undefined') localStorage.clear();
+    wsCalls.length = 0;
+    mockApi.getSessions.mockResolvedValue([]);
+    mockApi.getProviders.mockResolvedValue({
+      providers: ['ollama', 'openai'],
+      effortSupported: ['openai'],
+    });
+    mockApi.getModels.mockResolvedValue(['qwen3:4b-instruct']);
+    mockApi.getOpenAIOAuthStatus.mockResolvedValue({ state: 'signed_out' });
+    mockApi.loadSession.mockResolvedValue({ session_id: 's', title: 't', messages: [] });
+  });
+
+  it('hides the pill when count <= 1 and shows ‹ 1/2 › at count 2', () => {
+    const { rerender } = render(
+      <BranchPill
+        info={{ messageId: 'm-1', count: 1, active: 1, branchIds: [] }}
+        onSwitch={() => {}}
+      />
+    );
+    expect(screen.queryByTitle(/branches/)).toBeNull();
+
+    rerender(
+      <BranchPill
+        info={{ messageId: 'm-1', count: 2, active: 1, branchIds: ['br-1'] }}
+        onSwitch={() => {}}
+      />
+    );
+    expect(screen.getByText('1/2')).toBeInTheDocument();
+  });
+
+  it('disables the arrows at the bounds (no wrap-around)', () => {
+    render(
+      <BranchPill
+        info={{ messageId: 'm-1', count: 2, active: 1, branchIds: ['br-1'] }}
+        onSwitch={() => {}}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Previous branch' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next branch' })).toBeEnabled();
+  });
+
+  it('clicking › sends branch_switch with the target branch_id', async () => {
+    function PillHarness() {
+      const { branchInfo, switchBranch } = useChat();
+      const entry = branchInfo[0];
+      if (!entry) return null;
+      return <BranchPill info={entry} onSwitch={(d) => switchBranch(entry.messageId, d)} />;
+    }
+    render(
+      <ChatProvider>
+        <PillHarness />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    pushFrame({
+      type: 'branch_info',
+      branches: [{ message_id: 'm-1', count: 2, active: 1, branch_ids: ['br-1'] }],
+    });
+
+    const next = await screen.findByRole('button', { name: 'Next branch' });
+    await userEvent.click(next);
+
+    await waitFor(() => {
+      expect(wsCalls.some((c) => c.includes('"type":"branch_switch"'))).toBe(true);
+    });
+    const frame = wsCalls
+      .map((c) => JSON.parse(c))
+      .find((f) => f.type === 'branch_switch');
+    expect(frame).toEqual({ type: 'branch_switch', session_id: 's', branch_id: 'br-1' });
+  });
+
+  it('updates the pill counter and active position on branch_info frames', async () => {
+    function PillHarness() {
+      const { branchInfo, switchBranch } = useChat();
+      const entry = branchInfo[0];
+      if (!entry) return null;
+      return <BranchPill info={entry} onSwitch={(d) => switchBranch(entry.messageId, d)} />;
+    }
+    render(
+      <ChatProvider>
+        <PillHarness />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    pushFrame({
+      type: 'branch_info',
+      branches: [{ message_id: 'm-1', count: 2, active: 1, branch_ids: ['br-1'] }],
+    });
+    expect(await screen.findByText('1/2')).toBeInTheDocument();
+
+    pushFrame({
+      type: 'branch_info',
+      branches: [
+        { message_id: 'm-1', count: 3, active: 2, branch_ids: ['br-1', 'br-2'] },
+      ],
+    });
+    expect(await screen.findByText('2/3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous branch' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Next branch' })).toBeEnabled();
+  });
+
+  it('renders the regenerate button on the last assistant message and sends regenerate', async () => {
+    const { MessageList } = await import('../components/MessageList');
+    render(
+      <ChatProvider>
+        <MessageList />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    pushFrame({
+      type: 'history',
+      messages: [
+        { role: 'user', content: 'question', id: 'm-1' },
+        { role: 'assistant', content: 'answer', id: 'm-2' },
+      ],
+    });
+
+    const regenerate = await screen.findByTitle('Regenerate');
+    await userEvent.click(regenerate);
+
+    await waitFor(() => {
+      expect(wsCalls.some((c) => c.includes('"type":"regenerate"'))).toBe(true);
+    });
+    const frame = wsCalls
+      .map((c) => JSON.parse(c))
+      .find((f) => f.type === 'regenerate');
+    expect(frame.message_id).toBe('m-2');
+  });
+
+  it('edit payload includes message_id when the message has an id', async () => {
+    const { MessageList } = await import('../components/MessageList');
+    render(
+      <ChatProvider>
+        <MessageList />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    pushFrame({
+      type: 'history',
+      messages: [
+        { role: 'user', content: 'original', id: 'm-1' },
+        { role: 'assistant', content: 'answer', id: 'm-2' },
+      ],
+    });
+
+    await userEvent.click(await screen.findByTitle('Edit'));
+    const textarea = screen.getByRole('textbox');
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, 'edited');
+    await userEvent.click(screen.getByText('Regenerate (Ctrl+Enter)'));
+
+    await waitFor(() => {
+      expect(wsCalls.some((c) => c.includes('"type":"edit"'))).toBe(true);
+    });
+    const frame = wsCalls
+      .map((c) => JSON.parse(c))
+      .find((f) => f.type === 'edit');
+    expect(frame.content).toBe('edited');
+    expect(frame.message_id).toBe('m-1');
+  });
+
+  it('edit without an id sends an index-only payload (no message_id key)', async () => {
+    const { MessageList } = await import('../components/MessageList');
+    render(
+      <ChatProvider>
+        <MessageList />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    pushFrame({
+      type: 'history',
+      messages: [
+        { role: 'user', content: 'original' },
+        { role: 'assistant', content: 'answer' },
+      ],
+    });
+
+    await userEvent.click(await screen.findByTitle('Edit'));
+    const textarea = screen.getByRole('textbox');
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, 'edited');
+    await userEvent.click(screen.getByText('Regenerate (Ctrl+Enter)'));
+
+    await waitFor(() => {
+      expect(wsCalls.some((c) => c.includes('"type":"edit"'))).toBe(true);
+    });
+    const frame = wsCalls
+      .map((c) => JSON.parse(c))
+      .find((f) => f.type === 'edit');
+    expect(frame.content).toBe('edited');
+    expect(Object.prototype.hasOwnProperty.call(frame, 'message_id')).toBe(false);
+  });
+
+  it('attaches the pill to the edited USER message (fork_role user)', async () => {
+    const { MessageList } = await import('../components/MessageList');
+    render(
+      <ChatProvider>
+        <MessageList />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    pushFrame({
+      type: 'history',
+      messages: [
+        { role: 'user', content: 'original', id: 'm-1' },
+        { role: 'assistant', content: 'answer', id: 'm-2' },
+      ],
+    });
+
+    await userEvent.click(await screen.findByTitle('Edit'));
+    const textarea = screen.getByRole('textbox');
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, 'edited');
+    await userEvent.click(screen.getByText('Regenerate (Ctrl+Enter)'));
+
+    pushFrame({ type: 'content', content: 'fresh reply' });
+    pushFrame({
+      type: 'done',
+      content: 'fresh reply',
+      fork_message_id: 'm-9',
+      fork_group_id: 'fg-9',
+      fork_role: 'user',
+    });
+    pushFrame({
+      type: 'branch_info',
+      branches: [{ message_id: 'm-9', count: 2, active: 2, branch_ids: ['br-1'] }],
+    });
+
+    await waitFor(() => {
+      const userMsg = document.querySelector('.message-user');
+      const assistantMsg = document.querySelector('.message-assistant');
+      expect(userMsg?.textContent).toContain('edited');
+      expect(assistantMsg?.textContent).toContain('fresh reply');
+      /* the pill keys on the fork point's fresh id, which sits on the edited
+       * user message — NOT on the assistant reply */
+      expect(userMsg?.querySelector('.branch-pill')).not.toBeNull();
+      expect(assistantMsg?.querySelector('.branch-pill')).toBeNull();
+    });
+  });
+
+  it('attaches the pill to the regenerated ASSISTANT response (fork_role assistant)', async () => {
+    const { MessageList } = await import('../components/MessageList');
+    render(
+      <ChatProvider>
+        <MessageList />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    pushFrame({
+      type: 'history',
+      messages: [
+        { role: 'user', content: 'question', id: 'm-1' },
+        { role: 'assistant', content: 'answer', id: 'm-2' },
+      ],
+    });
+
+    await userEvent.click(await screen.findByTitle('Regenerate'));
+
+    pushFrame({ type: 'content', content: 'new answer' });
+    pushFrame({
+      type: 'done',
+      content: 'new answer',
+      fork_message_id: 'm-9',
+      fork_group_id: 'fg-9',
+      fork_role: 'assistant',
+    });
+    pushFrame({
+      type: 'branch_info',
+      branches: [{ message_id: 'm-9', count: 2, active: 2, branch_ids: ['br-1'] }],
+    });
+
+    await waitFor(() => {
+      const userMsg = document.querySelector('.message-user');
+      const assistantMsg = document.querySelector('.message-assistant');
+      expect(userMsg?.textContent).toContain('question');
+      expect(assistantMsg?.textContent).toContain('new answer');
+      expect(assistantMsg?.querySelector('.branch-pill')).not.toBeNull();
+      expect(userMsg?.querySelector('.branch-pill')).toBeNull();
+    });
+  });
+
+  it('keeps the pill across a branch switch and back', async () => {
+    const { MessageList } = await import('../components/MessageList');
+    render(
+      <ChatProvider>
+        <MessageList />
+      </ChatProvider>
+    );
+    await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+    pushFrame({ type: 'ready', session_id: 's' });
+    /* old chain: the fork point carries the shared group and the original
+     * message id */
+    pushFrame({
+      type: 'history',
+      messages: [
+        { role: 'user', content: 'original', id: 'm-1', fork_group_id: 'fg-9' },
+        { role: 'assistant', content: 'answer', id: 'm-2' },
+      ],
+    });
+    pushFrame({
+      type: 'branch_info',
+      branches: [{ message_id: 'm-1', count: 2, active: 1, branch_ids: ['br-2'] }],
+    });
+    await waitFor(() => {
+      const oldMsg = document.querySelector('.message-user');
+      expect(oldMsg?.textContent).toContain('original');
+      expect(oldMsg?.querySelector('.branch-pill')).not.toBeNull();
+    });
+    expect(await screen.findByText('1/2')).toBeInTheDocument();
+
+    /* switch back to the edited chain: history carries the edited fork id */
+    pushFrame({
+      type: 'history',
+      messages: [
+        { role: 'user', content: 'edited', id: 'm-9', fork_group_id: 'fg-9' },
+        { role: 'assistant', content: 'fresh', id: 'm-10' },
+      ],
+    });
+    pushFrame({
+      type: 'branch_info',
+      branches: [{ message_id: 'm-9', count: 2, active: 2, branch_ids: ['br-1'] }],
+    });
+    await waitFor(() => {
+      const editedMsg = document.querySelector('.message-user');
+      expect(editedMsg?.textContent).toContain('edited');
+      expect(editedMsg?.querySelector('.branch-pill')).not.toBeNull();
+    });
+    expect(await screen.findByText('2/2')).toBeInTheDocument();
+  });
+
+  describe('tool-call results after reload', () => {
+    /* Regression: the backend wire shape carries tool results as
+     * tool_calls[].result_content / result_error (history / session GET /
+     * done frames), but renderers only read tc.result.{content,error}.
+     * Before the fix, reloaded tool calls never got a result and
+     * rendered as perpetually "running". */
+
+    it('renders wire-shape results (not "running") after a history frame', async () => {
+      const { MessageList } = await import('../components/MessageList');
+      render(
+        <ChatProvider>
+          <MessageList />
+        </ChatProvider>
+      );
+      await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+      pushFrame({ type: 'ready', session_id: 's' });
+      pushFrame({
+        type: 'history',
+        messages: [
+          { role: 'user', content: 'run it' },
+          {
+            role: 'assistant',
+            content: 'done',
+            has_tools: true,
+            tool_calls: [
+              { name: 'bash', arguments: '{"cmd":"ls"}', result_content: 'file1\nfile2' },
+            ],
+          },
+        ],
+      });
+
+      await waitFor(() => {
+        expect(document.querySelector('.tool-call-status--success')).not.toBeNull();
+      });
+      expect(document.querySelector('.tool-call-status--running')).toBeNull();
+      expect(document.querySelector('.tool-call-result')?.textContent).toContain('file1');
+    });
+
+    it('renders a wire-shape error result with the error status', async () => {
+      const { MessageList } = await import('../components/MessageList');
+      render(
+        <ChatProvider>
+          <MessageList />
+        </ChatProvider>
+      );
+      await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+      pushFrame({ type: 'ready', session_id: 's' });
+      pushFrame({
+        type: 'history',
+        messages: [
+          { role: 'user', content: 'run it' },
+          {
+            role: 'assistant',
+            content: 'done',
+            has_tools: true,
+            tool_calls: [
+              { name: 'bash', arguments: '{"cmd":"ls"}', result_error: 'exit 1' },
+            ],
+          },
+        ],
+      });
+
+      await waitFor(() => {
+        expect(document.querySelector('.tool-call-status--error')).not.toBeNull();
+      });
+      expect(document.querySelector('.tool-call-error')?.textContent).toContain('exit 1');
+    });
+
+    it('keeps each tool result on its own call (no collapse onto the first)', async () => {
+      const { MessageList } = await import('../components/MessageList');
+      render(
+        <ChatProvider>
+          <MessageList />
+        </ChatProvider>
+      );
+      await waitFor(() => expect(wsCalls.length).toBeGreaterThan(0));
+      pushFrame({ type: 'ready', session_id: 's' });
+      pushFrame({
+        type: 'history',
+        messages: [
+          { role: 'user', content: 'run it' },
+          {
+            role: 'assistant',
+            content: 'done',
+            has_tools: true,
+            tool_calls: [
+              { name: 'bash', arguments: '{"cmd":"a"}', result_content: 'first result' },
+              { name: 'python_execute', arguments: '{"code":"1"}', result_content: 'second result' },
+            ],
+          },
+        ],
+      });
+
+      await waitFor(() => {
+        const results = document.querySelectorAll('.tool-call-result');
+        expect(results.length).toBe(2);
+      });
+      const results = Array.from(document.querySelectorAll('.tool-call-result'));
+      expect(results[0]?.textContent).toContain('first result');
+      expect(results[1]?.textContent).toContain('second result');
+    });
+  });
+});

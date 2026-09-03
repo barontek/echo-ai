@@ -42,9 +42,18 @@ use crate::tls::{TlsSettings, rustls_config, serve_plain, serve_tls};
 /// `TLS` setup fails; `Error::Session` on bind/serve failures.
 pub async fn run_server(config: Config) -> echo_ai_core::Result<()> {
     let data_dir = default_data_dir();
+    // Session store: open an existing vault, or create one only when a
+    // password is provided (headless/`ECHO_AI_PASSWORD`). Without a
+    // password on a fresh vault, the server starts in the setup state
+    // and the web UI creates the vault with the submitted password.
     let session = if config.session.enabled {
         let password = std::env::var("ECHO_AI_PASSWORD").unwrap_or_default();
-        Some(Arc::new(SessionManager::open(&data_dir, &password)?))
+        let initialized = echo_ai_core::session::encryption::vault_initialized(&data_dir);
+        if initialized || !password.is_empty() {
+            Some(Arc::new(SessionManager::open(&data_dir, &password)?))
+        } else {
+            None
+        }
     } else {
         None
     };

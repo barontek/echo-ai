@@ -67,8 +67,9 @@ pub struct AppState {
     pub agent: Arc<Agent>,
     /// Tool registry.
     pub registry: Arc<Registry>,
-    /// Session store (absent when `session.enabled` is false).
-    pub session: Option<Arc<SessionManager>>,
+    /// Session store slot (absent when `session.enabled` is false; a
+    /// browser-driven setup fills it after startup).
+    pub session: Arc<Mutex<Option<Arc<SessionManager>>>>,
     /// Change tracker for undo/redo.
     pub tracker: Arc<Mutex<ChangeTracker>>,
     /// Metrics registry.
@@ -94,6 +95,9 @@ impl AppState {
     ///
     /// # Errors
     /// `Error::Config` when the configured provider cannot be built.
+    /// # Panics
+    /// Only if the session slot lock is poisoned (fail fast).
+    #[allow(clippy::expect_used)] // poisoned slot = invariant violation
     pub fn build(
         config: Config,
         session: Option<Arc<SessionManager>>,
@@ -108,12 +112,15 @@ impl AppState {
             &config,
             search,
             index.clone(),
-            browser.clone(),
+            Arc::clone(&browser),
         ));
-        let _ = &browser;
         let tracker = Arc::new(Mutex::new(ChangeTracker::new()));
 
-        let codex_token = session
+        let session_slot: Arc<Mutex<Option<Arc<SessionManager>>>> = Arc::new(Mutex::new(session));
+        #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+        let codex_token = session_slot
+            .lock()
+            .expect("session slot lock poisoned")
             .as_ref()
             .and_then(|sm| sm.oauth_get("openai").ok().flatten());
         let provider = factory::create_provider(&config, Some(http.clone()), codex_token)?;
@@ -125,18 +132,31 @@ impl AppState {
             config: agent_config,
             safety: safety.clone(),
             app_config: config.clone(),
-            session: session.clone(),
+            session: session_slot.clone(),
             tracker: Some(tracker.clone()),
             ask_user: None,
             http: http.clone(),
         });
 
-        let auth = if session.is_some() {
-            AuthState::default()
-        } else {
+        let auth = if !config.session.enabled {
+            // Persistence disabled: the server is always unlocked.
             AuthState {
                 state: ServerState::Unlocked,
                 token: Some(random_token()),
+                generation: 0,
+            }
+        } else if session_slot
+            .lock()
+            .expect("session slot lock poisoned")
+            .is_some()
+        {
+            // Vault exists: locked until the password is verified.
+            AuthState::default()
+        } else {
+            // Vault will be created by the web UI's setup screen.
+            AuthState {
+                state: ServerState::Setup,
+                token: None,
                 generation: 0,
             }
         };
@@ -148,7 +168,7 @@ impl AppState {
             safety,
             agent,
             registry,
-            session,
+            session: session_slot.clone(),
             tracker,
             metrics: Metrics::new(),
             rate_limiter: RateLimiter::default(),

@@ -77,6 +77,18 @@ impl Tool for ReadFile {
         Box::pin(async move {
             let path = arg_string(&args, "path")?;
             let resolved = read_path(ctx, &path)?;
+            // Size cap from the safety policy (C-compatible:
+            // `max_file_size`).
+            if let Ok(meta) = std::fs::metadata(&resolved)
+                && ctx.safety.max_file_size > 0
+                && meta.len() > ctx.safety.max_file_size
+            {
+                return Err(ToolError::Safety(format!(
+                    "file exceeds max_file_size ({} > {})",
+                    meta.len(),
+                    ctx.safety.max_file_size
+                )));
+            }
             let contents = std::fs::read_to_string(&resolved).map_err(|e| ToolError::Io {
                 path: resolved.clone(),
                 source: e,

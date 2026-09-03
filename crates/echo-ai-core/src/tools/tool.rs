@@ -23,6 +23,17 @@ pub trait AskUser: Send + Sync {
     /// Asks `prompt` and returns the answer; `None` means cancelled or
     /// timed out.
     fn ask(&self, prompt: &str) -> BoxFuture<'_, Result<Option<String>>>;
+
+    /// Asks for approval of a specific tool invocation. The default
+    /// implementation formats the tool + arguments into a prompt and
+    /// delegates to [`Self::ask`]; frontends that distinguish approval
+    /// dialogs from freeform questions override this.
+    fn ask_approval(&self, tool: &str, args: &str) -> BoxFuture<'_, Result<Option<String>>> {
+        let prompt = format!(
+            "Approve running the `{tool}` tool with arguments:\n\n{args}\n\nReply yes to approve."
+        );
+        self.ask(&prompt)
+    }
 }
 
 /// Everything a tool may need during execution.

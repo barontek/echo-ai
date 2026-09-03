@@ -49,6 +49,16 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v9
       - name: nextest
         run: nix develop -c cargo nextest run --all --locked
+      - name: frontend build + typecheck
+        # The vendored React frontend: install, typecheck, build dist
+        # (the server serves frontend/dist; CI's artifact is not
+        # committed since dist is gitignored).
+        run: |
+          cd frontend
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm run build
+          test -f dist/index.html
 
   sanitizers:
     runs-on: ubuntu-latest

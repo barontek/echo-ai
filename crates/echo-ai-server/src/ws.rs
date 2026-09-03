@@ -76,9 +76,41 @@ impl AskUser for SocketAskUser {
                 .insert(id.clone(), otx);
             let _ = tx
                 .send(json!({
-                    "type": "approval_request",
+                    "type": "ask_user",
                     "request_id": id,
                     "question": prompt,
+                }))
+                .await;
+            match orx.await {
+                Ok(answer) => Ok(answer),
+                Err(_) => Ok(None),
+            }
+        })
+    }
+
+    fn ask_approval(
+        &self,
+        tool: &str,
+        args: &str,
+    ) -> futures_util::future::BoxFuture<'_, echo_ai_core::Result<Option<String>>> {
+        let tx = self.tx.clone();
+        let pending = Arc::clone(&self.pending);
+        let tool = String::from(tool);
+        let args = String::from(args);
+        Box::pin(async move {
+            let id = request_id();
+            let (otx, orx) = oneshot::channel();
+            #[allow(clippy::expect_used)] // poisoned lock = invariant violation
+            pending
+                .lock()
+                .expect("pending lock")
+                .insert(id.clone(), otx);
+            let _ = tx
+                .send(json!({
+                    "type": "approval_request",
+                    "request_id": id,
+                    "tool_name": tool,
+                    "question": args,
                 }))
                 .await;
             match orx.await {
@@ -173,7 +205,15 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
     });
 
     // Load history for the session (if any).
-    if let Some(sm) = &chat.state.session
+    let session_opt = {
+        #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+        chat.state
+            .session
+            .lock()
+            .expect("session slot lock poisoned")
+            .clone()
+    };
+    if let Some(sm) = session_opt.as_ref()
         && let Ok(Some(session)) = sm.load_session(&chat.session_id)
     {
         chat.history = session.messages;
@@ -243,11 +283,8 @@ async fn handle_frame(chat: &mut WsChat, text: &str) {
             if let Some(cancel) = &chat.cancel {
                 cancel.cancel();
             }
-            chat.running = false;
-            let _ = chat
-                .tx
-                .send(json!({ "type": "done", "cancelled": true }))
-                .await;
+            // The persist task emits the terminal `done` once the run
+            // unwinds (cancelled runs produce a plain done frame).
         }
         "approval_response" => {
             let id = frame
@@ -308,7 +345,14 @@ async fn handle_frame(chat: &mut WsChat, text: &str) {
             }
         }
         "branch_switch" => {
-            if let Some(sm) = &chat.state.session {
+            #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+            let session_opt = chat
+                .state
+                .session
+                .lock()
+                .expect("session slot lock poisoned")
+                .clone();
+            if let Some(sm) = session_opt.as_ref() {
                 let id = frame
                     .get("session_id")
                     .and_then(Value::as_str)
@@ -329,7 +373,7 @@ async fn handle_frame(chat: &mut WsChat, text: &str) {
                 .send(json!({
                     "type": "branch_info",
                     "session_id": chat.session_id,
-                    "messages": chat.history.len(),
+                    "branches": [],
                 }))
                 .await;
         }
@@ -361,6 +405,13 @@ async fn handle_frame(chat: &mut WsChat, text: &str) {
 fn resolve_pending(ask_user: &SocketAskUser, id: &str, answer: Option<String>) {
     let mut pending = ask_user.pending.lock().expect("pending lock");
     if let Some(tx) = pending.remove(id) {
+        let _ = tx.send(answer);
+        return;
+    }
+    // The web frontend's `ask_user_response` carries no request_id;
+    // with a single pending question the intent is unambiguous.
+    if id.is_empty() && pending.len() == 1 {
+        let (_, tx) = pending.drain().next().expect("len checked");
         let _ = tx.send(answer);
     }
 }
@@ -410,6 +461,7 @@ async fn start_turn(chat: &mut WsChat) {
 
     let run_out_tx = out_tx.clone();
     let forward_out_tx = out_tx.clone();
+    let forward_sid = session_id.clone();
     let run_handle = tokio::spawn(async move {
         let _ = run_out_tx
             .send(json!({ "type": "turn_start", "history_len": history_len }))
@@ -418,21 +470,30 @@ async fn start_turn(chat: &mut WsChat) {
         (result, session_id, state)
     });
 
-    // Forward agent events as frames.
+    // Forward agent events as frames (C frontend protocol shapes:
+    // `tool_name`/`arguments` on tool frames, `content` on content and
+    // error frames, `session_id` everywhere it helps route).
     let forward_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             let frame = match event {
-                AgentEvent::Chunk { content, thinking } => {
-                    json!({ "type": "content", "delta": content, "thinking": thinking })
+                AgentEvent::Chunk { content, .. } => {
+                    json!({ "type": "content", "content": content, "session_id": forward_sid })
                 }
-                AgentEvent::ToolStart { name, args } => {
-                    json!({ "type": "tool_start", "name": name, "args": args })
-                }
-                AgentEvent::ToolEnd { name, ok, summary } => {
-                    json!({ "type": "tool_end", "name": name, "ok": ok, "summary": summary })
-                }
+                AgentEvent::ToolStart { name, args } => json!({
+                    "type": "tool_start",
+                    "tool_name": name,
+                    "arguments": args,
+                    "session_id": forward_sid,
+                }),
+                AgentEvent::ToolEnd { name, ok, summary } => json!({
+                    "type": "tool_end",
+                    "tool_name": name,
+                    "ok": ok,
+                    "summary": summary,
+                    "session_id": forward_sid,
+                }),
                 AgentEvent::Error { message } => {
-                    json!({ "type": "error", "message": message })
+                    json!({ "type": "error", "content": message, "session_id": forward_sid })
                 }
                 AgentEvent::Done => continue,
             };
@@ -442,19 +503,28 @@ async fn start_turn(chat: &mut WsChat) {
         }
     });
 
-    // When the run finishes, persist and emit `done`.
+    // When the run finishes, persist, emit the C-protocol `done`, and
+    // generate a first-turn title (`title_updated`).
     // # Panics: `expect` on the run task is invariant-fail-fast (the
     // task was just spawned and cannot be aborted here).
     #[allow(clippy::expect_used)] // spawned-task join cannot fail here
     let persist = tokio::spawn(async move {
         let (result, session_id, state) = run_handle.await.expect("run task");
-        let mut done = json!({ "type": "done" });
+        let mut done = json!({ "type": "done", "session_id": session_id });
         let mut final_messages: Option<Vec<Message>> = None;
         match result {
             Ok(res) => {
                 done["content"] = json!(res.content);
-                done["thinking"] = json!(res.thinking);
                 done["hit_iteration_cap"] = json!(res.hit_iteration_cap);
+                let tool_calls: Vec<_> = res
+                    .messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "assistant")
+                    .map(|m| m.tool_calls.clone())
+                    .unwrap_or_default();
+                done["has_tools"] = json!(!tool_calls.is_empty());
+                done["tool_calls"] = json!(tool_calls);
                 final_messages = Some(
                     res.messages
                         .iter()
@@ -476,16 +546,64 @@ async fn start_turn(chat: &mut WsChat) {
                         .collect(),
                 );
             }
+            Err(echo_ai_core::agent::run::AgentError::Cancelled) => {
+                // Stopped by the user: the frontend finalizes on a plain
+                // done frame.
+            }
             Err(e) => {
-                done["error"] = json!(e.to_string());
+                let _ = out_tx
+                    .send(json!({
+                        "type": "error",
+                        "content": e.to_string(),
+                        "session_id": session_id,
+                    }))
+                    .await;
+                done["content"] = json!("");
             }
         }
         if let Some(messages) = final_messages
-            && let Some(sm) = &state.session
+            && let Some(sm) = {
+                #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+                state
+                    .session
+                    .lock()
+                    .expect("session slot lock poisoned")
+                    .clone()
+            }
             && let Ok(Some(mut session)) = sm.load_session(&session_id)
         {
             session.messages = messages;
             let _ = sm.save_session(&session);
+            // First-turn title: generate, persist, and announce so the
+            // session list stays in sync.
+            if session.title.is_none() {
+                let first_user = session
+                    .messages
+                    .iter()
+                    .find(|m| m.role == "user")
+                    .map(|m| m.content.clone())
+                    .unwrap_or_default();
+                let title = if first_user.is_empty() {
+                    String::from("Untitled chat")
+                } else {
+                    agent.generate_title(&first_user).await.unwrap_or_else(|_| {
+                        first_user
+                            .split_whitespace()
+                            .take(6)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                };
+                let _ = sm.rename_session(&session_id, &title);
+                done["title"] = json!(title);
+                let _ = out_tx
+                    .send(json!({
+                        "type": "title_updated",
+                        "session_id": session_id,
+                        "title": title,
+                    }))
+                    .await;
+            }
         }
         if out_tx.send(done).await.is_err() {
             return;

@@ -31,6 +31,8 @@ use crate::tools::tool::{AskUser, ToolContext};
 pub struct AgentConfig {
     /// Model name for the configured provider.
     pub model: String,
+    /// System prompt prepended to every run (C-compatible).
+    pub system_prompt: String,
     /// Sampling temperature.
     pub temperature: f64,
     /// Context window for providers that support it.
@@ -56,6 +58,7 @@ impl From<&Config> for AgentConfig {
         let effort = cfg.agent.effort.clone();
         Self {
             model: cfg.agent.model.clone(),
+            system_prompt: cfg.agent.system_prompt.clone(),
             temperature: cfg.agent.temperature,
             num_ctx: cfg.ollama.num_ctx,
             keep_alive_secs: cfg.ollama.keep_alive_secs,
@@ -144,8 +147,9 @@ pub struct Agent {
     pub safety: Arc<SafetyConfig>,
     /// Shared app config (tool context).
     pub app_config: Config,
-    /// Session store (memory/sqlite tools).
-    pub session: Option<Arc<SessionManager>>,
+    /// Session store slot (memory/sqlite tools). Shared with the server's
+    /// `AppState` so a browser-driven setup can fill it after startup.
+    pub session: Arc<std::sync::Mutex<Option<Arc<SessionManager>>>>,
     /// Change tracker (undo).
     pub tracker: Option<Arc<std::sync::Mutex<ChangeTracker>>>,
     /// Interactive question callback.
@@ -160,10 +164,17 @@ impl Agent {
     /// The loop: call the provider; if it requests tools, run them (with
     /// approval when the safety policy requires it) and continue; stop
     /// on a final answer, an error, cancellation, or the iteration cap.
+    /// A configured system prompt is prepended when the caller did not
+    /// provide one.
+    ///
+    /// The length is inherent: one phase per loop iteration (stream the
+    /// turn, run each tool call, feed results back) — the C version's
+    /// `agent_run.c` had the same shape.
     ///
     /// # Errors
     /// `AgentError::Cancelled` when the token fires; `AgentError::Provider`
     /// when the provider fails before producing any output.
+    #[allow(clippy::too_many_lines)] // one phase per loop iteration
     pub async fn run(
         &self,
         messages: Vec<LlmMessage>,
@@ -173,6 +184,22 @@ impl Agent {
         let mut messages = messages;
         let mut hit_iteration_cap = false;
         let mut final_response = ChatResponse::default();
+
+        // Inject the configured system prompt when the caller did not
+        // already provide one (C-compatible behavior).
+        if !self.config.system_prompt.is_empty()
+            && messages.first().map(|m| m.role.as_str()) != Some("system")
+        {
+            messages.insert(
+                0,
+                LlmMessage {
+                    role: String::from("system"),
+                    content: self.config.system_prompt.clone(),
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
+                },
+            );
+        }
 
         for _ in 0..self.config.max_iterations {
             if cancel.is_cancelled() {
@@ -390,10 +417,7 @@ impl Agent {
                     args: args.to_string(),
                 })
                 .await;
-            let prompt = format!(
-                "Approve running the `{name}` tool with arguments:\n\n{args}\n\nReply yes to approve."
-            );
-            match ask.ask(&prompt).await {
+            match ask.ask_approval(name, &args.to_string()).await {
                 Ok(Some(answer))
                     if answer.trim().eq_ignore_ascii_case("yes") || answer.trim() == "y" => {}
                 Ok(_) => {
@@ -412,10 +436,18 @@ impl Agent {
             })
             .await;
 
+        // The session slot is shared with the server's AppState; a poisoned
+        // lock is an invariant violation (fail fast).
+        #[allow(clippy::expect_used)] // poisoned slot lock = invariant violation
+        let ctx_session = self
+            .session
+            .lock()
+            .expect("session slot lock poisoned")
+            .clone();
         let ctx = ToolContext {
             safety: &self.safety,
             config: &self.app_config,
-            session: self.session.as_deref(),
+            session: ctx_session.as_deref(),
             change_tracker: self.tracker.as_ref(),
             ask_user: self.ask_user.clone(),
             http: self.http.clone(),

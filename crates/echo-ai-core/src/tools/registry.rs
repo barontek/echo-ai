@@ -115,11 +115,20 @@ impl Registry {
         register(Arc::new(crate::browser::tools::StealthFetch));
         register(Arc::new(crate::browser::tools::OpenInBrowser::new(browser)));
 
-        // Enablement filtering.
+        // Enablement filtering. The C config uses `browser` to mean "all
+        // browser tools" and names plugin tools we don't carry
+        // (scrapling_fetch); `browser` expands to the browser_* set and
+        // unknown names are dropped silently.
         if !cfg.tools.enabled.is_empty() {
             let allowed: std::collections::HashSet<String> =
                 cfg.tools.enabled.iter().cloned().collect();
-            registry.tools.retain(|name, _| allowed.contains(name));
+            let has_browser = allowed.contains("browser");
+            registry.tools.retain(|name, _| {
+                if allowed.contains(name) {
+                    return true;
+                }
+                has_browser && name.starts_with("browser_")
+            });
         }
 
         registry

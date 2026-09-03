@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+# Toolchain pinning policy (AGENTS.md "Environment and toolchain"):
+# - All Linux jobs run inside `nix develop`; the toolchain (stable 1.98.0 +
+#   pinned nightly) is fixed by the committed flake.lock, and the exact
+#   version that ran is recorded via `rustup show` in the lint job log.
+# - The macOS job uses rustup with rust-toolchain.toml (pinned channel +
+#   components), the sanctioned non-Nix path per AGENTS.md; macOS sets
+#   ASAN_OPTIONS=detect_leaks=0 since LeakSanitizer is unsupported there.
+# - Sanitizer jobs run on the pinned nightly with -Z build-std, one
+#   stage per sanitizer (ASan/UBSan/TSan), separate from the lint/test run.
+# - Miri runs on the nightly toolchain against echo-ai-core; the crate set
+#   grows as unsafe-adjacent modules (process.rs, cdp.rs, ...) land.
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - name: record toolchain
+        run: nix develop -c bash -c 'rustup show; rustc --version; cargo --version'
+      - name: fmt
+        run: nix develop -c cargo fmt --all -- --check
+      - name: clippy
+        run: nix develop -c cargo clippy --all-targets --all-features -- -D warnings
+      - name: build (-D warnings)
+        run: nix develop -c bash -c 'RUSTFLAGS="-D warnings" cargo build --all-targets --locked'
+      - name: doc (-D warnings)
+        run: nix develop -c bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items --locked'
+      - name: file-size audit (non-blocking)
+        run: nix develop -c scripts/check-file-lengths.sh
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - name: nextest
+        run: nix develop -c cargo nextest run --all --locked
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [ address, undefined, thread ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - name: test under ${{ matrix.sanitizer }}
+        run: |
+          nix develop -c bash -c '
+            set -euo pipefail
+            export RUSTFLAGS="-Z sanitizer=${{ matrix.sanitizer }} -D warnings"
+            export ASAN_OPTIONS=detect_leaks=0
+            cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
+          '
+
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - name: miri test (echo-ai-core)
+        run: nix develop -c cargo +nightly miri test -p echo-ai-core --all-features --locked
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - name: cargo audit
+        run: nix develop -c cargo audit
+      - name: cargo deny
+        run: nix develop -c cargo deny check --locked
+
+  backend-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master # channel+components from rust-toolchain.toml
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: record toolchain
+        run: rustup show && rustc --version && cargo --version
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: build (-D warnings)
+        run: RUSTFLAGS="-D warnings" cargo build --all-targets --locked
+      - name: nextest
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: cargo nextest run --all --locked

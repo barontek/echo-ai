@@ -1,0 +1,12 @@
+# Rust build artifacts
+/target
+
+# Frontend (vendored source is committed; build output is not)
+/node_modules
+/frontend/dist
+
+# Local state
+/.direnv
+/.env
+*.swp
+.DS_Store

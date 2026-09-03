@@ -1,0 +1,13 @@
+# Pins the Rust toolchain for every build in this repo (AGENTS.md
+# "Environment and toolchain"). `rustup` reads this file automatically on
+# non-Nix setups; the nix dev shell serves the exact same channel via
+# `rust-bin.fromRustupToolchainFile` (flake.nix), so Nix and rustup users
+# cannot drift apart.
+#
+# Sanitizers (ASan/UBSan/TSan) and Miri run on the pinned nightly channel,
+# also provided by the nix dev shell; `rustup show` output is recorded in
+# CI logs for traceability.
+[toolchain]
+channel = "1.98.0"
+components = ["clippy", "rustfmt", "rust-src", "llvm-tools-preview"]
+profile = "minimal"

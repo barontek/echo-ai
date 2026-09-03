@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/echo-ai",
+    "crates/echo-ai-core",
+    "crates/echo-ai-server",
+    "crates/echo-ai-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.0"
+license = "MIT"
+repository = "https://github.com/barontek/echo-ai-rust"
+description = "Echo AI agentic system, Rust port"
+readme = "README.md"
+keywords = ["agent", "llm", "ai", "cli"]
+categories = ["command-line-utilities", "web-programming::http-server"]
+
+# Lint policy (AGENTS.md "Build flags" and "Static analysis"):
+# - clippy::all / clippy::pedantic / clippy::cargo are warn here and become
+#   errors via `-D warnings` in CI. Scoped `#[allow(clippy::...)]` with a
+#   `// TODO(reason):` comment is the only sanctioned exception, never a
+#   blanket crate-level allow.
+# - unwrap_used/expect_used are denied outside test code by a crate-level
+#   `cfg_attr(not(test), deny(...))` in each lib crate (test code may use
+#   them; library/application code may not, per AGENTS.md "Error handling").
+[workspace.lints.rust]
+# Doc comments on all public items per AGENTS.md "Documentation standards";
+# warn here, error in CI via -D warnings.
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+cargo = "warn"
+
+[profile.release]
+# Kept on in release builds per AGENTS.md "Build flags": overflow-checks
+# turns signed overflow into a panic instead of silent wraparound, and
+# debug-assertions keeps internal invariant checks alive in CI release runs.
+overflow-checks = true
+debug-assertions = true

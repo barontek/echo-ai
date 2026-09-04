@@ -57,6 +57,11 @@ pub struct ChatRequest {
     pub keep_alive_secs: u64,
     /// Reasoning effort hint.
     pub effort: Option<String>,
+    /// Per-conversation id for provider session-affinity headers
+    /// (e.g. `x-opencode-session`); absent for callers without a
+    /// conversation concept, in which case opencode providers fall back
+    /// to their own stable id.
+    pub session_id: Option<String>,
 }
 
 impl Default for ChatRequest {
@@ -69,6 +74,7 @@ impl Default for ChatRequest {
             num_ctx: 4096,
             keep_alive_secs: 120,
             effort: None,
+            session_id: None,
         }
     }
 }

@@ -558,10 +558,7 @@ async fn debug_export(
 /// `GET /api/models`: live model list for the configured provider.
 async fn models(State(state): State<Arc<AppState>>) -> Json<Value> {
     let provider = state.config.agent.provider.clone();
-    let base_url = match provider.as_str() {
-        "ollama" => state.config.ollama.base_url.clone(),
-        _ => state.config.openai_compatible.base_url.clone(),
-    };
+    let base_url = echo_ai_core::llm::factory::models_base_url(&state.config, &provider);
     let token = state
         .config
         .providers
@@ -699,7 +696,7 @@ async fn chat(
     let agent = Arc::clone(&state.agent);
     let session_id = body.session_id.clone();
     let handle = tokio::spawn(async move {
-        let result = agent.run(messages, tx, cancel).await;
+        let result = agent.run(messages, tx, cancel, session_id.clone()).await;
         (result, session_id)
     });
 
@@ -785,7 +782,7 @@ async fn stream(
     let cancel = CancellationToken::new();
     let agent = Arc::clone(&state.agent);
     let handle = tokio::spawn(async move {
-        let result = agent.run(messages, tx, cancel).await;
+        let result = agent.run(messages, tx, cancel, session_id.clone()).await;
         (result, session_id)
     });
 

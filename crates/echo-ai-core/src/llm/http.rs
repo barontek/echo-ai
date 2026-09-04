@@ -73,6 +73,9 @@ impl ReqwestClient {
         Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(60))
+                // Identify the tool on every outbound request; providers
+                // like OpenCode Go otherwise see an unknown client.
+                .user_agent("echo-ai/0.1")
                 .build()
                 .expect("reqwest client build cannot fail with defaults"),
         }

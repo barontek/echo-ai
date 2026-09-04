@@ -106,6 +106,68 @@ pub fn create_provider(
     }
 }
 
+/// Resolves the model-list base URL for a provider from config.
+///
+/// Mirrors `create_provider`'s per-provider URL selection; unknown
+/// providers fall back to the `openai_compatible` URL (the pre-existing
+/// behavior, harmless since `list_models` rejects them anyway).
+#[must_use]
+pub fn models_base_url(cfg: &Config, provider: &str) -> String {
+    match provider {
+        "ollama" => cfg.ollama.base_url.clone(),
+        "opencode_zen" => cfg.opencode_zen.base_url.clone(),
+        "opencode_go" => cfg.opencode_go.base_url.clone(),
+        _ => cfg.openai_compatible.base_url.clone(),
+    }
+}
+
+/// Builds the models-list URL for a provider base URL.
+///
+/// Accepts both `http://host:port` and `http://host:port/v1`. The
+/// trailing `/v1` is kept when present: opencode hosts carry a real
+/// path before it (`/zen/go/v1`), so trimming it produces a 404.
+#[must_use]
+fn models_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if base.ends_with("/v1") {
+        format!("{base}/models")
+    } else {
+        format!("{base}/v1/models")
+    }
+}
+
+/// Stable process-wide fallback for `x-opencode-session` on requests
+/// with no conversation context (model listing). Per-conversation ids
+/// are preferred everywhere a session id exists; this only guarantees
+/// the header is present.
+static OPENCODE_SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+fn opencode_session() -> &'static str {
+    OPENCODE_SESSION.get_or_init(|| {
+        let mut bytes = [0u8; 16];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+        let mut out = String::with_capacity(32);
+        for b in bytes {
+            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{b:02x}"));
+        }
+        out
+    })
+}
+
+/// Builds the request headers for a provider's model-list call.
+/// `OpenCode` hosts additionally carry the session-attribution headers
+/// `OpenCode Go` requires on all API requests.
+fn models_headers(provider: &str, token: Option<&str>) -> Vec<(&'static str, String)> {
+    let mut headers: Vec<(&'static str, String)> = token
+        .map(|t| vec![("Authorization", String::from(t))])
+        .unwrap_or_default();
+    if matches!(provider, "opencode_zen" | "opencode_go") {
+        headers.push(("x-opencode-session", String::from(opencode_session())));
+        headers.push(("x-opencode-client", String::from("echo-ai")));
+    }
+    headers
+}
+
 /// Fetches the live model list for a provider (used by the server's
 /// `/api/models` and the TUI model picker).
 ///
@@ -118,10 +180,12 @@ pub async fn list_models(
     token: Option<&str>,
     http: &dyn HttpClient,
 ) -> Result<Vec<String>> {
-    let base = base_url.trim_end_matches('/').trim_end_matches("/v1");
-    let headers: Vec<(&str, &str)> = token
-        .map(|t| vec![("Authorization", t)])
-        .unwrap_or_default();
+    let base = base_url.trim_end_matches('/');
+    let owned = models_headers(provider, token);
+    let headers: Vec<(&str, &str)> = owned
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
     match provider {
         "ollama" => {
             let url = format!("{base}/api/tags");
@@ -140,7 +204,7 @@ pub async fn list_models(
             Ok(models)
         }
         "openai_compatible" | "opencode_zen" | "opencode_go" => {
-            let url = format!("{base}/models");
+            let url = models_url(base_url);
             let json = http
                 .get_json(&url, &headers)
                 .await
@@ -215,5 +279,42 @@ mod tests {
             panic!("expected token error");
         };
         assert!(matches!(err, Error::Config(_)));
+    }
+
+    #[test]
+    fn models_url_keeps_v1_prefix_when_present() {
+        // Regression: trimming the trailing `/v1` of opencode hosts
+        // (https://opencode.ai/zen/go/v1) produced a 404 URL.
+        assert_eq!(
+            models_url("https://opencode.ai/zen/go/v1"),
+            "https://opencode.ai/zen/go/v1/models"
+        );
+        assert_eq!(
+            models_url("http://localhost:1234/v1"),
+            "http://localhost:1234/v1/models"
+        );
+        assert_eq!(
+            models_url("http://localhost:1234/"),
+            "http://localhost:1234/v1/models"
+        );
+    }
+
+    #[test]
+    fn models_base_url_resolves_per_provider() {
+        let cfg = Config::default();
+        assert_eq!(
+            models_base_url(&cfg, "opencode_go"),
+            "https://opencode.ai/zen/go/v1"
+        );
+        assert_eq!(
+            models_base_url(&cfg, "opencode_zen"),
+            "https://opencode.ai/zen/v1"
+        );
+        assert_eq!(models_base_url(&cfg, "ollama"), "http://localhost:11434");
+        // Unknown providers keep the legacy openai_compatible fallback.
+        assert_eq!(
+            models_base_url(&cfg, "openai"),
+            cfg.openai_compatible.base_url
+        );
     }
 }

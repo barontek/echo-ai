@@ -21,10 +21,13 @@ macro_rules! opencode_provider {
 
         impl $name {
             /// Creates the provider against `base_url` with the shared
-            /// `OpenCode` bearer token.
+            /// `OpenCode` bearer token. Marks the provider as an
+            /// `OpenCode` client so every request carries the
+            /// `x-opencode-session` header `OpenCode Go` requires.
             pub fn new(base_url: String, token: String, http: Arc<dyn HttpClient>) -> Self {
                 Self {
-                    inner: OpenAiCompatible::new(base_url, Some(token), http),
+                    inner: OpenAiCompatible::new(base_url, Some(token), http)
+                        .opencode("echo-ai"),
                 }
             }
         }

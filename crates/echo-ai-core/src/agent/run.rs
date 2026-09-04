@@ -180,6 +180,7 @@ impl Agent {
         messages: Vec<LlmMessage>,
         events: mpsc::Sender<AgentEvent>,
         cancel: CancellationToken,
+        session_id: Option<String>,
     ) -> Result<AgentResult, AgentError> {
         let mut messages = messages;
         let mut hit_iteration_cap = false;
@@ -221,6 +222,7 @@ impl Agent {
                 num_ctx: self.config.num_ctx,
                 keep_alive_secs: self.config.keep_alive_secs,
                 effort: self.config.effort.clone(),
+                session_id: session_id.clone(),
             };
 
             let response = match self.stream_turn(&request, &events, &cancel).await {
@@ -494,6 +496,7 @@ impl Agent {
             num_ctx: self.config.num_ctx,
             keep_alive_secs: self.config.keep_alive_secs,
             effort: None,
+            session_id: None,
         };
         let response = self.provider.clone().chat(&request).await?;
         let mut title = response.content.trim().to_string();
@@ -531,7 +534,7 @@ pub async fn run_silent(
     let (tx, _rx) = mpsc::channel(64);
     let cancel = CancellationToken::new();
     tokio::select! {
-        r = agent.run(messages, tx, cancel.clone()) => r,
+        r = agent.run(messages, tx, cancel.clone(), None) => r,
         () = tokio::time::sleep(timeout) => {
             cancel.cancel();
             Err(AgentError::Cancelled)

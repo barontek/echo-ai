@@ -15,6 +15,39 @@ use super::provider::{
     ChatRequest, ChatResponse, LlmError, LlmMessage, LlmProvider, StreamEvent, ToolSpec,
 };
 
+/// `OpenCode` attribution: the `x-opencode-session` / `x-opencode-client`
+/// headers `OpenCode Go` requires on every request (enforced from
+/// 2026-09-06). Only the opencode wrappers set this.
+#[derive(Debug, Clone)]
+struct OpenCodeAttribution {
+    /// Client name reported in `x-opencode-client`.
+    client: String,
+    /// Stable session id used when the request carries none (TUI runs,
+    /// title generation); per-conversation ids from the web UI override
+    /// it per request.
+    fallback_session: String,
+}
+
+impl OpenCodeAttribution {
+    fn new(client: &str) -> Self {
+        Self {
+            client: String::from(client),
+            fallback_session: random_hex(),
+        }
+    }
+}
+
+/// Random 32-hex-char id (fallback `x-opencode-session` value).
+fn random_hex() -> String {
+    let mut bytes = [0u8; 16];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+    let mut out = String::with_capacity(32);
+    for b in bytes {
+        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{b:02x}"));
+    }
+    out
+}
+
 /// OpenAI-compatible provider.
 #[derive(Clone)]
 pub struct OpenAiCompatible {
@@ -22,6 +55,8 @@ pub struct OpenAiCompatible {
     /// Optional `Authorization: Bearer` token.
     token: Option<String>,
     http: std::sync::Arc<dyn HttpClient>,
+    /// `OpenCode` attribution; absent for non-opencode hosts.
+    opencode: Option<OpenCodeAttribution>,
 }
 
 impl OpenAiCompatible {
@@ -36,14 +71,34 @@ impl OpenAiCompatible {
             base_url,
             token,
             http,
+            opencode: None,
         }
     }
 
-    fn headers(&self) -> Vec<(&'static str, String)> {
-        self.token
+    /// Marks the provider as an `OpenCode` client: every request carries
+    /// `x-opencode-session` (per-request id, or a stable per-provider
+    /// fallback) and `x-opencode-client: <client>`.
+    #[must_use]
+    pub fn opencode(mut self, client: &str) -> Self {
+        self.opencode = Some(OpenCodeAttribution::new(client));
+        self
+    }
+
+    fn headers(&self, session_id: Option<&str>) -> Vec<(&'static str, String)> {
+        let mut headers: Vec<(&'static str, String)> = self
+            .token
             .as_ref()
             .map(|t| vec![("Authorization", format!("Bearer {t}"))])
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if let Some(oc) = &self.opencode {
+            let session = session_id.map_or_else(
+                || oc.fallback_session.clone(),
+                String::from,
+            );
+            headers.push(("x-opencode-session", session));
+            headers.push(("x-opencode-client", oc.client.clone()));
+        }
+        headers
     }
 
     fn endpoint(&self) -> String {
@@ -83,7 +138,7 @@ impl LlmProvider for OpenAiCompatible {
 
 impl OpenAiCompatible {
     async fn chat_impl(&self, req: &ChatRequest) -> Result<ChatResponse, LlmError> {
-        let owned = self.headers();
+        let owned = self.headers(req.session_id.as_deref());
         let headers: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let body = build_chat_body(req, false);
         let json = self
@@ -97,7 +152,7 @@ impl OpenAiCompatible {
         &self,
         req: &ChatRequest,
     ) -> Result<tokio::sync::mpsc::Receiver<StreamEvent>, LlmError> {
-        let owned = self.headers();
+        let owned = self.headers(req.session_id.as_deref());
         let headers: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let body = build_chat_body(req, true);
         let mut lines = self
@@ -433,6 +488,40 @@ mod tests {
             std::sync::Arc::new(super::super::http::ReqwestClient::new()),
         );
         assert_eq!(p2.endpoint(), "http://localhost:1234/v1/chat/completions");
+    }
+
+    #[test]
+    fn opencode_attribution_sends_session_and_client_headers() {
+        let http = std::sync::Arc::new(super::super::http::ReqwestClient::new());
+        let plain = OpenAiCompatible::new(String::from("http://localhost:1234"), None, http.clone());
+        assert!(
+            plain.headers(None).is_empty(),
+            "non-opencode hosts must not send attribution headers"
+        );
+        let oc = OpenAiCompatible::new(String::from("https://opencode.ai/zen/go/v1"), None, http)
+            .opencode("echo-ai");
+        let h = oc.headers(None);
+        let session = h
+            .iter()
+            .find(|(k, _)| *k == "x-opencode-session")
+            .map(|(_, v)| v.clone())
+            .expect("session header present");
+        assert_eq!(session.len(), 32, "session id is 32 hex chars");
+        assert!(
+            h.iter().any(|(k, v)| *k == "x-opencode-client" && v == "echo-ai"),
+            "client header present"
+        );
+        // Fallback is stable across calls without a session id.
+        assert_eq!(oc.headers(None).iter().find(|(k, _)| *k == "x-opencode-session").map(|(_, v)| v.clone()), Some(session));
+        // A per-request conversation id overrides the fallback.
+        let override_h = oc.headers(Some("74af82a15e9dd591460f4716f0614e45"));
+        assert_eq!(
+            override_h
+                .iter()
+                .find(|(k, _)| *k == "x-opencode-session")
+                .map(|(_, v)| v.clone()),
+            Some(String::from("74af82a15e9dd591460f4716f0614e45"))
+        );
     }
 
     #[test]

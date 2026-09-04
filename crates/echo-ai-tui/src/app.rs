@@ -317,7 +317,7 @@ fn start_turn(
     let sid = session_id.to_string();
     let title_out = title.to_string();
     tokio::spawn(async move {
-        let result = agent.run(messages, tx.clone(), token).await;
+        let result = agent.run(messages, tx.clone(), token, Some(sid.clone())).await;
         let _ = tx.send(AgentEvent::Done).await;
         // Persist + title.
         if let Ok(res) = &result

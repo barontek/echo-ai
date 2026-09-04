@@ -110,7 +110,7 @@ impl AskUser for SocketAskUser {
                     "type": "approval_request",
                     "request_id": id,
                     "tool_name": tool,
-                    "question": args,
+                    "arguments": args,
                 }))
                 .await;
             match orx.await {

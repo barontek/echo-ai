@@ -19,7 +19,7 @@ use tower_http::services::ServeDir;
 use echo_ai_core::agent::message::Message;
 use echo_ai_core::agent::run::{AgentEvent, AgentResult};
 use echo_ai_core::llm::provider::LlmMessage;
-use echo_ai_core::session::Session;
+
 use tokio_util::sync::CancellationToken;
 
 use crate::state::AppState;
@@ -126,23 +126,16 @@ fn require_session(state: &AppState) -> Option<Arc<echo_ai_core::session::Sessio
 // Status / health
 // ---------------------------------------------------------------------------
 
-/// `GET /api/status`: `locked`/`setup`/`ready`.
+/// `GET /api/status`: vault gate for the frontend.
 async fn status(State(state): State<Arc<AppState>>) -> Json<Value> {
-    use crate::state::ServerState;
-    // A poisoned auth lock is an invariant violation; fail fast.
-    #[allow(clippy::expect_used)] // poisoned lock = invariant violation
-    let locked = {
+    let needs_setup = state.needs_setup();
+    let locked = !needs_setup && {
+        // A poisoned auth lock is an invariant violation; fail fast.
+        #[allow(clippy::expect_used)] // poisoned lock = invariant violation
         let auth = state.auth.lock().expect("auth lock poisoned");
-        auth.state == ServerState::Locked
+        auth.state == crate::state::ServerState::Locked
     };
-    let state_str = if state.needs_setup() {
-        "setup"
-    } else if !locked {
-        "ready"
-    } else {
-        "locked"
-    };
-    Json(json!({ "state": state_str }))
+    Json(json!({ "locked": locked, "needs_setup": needs_setup }))
 }
 
 /// `GET /api/health`.
@@ -181,18 +174,13 @@ async fn public_config(State(state): State<Arc<AppState>>) -> Json<Value> {
     #[allow(clippy::expect_used)] // poisoned slot = invariant violation
     let session_enabled = state.session.lock().expect("session slot lock").is_some();
     Json(json!({
-        "provider": state.config.agent.provider,
-        "model": state.config.agent.model,
-        "providers": echo_ai_core::llm::factory::PROVIDERS,
-        "session_enabled": session_enabled,
-        "safety": {
-            "mode": format!("{:?}", state.safety.mode).to_lowercase(),
-            "allow_network": state.safety.allow_network,
-        },
-        "server": {
-            "port": state.server.port,
-            "tls": state.server.tls,
-        },
+        "config": {
+            "provider": state.config.agent.provider,
+            "model": state.config.agent.model,
+            "temperature": state.config.agent.temperature,
+            "max_iterations": state.config.agent.max_iterations,
+            "session_enabled": session_enabled,
+        }
     }))
 }
 
@@ -203,6 +191,13 @@ async fn public_config(State(state): State<Arc<AppState>>) -> Json<Value> {
 #[derive(Deserialize)]
 struct PasswordBody {
     password: String,
+}
+
+#[derive(Deserialize)]
+struct ChangePasswordBody {
+    current_password: String,
+    new_password: String,
+    confirm: String,
 }
 
 /// `POST /api/setup`: first-run vault creation.
@@ -280,7 +275,7 @@ async fn unlock(
         }
     }
     let token = state.unlock();
-    Json(json!({ "token": token })).into_response()
+    Json(json!({ "status": "ok", "token": token })).into_response()
 }
 
 /// `POST /api/logout`.
@@ -301,10 +296,19 @@ async fn change_password(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     query: Query<Value>,
-    Json(body): Json<PasswordBody>,
+    Json(body): Json<ChangePasswordBody>,
 ) -> Response {
     if let Some(resp) = gate(&state, &headers, &query) {
         return resp;
+    }
+    if body.new_password != body.confirm {
+        return (StatusCode::BAD_REQUEST, "new passwords do not match").into_response();
+    }
+    // The current password must open the vault (the session slot may
+    // hold an older open handle; the open is the authoritative check).
+    if echo_ai_core::session::SessionManager::open(&state.data_dir, &body.current_password).is_err()
+    {
+        return (StatusCode::UNAUTHORIZED, "wrong current password").into_response();
     }
     let Some(sm) = require_session(&state) else {
         return (
@@ -313,7 +317,7 @@ async fn change_password(
         )
             .into_response();
     };
-    match sm.change_password(&body.password) {
+    match sm.change_password(&body.new_password) {
         Ok(()) => StatusCode::OK.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -322,18 +326,6 @@ async fn change_password(
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
-
-fn session_to_json(s: &Session) -> Value {
-    json!({
-        "id": s.id,
-        "title": s.title,
-        "title_generation_attempted": s.title_generation_attempted,
-        "created_at": s.created_at,
-        "messages": s.messages,
-        "metadata": s.metadata,
-        "events": s.events,
-    })
-}
 
 /// `GET /api/sessions`.
 async fn list_sessions(
@@ -348,16 +340,14 @@ async fn list_sessions(
         return (StatusCode::SERVICE_UNAVAILABLE, "disabled").into_response();
     };
     match sm.list_sessions() {
-        Ok(list) => Json(json!(
-            list.iter()
-                .map(|s| json!({
-                    "id": s.id,
-                    "title": s.title,
-                    "title_generation_attempted": s.title_generation_attempted,
-                    "created_at": s.created_at,
-                }))
-                .collect::<Vec<_>>()
-        ))
+        Ok(list) => Json(json!({
+            "sessions": list.iter().map(|s| json!({
+                "id": s.id,
+                "title": s.title,
+                "title_generation_attempted": s.title_generation_attempted,
+                "created_at": s.created_at,
+            })).collect::<Vec<_>>(),
+        }))
         .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -376,8 +366,9 @@ async fn create_session(
         return (StatusCode::SERVICE_UNAVAILABLE, "disabled").into_response();
     };
     let session = sm.create_session();
+    let id = session.id.clone();
     match sm.save_session(&session) {
-        Ok(()) => (StatusCode::CREATED, Json(session_to_json(&session))).into_response(),
+        Ok(()) => (StatusCode::CREATED, Json(json!({ "session_id": id }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -396,7 +387,14 @@ async fn get_session(
         return (StatusCode::SERVICE_UNAVAILABLE, "disabled").into_response();
     };
     match sm.load_session(&id) {
-        Ok(Some(s)) => Json(session_to_json(&s)).into_response(),
+        Ok(Some(s)) => Json(json!({
+            "session_id": s.id,
+            "title": s.title,
+            "messages": s.messages,
+            // Branching metadata is not tracked yet; the frontend
+            // treats the absent field as "no branches".
+        }))
+        .into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "not found").into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -454,7 +452,12 @@ async fn update_session(
         session.messages = messages;
     }
     match sm.save_session(&session) {
-        Ok(()) => Json(session_to_json(&session)).into_response(),
+        Ok(()) => Json(json!({
+            "session_id": session.id,
+            "title": session.title,
+            "messages": session.messages,
+        }))
+        .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -472,9 +475,12 @@ async fn rename_session(
     let Some(sm) = require_session(&state) else {
         return (StatusCode::SERVICE_UNAVAILABLE, "disabled").into_response();
     };
-    let id = body.get("id").and_then(Value::as_str).unwrap_or_default();
+    let id = body
+        .get("session_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let title = body
-        .get("title")
+        .get("new_title")
         .and_then(Value::as_str)
         .unwrap_or_default();
     match sm.rename_session(id, title) {
@@ -504,8 +510,9 @@ async fn import_session(
         session.messages =
             serde_json::from_value(Value::Array(messages.clone())).unwrap_or_default();
     }
+    let id = session.id.clone();
     match sm.save_session(&session) {
-        Ok(()) => Json(session_to_json(&session)).into_response(),
+        Ok(()) => Json(json!({ "session_id": id })).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -524,7 +531,12 @@ async fn export_session(
         return (StatusCode::SERVICE_UNAVAILABLE, "disabled").into_response();
     };
     match sm.load_session(&id) {
-        Ok(Some(s)) => Json(session_to_json(&s)).into_response(),
+        Ok(Some(s)) => Json(json!({
+            "session_id": s.id,
+            "title": s.title,
+            "messages": s.messages,
+        }))
+        .into_response(),
         _ => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
 }
@@ -569,7 +581,11 @@ async fn models(State(state): State<Arc<AppState>>) -> Json<Value> {
 
 /// `GET /api/providers`.
 async fn providers() -> Json<Value> {
-    Json(json!({ "providers": echo_ai_core::llm::factory::PROVIDERS }))
+    Json(json!({
+        "providers": echo_ai_core::llm::factory::PROVIDERS,
+        "effort_supported": [],
+        "effort_options": {},
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -588,7 +604,10 @@ async fn openai_auth_status(
         return (StatusCode::SERVICE_UNAVAILABLE, "disabled").into_response();
     };
     let configured = sm.oauth_get("openai").ok().flatten().is_some();
-    Json(json!({ "logged_in": configured })).into_response()
+    Json(json!({
+        "state": if configured { "signed_in" } else { "signed_out" },
+    }))
+    .into_response()
 }
 
 #[derive(Deserialize)]

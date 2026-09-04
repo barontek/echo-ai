@@ -26,8 +26,7 @@ macro_rules! opencode_provider {
             /// `x-opencode-session` header `OpenCode Go` requires.
             pub fn new(base_url: String, token: String, http: Arc<dyn HttpClient>) -> Self {
                 Self {
-                    inner: OpenAiCompatible::new(base_url, Some(token), http)
-                        .opencode("echo-ai"),
+                    inner: OpenAiCompatible::new(base_url, Some(token), http).opencode("echo-ai"),
                 }
             }
         }

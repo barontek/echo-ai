@@ -4,7 +4,7 @@
 # `rust-bin.fromRustupToolchainFile` (flake.nix), so Nix and rustup users
 # cannot drift apart.
 #
-# Sanitizers (ASan/UBSan/TSan) and Miri run on the pinned nightly channel,
+# Sanitizers (ASan/TSan) and Miri run on the pinned nightly channel,
 # also provided by the nix dev shell; `rustup show` output is recorded in
 # CI logs for traceability.
 [toolchain]

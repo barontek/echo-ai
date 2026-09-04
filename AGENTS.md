@@ -9,7 +9,7 @@ This is a Cargo workspace: `crates/echo-ai-core`, `crates/echo-ai-server`, `crat
 Environment and toolchain
 
 - Linux (NixOS): all builds and test runs happen inside `nix develop`. Never assume a system-installed Rust toolchain — if `nix develop` isn't active, the agent should not run `cargo`/`rustc` directly; it should either enter the shell first or flag that it's missing.
-- macOS: use the project's pinned toolchain via `rust-toolchain.toml` at the repo root (channel + component list, e.g. `clippy`, `rustfmt`, `rust-src`, `llvm-tools-preview`). `rustup` reads this file automatically. `rustup show` output is recorded in CI logs for traceability. Sanitizer support (ASan/UBSan/TSan) requires the nightly toolchain's `-Zsanitizer=...` flag; confirm the pinned nightly supports the same sanitizer set as the Linux build before running anything. LeakSanitizer is unsupported on macOS, so CI sets `ASAN_OPTIONS=detect_leaks=0` there — that is the one sanctioned deviation.
+- macOS: use the project's pinned toolchain via `rust-toolchain.toml` at the repo root (channel + component list, e.g. `clippy`, `rustfmt`, `rust-src`, `llvm-tools-preview`). `rustup` reads this file automatically. `rustup show` output is recorded in CI logs for traceability. Sanitizer support (ASan/TSan) requires the nightly toolchain's `-Zsanitizer=...` flag; confirm the pinned nightly supports the same sanitizer set as the Linux build before running anything. UBSan is not in that set — rustc dropped the `-Z sanitizer=undefined` backend, so that UB class is covered by `overflow-checks = true` in every profile plus the Miri stage. LeakSanitizer is unsupported on macOS, so CI sets `ASAN_OPTIONS=detect_leaks=0` there — that is the one sanctioned deviation.
 - Other/CI: any environment outside the two above must have its toolchain pinned via `rust-toolchain.toml` and documented before an agent runs a build in it — no ad hoc "whatever `rustup` resolves to" builds.
 - An agent should never silently fall back to a toolchain other than the one pinned in `rust-toolchain.toml` when the expected dev shell isn't active — that's a "stop and ask" situation, not a "just try it" one.
 
@@ -27,7 +27,7 @@ Build flags below assume the environment from the section above is active. Every
 
 Sanitizer builds (nightly, run as a separate CI stage — see Concurrency and Static analysis below):
 
-`RUSTFLAGS="-Z sanitizer=address" cargo +nightly build -Z build-std --target <triple>` (and `=undefined`, `=thread` per stage)
+`RUSTFLAGS="-Z sanitizer=address" cargo +nightly build -Z build-std --target <triple>` (and `=thread` per stage)
 
 - If a `clippy` lint can't be fixed immediately, it gets a scoped `#[allow(clippy::lint_name)]` with a `// TODO(reason):` comment directly above it and a tracked issue — never a blanket `#![allow(...)]` at the crate root.
 - Release builds add `--release` with `overflow-checks = true` and `debug-assertions = true` kept on in `Cargo.toml`'s `[profile.release]` for CI — sanitizers stay on in CI even for "release" test runs.
@@ -47,7 +47,7 @@ Concurrency
 - Rust's `Send`/`Sync` traits and the borrow checker eliminate most data-race bugs at compile time for safe code — but `unsafe`, FFI, and async runtimes (tokio) can silently punch through that guarantee (raw pointers crossing threads, `unsafe impl Send`, interior-mutability misuse under a shared `Arc`).
 - Any file touching shared or global state across more than one thread or task — subprocess spawning, async LLM/tool calls, server request handling — gets a ThreadSanitizer (TSan, nightly `-Z sanitizer=thread`) build/run for any `unsafe` or FFI-adjacent path in that file.
 - For pure-safe-Rust concurrency (no `unsafe`, no FFI), `loom` model-checking tests are the primary tool — loom exhaustively explores thread interleavings for a piece of concurrent logic rather than sampling one execution.
-- TSan and loom runs are separate CI stages from the ASan/UBSan/clippy/test run.
+- TSan and loom runs are separate CI stages from the ASan/clippy/test run.
 - A thread-safety claim in a doc comment (Documentation standards item 4) needs a TSan or loom run backing it, not just the comment. `unsafe impl Send`/`unsafe impl Sync` is itself a thread-safety claim and needs the same backing.
 
 Memory ownership
@@ -170,7 +170,7 @@ Testing
 - Every new function with a non-trivial contract gets a `#[test]` (or `#[tokio::test]` for async), run through `cargo test`.
 - Every bug fix includes a regression test that would have caught it, added before the fix is marked resolved — the agent demonstrates it fails on the old code and passes on the new code (`git stash`, rerun, unstash), doesn't just assert it.
 - `cargo fuzz` (libFuzzer-backed) targets required for any function parsing external input (files, network data, session blobs, tool output).
-- `cargo test` runs clean under ASan/UBSan (nightly `-Z sanitizer=address,undefined`) as a merge requirement, not optional CI noise.
+- `cargo test` runs clean under ASan (nightly `-Z sanitizer=address`) as a merge requirement, not optional CI noise. UBSan is not runnable on the pinned nightly (rustc removed the `undefined` backend); UB coverage relies on `overflow-checks = true` and the Miri stage instead.
 
 Test file organization
 
@@ -213,9 +213,9 @@ Test framework conventions
 
 Verification discipline
 
-- An agent's claim that something "works" or "is fixed" isn't sufficient — show the actual failing test before the fix and the passing one after, and for memory/unsafe bugs, a clean ASan/UBSan/Miri run.
+- An agent's claim that something "works" or "is fixed" isn't sufficient — show the actual failing test before the fix and the passing one after, and for memory/unsafe bugs, a clean ASan/Miri run.
 - `git stash` and rerun the previous behavior when a fix is claimed, to confirm the bug reproduces on old code and is gone on new code.
-- `cargo +nightly miri test` is required for any `unsafe` code path touched by a fix — Miri catches undefined behavior (invalid pointer use, aliasing violations, uninitialized reads) that even ASan/UBSan can miss.
+- `cargo +nightly miri test` is required for any `unsafe` code path touched by a fix — Miri catches undefined behavior (invalid pointer use, aliasing violations, uninitialized reads) that even ASan can miss.
 - Audit findings — from the agent itself or a second reviewing agent — aren't accepted at face value; verify via actual code path tracing with specific line numbers before marking fixed.
 - No fix touching `unsafe` code is "done" until it's run under Miri and the relevant sanitizer at least once.
 - Fail→pass test evidence and sanitizer/Miri output cited as proof of a fix must come from an actual command invocation in that session — show the raw command and its output, not a paraphrase or a claim that it was run.

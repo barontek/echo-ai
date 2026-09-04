@@ -21,9 +21,12 @@ on:
 # - backend-macos is the sanctioned non-Nix path (rustup +
 #   rust-toolchain.toml); macOS sets ASAN_OPTIONS=detect_leaks=0 since
 #   LeakSanitizer is unsupported there.
-# - Sanitizers (ASan/UBSan/TSan) run one stage at a time (not combinable
-#   in one build) on the pinned nightly with -Z build-std, in both Linux
-#   jobs. Miri runs on the same nightly against echo-ai-core.
+# - Sanitizers (ASan/TSan) run one stage at a time (not combinable in one
+#   build) on the pinned nightly with -Z build-std, in both Linux jobs.
+#   UBSan is not in this list: rustc dropped the `-Z sanitizer=undefined`
+#   backend, so that class of UB is covered by overflow-checks=true in
+#   every profile plus the Miri stage. Miri runs on the same nightly
+#   against echo-ai-core.
 
 env:
   CARGO_TERM_COLOR: always
@@ -100,12 +103,6 @@ jobs:
         set -euo pipefail
         export RUSTFLAGS="-Z sanitizer=address -D warnings"
         export ASAN_OPTIONS=detect_leaks=0
-        cargo +nightly-2026-08-25 test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
-
-    - name: test under UBSan
-      run: |
-        set -euo pipefail
-        export RUSTFLAGS="-Z sanitizer=undefined -D warnings"
         cargo +nightly-2026-08-25 test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
 
     - name: test under TSan
@@ -186,7 +183,7 @@ jobs:
       # Same global-flag ordering as backend-debian.
       run: nix develop -c cargo deny --locked check
 
-    # One stage per sanitizer (ASan/UBSan/TSan), separate from the lint/test
+    # One stage per sanitizer (ASan/TSan), separate from the lint/test
     # run; the dev shell's rustup shim resolves +nightly to the flake pin.
     - name: test under ASan
       run: |
@@ -194,14 +191,6 @@ jobs:
           set -euo pipefail
           export RUSTFLAGS="-Z sanitizer=address -D warnings"
           export ASAN_OPTIONS=detect_leaks=0
-          cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
-        '
-
-    - name: test under UBSan
-      run: |
-        nix develop -c bash -c '
-          set -euo pipefail
-          export RUSTFLAGS="-Z sanitizer=undefined -D warnings"
           cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
         '
 

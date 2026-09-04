@@ -22,7 +22,7 @@
         # (fromRustupToolchainFile reads the file, so the two cannot drift).
         stable = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-        # Nightly toolchain for the sanitizer (ASan/UBSan/TSan, via
+        # Nightly toolchain for the sanitizer (ASan/TSan, via
         # -Z build-std) and Miri stages. Pinned date; component list mirrors
         # what CI's sanitizer stages invoke. `miri` is a rustup component
         # on nightly, not a separate package.

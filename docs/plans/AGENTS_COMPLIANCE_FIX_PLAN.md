@@ -17,7 +17,7 @@
 - [x] R0 config: `.conf` parser not ported — TOML/serde replaces it (user decision). C's config mid-list-cleanup gap (`E7`, no injection seam) is resolved-by-design; recorded in the review doc.
 - [x] R1 workspace: Cargo workspace, 4 crates, workspace lint policy, release profile (overflow-checks + debug-assertions), deny.toml.
 - [x] R2 toolchain: rust-toolchain.toml (stable 1.98.0 + components), flake.nix (stable + pinned nightly 2026-08-25, nextest/audit/deny/fuzz/llvm-cov, gcc, nodejs_22), flake.lock committed.
-- [x] R3 CI: GitHub Actions — lint/test/sanitizers (ASan/UBSan/TSan stages)/miri/audit/backend-macos; rustup show recorded; macOS ASAN_OPTIONS=detect_leaks=0.
+- [x] R3 CI: GitHub Actions — lint/test/sanitizers (ASan/TSan stages; UBSan dropped — the pinned nightly's rustc removed the `undefined` backend, covered by overflow-checks + Miri)/miri/audit/backend-macos; rustup show recorded; macOS ASAN_OPTIONS=detect_leaks=0.
 - [x] R4 scripts: debug-test.sh (exact/nocapture, gdb/lldb/miri/miri-gdb), lint.sh, check-file-lengths.sh.
 - [x] R5 docs: AGENTS_COMPLIANCE_REVIEW.md (module tracker, known-gaps carry-forward) + this fix plan; docs/verification/ created.
 - [x] R6 bin: main.rs arg parsing (--web default, --cli, --config, --debug, --help) with unit tests; --chat deliberately absent.

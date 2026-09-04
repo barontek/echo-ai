@@ -33,7 +33,7 @@ All commands run inside `nix develop` (stable 1.98.0, nightly 1.100.0-nightly 20
 - `clippy::expect_used` scoped allows with invariant comments: `Hmac::new_from_slice` on a fixed 16-byte slice (cannot fail), and mutex-poison fail-fast policy (session manager, metrics, rate limiter, circuit breaker — a poisoned lock means continuing could corrupt the vault, so failing fast is the safe choice).
 - `clippy::missing_panics_doc` + `# Panics` docs on the same two HMAC sites.
 - Cast lints on the `observe` micros conversion: bounds-checked clamp documented in-code.
-- Miri flags: `-Zmiri-disable-isolation` (wall-clock reads) and `--skip session::` (rusqlite is bundled C FFI; covered by ASan/UBSan/TSan stages instead).
+- Miri flags: `-Zmiri-disable-isolation` (wall-clock reads) and `--skip session::` (rusqlite is bundled C FFI; covered by ASan/TSan stages instead).
 
 ## Compatibility notes
 

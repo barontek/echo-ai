@@ -49,5 +49,7 @@ fail-fast on typos, with regression test).
 
 .github/workflows/ci.yml written but not yet exercised on GitHub
 (pending initial commit + push to barontek/echo-ai). The ASan stage
-command was reproduced locally (row above); UBSan/TSan stages use the
-same invocation with `-Z sanitizer=undefined|thread`.
+command was reproduced locally (row above); TSan uses the same
+invocation with `-Z sanitizer=thread`. (UBSan is not available on the
+pinned nightly — rustc dropped the `-Z sanitizer=undefined` backend;
+see AGENTS.md "Build flags".)

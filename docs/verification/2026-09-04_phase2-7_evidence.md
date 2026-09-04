@@ -63,7 +63,7 @@ All commands run inside `nix develop` (stable 1.98.0, nightly
   depend on the latter directly).
 - `CDLA-Permissive-2.0` (webpki-roots) added to the license allowlist.
 - Miri skip set: sqlite FFI + subprocess spawns are not
-  Miri-interpretable; covered by ASan/UBSan/TSan CI stages.
+  Miri-interpretable; covered by ASan/TSan CI stages.
 - `too_many_lines`/`too_many_arguments` allows on the WS frame
   dispatcher, the TUI event loop, and `start_turn` — protocol tables and
   subsystem wiring, each with an in-code reason.

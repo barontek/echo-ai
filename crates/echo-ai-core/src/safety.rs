@@ -347,7 +347,10 @@ mod tests {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!("echo-safety-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create temp workspace");
-        dir
+        // Canonicalize like from_config does: on macOS the temp dir lives
+        // under /var, a symlink to /private/var, so a raw path here would
+        // not be a prefix of any canonicalized resolve_path result.
+        dir.canonicalize().unwrap_or(dir)
     }
 
     #[test]

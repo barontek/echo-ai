@@ -41,7 +41,7 @@ jobs:
     - name: install base deps
       run: |
         apt-get update
-        apt-get install -y --no-install-recommends git ca-certificates curl build-essential pkg-config
+        apt-get install -y --no-install-recommends git ca-certificates curl build-essential pkg-config python3
         git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
     - uses: actions/checkout@v4
@@ -90,7 +90,9 @@ jobs:
       run: cargo audit
 
     - name: cargo deny
-      run: cargo deny check --locked
+      # --locked is a global flag in current cargo-deny (0.20.x); it must
+      # precede the subcommand or the run fails with "unexpected argument".
+      run: cargo deny --locked check
 
     # One stage per sanitizer; -Z build-std needs the rust-src component.
     - name: test under ASan
@@ -181,7 +183,8 @@ jobs:
       run: nix develop -c cargo audit
 
     - name: cargo deny
-      run: nix develop -c cargo deny check --locked
+      # Same global-flag ordering as backend-debian.
+      run: nix develop -c cargo deny --locked check
 
     # One stage per sanitizer (ASan/UBSan/TSan), separate from the lint/test
     # run; the dev shell's rustup shim resolves +nightly to the flake pin.

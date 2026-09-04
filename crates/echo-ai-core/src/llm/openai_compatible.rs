@@ -91,10 +91,7 @@ impl OpenAiCompatible {
             .map(|t| vec![("Authorization", format!("Bearer {t}"))])
             .unwrap_or_default();
         if let Some(oc) = &self.opencode {
-            let session = session_id.map_or_else(
-                || oc.fallback_session.clone(),
-                String::from,
-            );
+            let session = session_id.map_or_else(|| oc.fallback_session.clone(), String::from);
             headers.push(("x-opencode-session", session));
             headers.push(("x-opencode-client", oc.client.clone()));
         }
@@ -493,7 +490,8 @@ mod tests {
     #[test]
     fn opencode_attribution_sends_session_and_client_headers() {
         let http = std::sync::Arc::new(super::super::http::ReqwestClient::new());
-        let plain = OpenAiCompatible::new(String::from("http://localhost:1234"), None, http.clone());
+        let plain =
+            OpenAiCompatible::new(String::from("http://localhost:1234"), None, http.clone());
         assert!(
             plain.headers(None).is_empty(),
             "non-opencode hosts must not send attribution headers"
@@ -508,11 +506,18 @@ mod tests {
             .expect("session header present");
         assert_eq!(session.len(), 32, "session id is 32 hex chars");
         assert!(
-            h.iter().any(|(k, v)| *k == "x-opencode-client" && v == "echo-ai"),
+            h.iter()
+                .any(|(k, v)| *k == "x-opencode-client" && v == "echo-ai"),
             "client header present"
         );
         // Fallback is stable across calls without a session id.
-        assert_eq!(oc.headers(None).iter().find(|(k, _)| *k == "x-opencode-session").map(|(_, v)| v.clone()), Some(session));
+        assert_eq!(
+            oc.headers(None)
+                .iter()
+                .find(|(k, _)| *k == "x-opencode-session")
+                .map(|(_, v)| v.clone()),
+            Some(session)
+        );
         // A per-request conversation id overrides the fallback.
         let override_h = oc.headers(Some("74af82a15e9dd591460f4716f0614e45"));
         assert_eq!(

@@ -46,7 +46,13 @@ jobs:
 
     - uses: actions/checkout@v4
 
-    - uses: dtolnay/rust-toolchain@master # stable 1.98.0 from rust-toolchain.toml
+    # Stable 1.98.0 + components must be explicit: dtolnay/rust-toolchain
+    # no longer auto-reads rust-toolchain.toml and fails on an empty
+    # `toolchain` input.
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: 1.98.0
+        components: clippy, rustfmt, rust-src, llvm-tools-preview
 
     - uses: taiki-e/install-action@v2
       with:
@@ -222,7 +228,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: dtolnay/rust-toolchain@master # channel+components from rust-toolchain.toml
+    - uses: dtolnay/rust-toolchain@master # explicit; see backend-debian for why
+      with:
+        toolchain: 1.98.0
+        components: clippy, rustfmt, rust-src, llvm-tools-preview
     - uses: taiki-e/install-action@v2
       with:
         tool: cargo-nextest

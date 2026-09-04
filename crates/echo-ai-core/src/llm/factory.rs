@@ -182,10 +182,7 @@ pub async fn list_models(
 ) -> Result<Vec<String>> {
     let base = base_url.trim_end_matches('/');
     let owned = models_headers(provider, token);
-    let headers: Vec<(&str, &str)> = owned
-        .iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let headers: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
     match provider {
         "ollama" => {
             let url = format!("{base}/api/tags");

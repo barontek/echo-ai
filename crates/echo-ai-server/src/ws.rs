@@ -466,7 +466,8 @@ async fn start_turn(chat: &mut WsChat) {
         let _ = run_out_tx
             .send(json!({ "type": "turn_start", "history_len": history_len }))
             .await;
-        let result = agent_with_ask.run(messages, event_tx, cancel, Some(session_id.clone()))
+        let result = agent_with_ask
+            .run(messages, event_tx, cancel, Some(session_id.clone()))
             .await;
         (result, session_id, state)
     });

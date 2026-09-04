@@ -48,8 +48,10 @@ pub struct AuthState {
 
 impl Default for AuthState {
     fn default() -> Self {
+        // A vault exists but is not open: locked until the password is
+        // verified. The setup state is chosen explicitly in `build`.
         Self {
-            state: ServerState::Setup,
+            state: ServerState::Locked,
             token: None,
             generation: 0,
         }

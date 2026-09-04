@@ -3,7 +3,7 @@
 //! Owns the agent loop, LLM providers, tool registry, session store,
 //! safety enforcement, config, and shared utilities — everything that is
 //! not tied to a specific frontend (HTTP or terminal). Mirrors the C
-//! project's subsystem split (`~/echo-ai-c/src/`), but is an idiomatic
+//! project's subsystem split (`the original implementation/src/`), but is an idiomatic
 //! rewrite, not a line-by-line port: only the on-disk formats (session
 //! DB schema, Fernet token layout, config surface) are kept compatible.
 //!

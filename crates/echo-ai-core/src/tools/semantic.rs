@@ -1,7 +1,7 @@
 //! Semantic search: an in-memory `TF-IDF` document index with
 //! `semantic_search` (query) and `ingest_document` tools.
 //!
-//! The C version's known gap — `add_term` partial commit on allocation
+//! the original implementation's known gap — `add_term` partial commit on allocation
 //! failure — is resolved by construction: the index is built with
 //! `try_reserve` before any entry is inserted, and a failed reserve
 //! leaves the map untouched (fault-injection tested below).

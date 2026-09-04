@@ -1,7 +1,7 @@
 //! JSON-lines logging to stderr, leveled and thread-safe.
 //!
 //! Each line is a single JSON object built before the write, so
-//! concurrent loggers never interleave. The C project logged the same
+//! concurrent loggers never interleave. the original implementation logged the same
 //! way; the format is kept so existing log scrapers keep working.
 //!
 //! Depends on: `std` only.

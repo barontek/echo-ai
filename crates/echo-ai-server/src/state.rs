@@ -149,11 +149,14 @@ impl AppState {
             .lock()
             .expect("session slot lock poisoned")
             .is_some()
+            || echo_ai_core::session::encryption::vault_initialized(&data_dir)
         {
-            // Vault exists: locked until the password is verified.
+            // Vault exists (either already open, or the original implementation's
+            // vault that the unlock screen will open): locked until the
+            // password is verified.
             AuthState::default()
         } else {
-            // Vault will be created by the web UI's setup screen.
+            // No vault anywhere: the setup screen creates one.
             AuthState {
                 state: ServerState::Setup,
                 token: None,

@@ -218,6 +218,13 @@ async fn setup(
     if !state.needs_setup() {
         return (StatusCode::CONFLICT, "already initialized").into_response();
     }
+    if body.password.len() < 8 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "password must be at least 8 characters",
+        )
+            .into_response();
+    }
     // Create the vault with the submitted password and fill the shared
     // session slot (the agent's tools and every handler see it via the
     // same `Arc`).
@@ -236,8 +243,11 @@ async fn setup(
         let mut slot = state.session.lock().expect("session slot lock poisoned");
         *slot = Some(Arc::new(sm));
     }
-    state.mark_setup_done();
-    (StatusCode::OK, "setup complete").into_response()
+    // Setup unlocks directly and returns the token, so the frontend
+    // can skip the unlock screen.
+    let token = state.unlock();
+    Json(json!({ "status": "ok", "token": token, "message": "echo-ai configured and unlocked" }))
+        .into_response()
 }
 
 /// `POST /api/unlock`: verify password, issue token.
@@ -250,18 +260,24 @@ async fn unlock(
     if let Some(resp) = gate_public(&state, &headers, &query) {
         return resp;
     }
-    let Some(sm) = require_session(&state) else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "session persistence disabled",
-        )
-            .into_response();
+    if state.needs_setup() {
+        return (StatusCode::LOCKED, "setup required").into_response();
+    }
+    // Verify by opening the vault directly — the session slot may be
+    // empty (server started locked against the original implementation's vault), in
+    // which case a successful open fills it.
+    let sm = match echo_ai_core::session::SessionManager::open(&state.data_dir, &body.password) {
+        Ok(sm) => Arc::new(sm),
+        Err(_) => {
+            return (StatusCode::UNAUTHORIZED, "wrong password").into_response();
+        }
     };
-    // Verify by attempting a re-open with the password.
-    let _ = sm;
-    let ok = echo_ai_core::session::SessionManager::open(&state.data_dir, &body.password).is_ok();
-    if !ok {
-        return (StatusCode::UNAUTHORIZED, "wrong password").into_response();
+    {
+        #[allow(clippy::expect_used)] // poisoned slot = invariant violation
+        let mut slot = state.session.lock().expect("session slot lock poisoned");
+        if slot.is_none() {
+            *slot = Some(sm);
+        }
     }
     let token = state.unlock();
     Json(json!({ "token": token })).into_response()

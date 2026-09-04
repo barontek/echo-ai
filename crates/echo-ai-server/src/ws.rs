@@ -420,7 +420,7 @@ fn resolve_pending(ask_user: &SocketAskUser, id: &str, answer: Option<String>) {
 ///
 /// The length is inherent: spawn the run, forward events, join,
 /// persist, and emit `done` — each step needs the previous one's
-/// handles. The C version's `routes_ws_chat.c` had the same shape.
+/// handles. the original implementation's `routes_ws_chat.c` had the same shape.
 #[allow(clippy::too_many_lines)] // linear spawn/join orchestration
 async fn start_turn(chat: &mut WsChat) {
     let messages: Vec<LlmMessage> = chat

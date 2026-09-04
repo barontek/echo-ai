@@ -94,7 +94,7 @@ pub async fn run_tui(config: Config, agent: Arc<Agent>) -> std::io::Result<()> {
 /// The main loop: dispatch events, update state, render.
 ///
 /// The length is inherent: one loop body per event source (keyboard,
-/// agent, dialogs) — the C version's `tui.c` poll loop was the same
+/// agent, dialogs) — the original implementation's `tui.c` poll loop was the same
 /// shape.
 #[allow(clippy::too_many_lines)] // event loop: one arm per source
 async fn run_loop(
@@ -284,7 +284,7 @@ fn to_model_key(key: &KeyEvent) -> keys::Key {
 /// Starts a turn on the agent (spawns the run task).
 ///
 /// The argument count is wiring, not logic: every subsystem the turn
-/// touches is threaded through (same shape as the C version's
+/// touches is threaded through (same shape as the original implementation's
 /// `tui_worker.c`).
 #[allow(clippy::too_many_arguments)] // subsystem wiring
 fn start_turn(

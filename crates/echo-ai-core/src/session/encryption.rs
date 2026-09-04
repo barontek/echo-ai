@@ -2,7 +2,7 @@
 //! Fernet-format tokens (AES-128-CBC + HMAC-SHA256), and the
 //! salt/pepper/verifier key-material files.
 //!
-//! The on-disk format is byte-compatible with the C project's
+//! The on-disk format is byte-compatible with the original implementation's
 //! `encryption.c` — a vault created by either version must open in the
 //! other. Token layout: `0x80 | 8-byte big-endian timestamp | 16-byte IV
 //! | AES-128-CBC ciphertext (PKCS7) | 32-byte HMAC-SHA256`. Key:
@@ -36,7 +36,7 @@ type Aes128CbcEnc = Encryptor<Aes128>;
 type Aes128CbcDec = Decryptor<Aes128>;
 type HmacSha256 = Hmac<Sha256>;
 
-/// Scrypt cost parameters (locked to the C version's values — changing
+/// Scrypt cost parameters (locked to the original implementation's values — changing
 /// them would make existing vaults unreadable).
 const SCRYPT_LOG_N: u8 = 18; // N = 2^18 = 262144
 const SCRYPT_R: u32 = 8;
@@ -181,10 +181,14 @@ impl EncryptionKey {
 }
 
 /// First-run detection: the salt file's presence marks an initialized
-/// vault (the C version's rule).
+/// vault (the original implementation's rule).
 #[must_use]
+/// Whether a vault exists, keyed on the verifier file — the C
+/// server's authoritative check (`routes_auth.c` uses
+/// `verifier_exists`). A dir with key material but no verifier is
+/// in the setup state, exactly like the original implementation.
 pub fn vault_initialized(data_dir: &Path) -> bool {
-    data_dir.join(SALT_FILE).exists()
+    data_dir.join(VERIFIER_FILE).exists()
 }
 
 /// Generates `n` random bytes.
@@ -318,8 +322,26 @@ pub fn verifier_file_matches(key: &EncryptionKey, path: &Path) -> bool {
 /// # Errors
 /// Propagates key-material or verifier write failures.
 pub fn initialize_vault(data_dir: &Path, password: &str) -> Result<EncryptionKey> {
-    create_salt(data_dir)?;
-    create_pepper(data_dir)?;
+    // A complete vault (verifier present) must go through the verify
+    // path — never silently re-derive with a new password.
+    if data_dir.join(VERIFIER_FILE).exists() {
+        let key = EncryptionKey::derive(
+            password,
+            &load_key_material(&data_dir.join(SALT_FILE))?,
+            &load_key_material(&data_dir.join(PEPPER_FILE))?,
+        )?;
+        check_verifier(&key, data_dir)?;
+        return Ok(key);
+    }
+    // Idempotent key-material creation: reuse existing files (the C
+    // setup flow can run against a dir holding a leftover `.pepper`
+    // from a partial vault) — only create what is missing.
+    if !data_dir.join(SALT_FILE).exists() {
+        create_salt(data_dir)?;
+    }
+    if !data_dir.join(PEPPER_FILE).exists() {
+        create_pepper(data_dir)?;
+    }
     let key = EncryptionKey::derive(
         password,
         &load_key_material(&data_dir.join(SALT_FILE))?,
@@ -442,9 +464,11 @@ mod tests {
                 assert_eq!(meta.permissions().mode() & 0o777, 0o600, "{name} mode");
             }
         }
-        // Second init must fail on the exclusive-create of salt.
-        let err = initialize_vault(&dir, "pw2").expect_err("already initialized");
-        assert!(matches!(err, Error::Io { .. }));
+        // Initialization is idempotent (reuses existing key material —
+        // the C setup flow can run against a partially-created vault),
+        // but a different password is rejected by the verifier.
+        let err = initialize_vault(&dir, "pw2").expect_err("wrong pw");
+        assert!(matches!(err, Error::Crypto(_)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

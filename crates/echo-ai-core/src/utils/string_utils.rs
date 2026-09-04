@@ -1,6 +1,6 @@
 //! String helpers that aren't in `std` but show up everywhere in this
 //! codebase: JSON escaping, ellipsis truncation, and a few guarded
-//! splitting utilities. The C project's `string_utils.c` carried more,
+//! splitting utilities. the original implementation's `string_utils.c` carried more,
 //! but `std` covers trimming/splitting/prefix checks natively.
 //!
 //! Depends on: `std` only.

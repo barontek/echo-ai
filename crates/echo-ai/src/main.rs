@@ -1,8 +1,8 @@
 //! Echo AI binary: CLI entry point and mode dispatcher.
 //!
-//! Mirrors `~/echo-ai-c/src/main.c`: parses flags, loads config, then
+//! Parses flags, loads config, then
 //! hands control to the web server (`--web`, the default) or the TUI
-//! (`--cli`). The C version's `--chat` REPL is deliberately not ported,
+//! (`--cli`). the original implementation's `--chat` REPL is deliberately not ported,
 //! and plugin loading is not part of this binary (plugins were cut from
 //! the Rust port).
 //!

@@ -4,17 +4,17 @@ The engine behind the web server and TUI: agent loop, LLM providers,
 tool registry, session store (SQLite + Fernet encryption), safety
 enforcement, config, and shared utilities.
 
-Mirrors `~/echo-ai-c/src/{agent,llm,tools,session,safety,config,change_tracker,utils}`
-one-to-one. Depends on `serde`/`serde_json`, `rusqlite` (bundled),
+Module layout mirrors the responsibilities: agent, LLM providers,
+tool registry, session store, safety, config, utilities. Depends on `serde`/`serde_json`, `rusqlite` (bundled),
 `reqwest` (rustls), `RustCrypto` crates, `tokio`.
 
 ## Module map
 
 | Module | Responsibility |
 |---|---|
-| `config` | `TOML` config (serde), replacing the C `.conf` parser |
+| `config` | `TOML` config (serde) |
 | `safety` | workspace pinning, path/URL/command/socket checks, approval gating |
-| `session` | SQLite schema, Fernet encryption (scrypt salt‖pepper), manager, branches, memory, migration — DB-format compatible with the C version |
+| `session` | SQLite schema, Fernet encryption (scrypt salt‖pepper), manager, branches, memory, migration |
 | `agent` | run loop (async, cancellable), prompt/title/summarize, context windowing |
 | `llm` | `LlmProvider` trait + ollama / openai (Codex OAuth) / openai_compatible / opencode_zen providers |
 | `tools` | `Tool` trait + registry + ~39 built-in tools |

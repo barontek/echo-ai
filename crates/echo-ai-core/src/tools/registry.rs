@@ -1,7 +1,7 @@
 //! The tool registry: built-in tools wired with config-derived state,
 //! enablement filtering, and provider-facing specs.
 //!
-//! The C version's `REGISTRY_TEST` seam (skip wiring the full registry
+//! the original implementation's `REGISTRY_TEST` seam (skip wiring the full registry
 //! for tests) is unnecessary in Rust — every tool is a plain struct in
 //! the same crate, so there is no link-time cost to building them all;
 //! the seam is resolved-by-design (recorded in the review doc).
@@ -81,7 +81,7 @@ impl Registry {
         }
 
         // Session-backed tools are always registered; they error cleanly
-        // at execution when persistence is disabled (the C version's
+        // at execution when persistence is disabled (the original implementation's
         // registry wiring, minus the link-time gymnastics).
         register(Arc::new(Memory));
         register(Arc::new(SemanticSearch::new(index.clone())));

@@ -1,7 +1,7 @@
 //! The `Tool` contract: what a tool is, what it returns, and what the
 //! execution context provides.
 //!
-//! Mirrors the C project's `tool.h` vtable contract; per-tool contracts
+//! Mirrors the original implementation's `tool.h` vtable contract; per-tool contracts
 //! live in each tool's module docs.
 //!
 //! Depends on: `serde_json`, `tokio`, `futures-util`, crate `config`,

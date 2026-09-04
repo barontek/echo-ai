@@ -1,7 +1,7 @@
 //! Built-in `TLS`: a local CA + localhost certificate generated on
 //! first run (rcgen), stored in the data dir with 0600 key files.
 //!
-//! The trust story mirrors the C project's Caddy setup without the
+//! The trust story mirrors the original implementation's Caddy setup without the
 //! extra process: the CA is generated once and the user imports it into
 //! their browser trust store; subsequent runs reuse the same CA, so
 //! re-imports are never needed. Custom certificates (`[server]

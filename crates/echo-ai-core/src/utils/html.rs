@@ -1,7 +1,7 @@
 //! HTML-to-text extraction: readable text from raw HTML with
 //! boilerplate skipping, entity decoding, and truncation.
 //!
-//! A deliberately compact single-module design (the C project split
+//! A deliberately compact single-module design (the original implementation split
 //! this into seven files for length discipline; a tokenizer + writer
 //! pair keeps the same behaviors without the file sprawl). The
 //! tokenizer is a best-effort HTML scanner, not a spec-compliant parser

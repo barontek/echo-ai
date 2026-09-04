@@ -1,7 +1,7 @@
 //! Context windowing: trimming the conversation to fit the model's
 //! budget, and transcript summarization.
 //!
-//! The C version's `context.c` (smart selection, thinking splitting)
+//! the original implementation's `context.c` (smart selection, thinking splitting)
 //! reduces to two simple rules here: keep the system prompt + the most
 //! recent messages up to the budgets, and when even that overflows,
 //! summarize the head into a compressed replacement.

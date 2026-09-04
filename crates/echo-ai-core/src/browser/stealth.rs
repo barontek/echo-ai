@@ -1,7 +1,7 @@
 //! Browser stealth: launch flags and `CDP` scripts that make the
-//! automation less fingerprintable (the C version's `stealth.c`).
+//! automation less fingerprintable (.
 //!
-//! The C version's stealth header logic reduces to two pieces here: a
+//! the original implementation's stealth header logic reduces to two pieces here: a
 //! curated flag set and one `Page.addScriptToEvaluateOnNewDocument`
 //! script that neutralizes the `navigator.webdriver` signal. `CDP`
 //! itself is not detectable from page JS (it is a protocol, not a

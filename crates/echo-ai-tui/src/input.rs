@@ -1,5 +1,5 @@
 //! Line editor model: byte-based cursor with codepoint-atomic deletion
-//! and history (the C version's `tui_input.c`).
+//! and history (.
 //!
 //! Pure and terminal-independent — tests drive it directly.
 //!

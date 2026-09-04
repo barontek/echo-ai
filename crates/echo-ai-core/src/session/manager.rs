@@ -1,6 +1,6 @@
 //! Session store facade: CRUD over the encrypted SQLite database.
 //!
-//! All DB access goes through one `Mutex<Connection>` (the C version's
+//! All DB access goes through one `Mutex<Connection>` (the original implementation's
 //! mutex-protected facade, translated to Rust ownership). Every fallible
 //! step is checked; writes are transactional, so a failed save never
 //! leaves a partially-updated row.
@@ -9,7 +9,7 @@
 //! `SessionManager` is `Send + Sync` (mutex-guarded connection, `Copy`
 //! key) and safe to share across tasks. No claim is made about
 //! cross-process access — two processes opening the same data dir are
-//! unsupported, same as the C version.
+//! unsupported, same as the original implementation.
 //!
 //! Depends on: `rusqlite`, crate `session::{db,encryption,migration}`.
 
@@ -28,7 +28,7 @@ use super::migration;
 use super::{Session, db};
 
 /// A row in the session list (titles decrypted; decryption failures
-/// surface as `None`, matching the C version's lenient listing).
+/// surface as `None`, matching the original implementation's lenient listing).
 #[derive(Debug, Clone)]
 pub struct SessionSummary {
     /// Session id.

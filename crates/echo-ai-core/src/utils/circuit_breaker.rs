@@ -1,7 +1,7 @@
 //! Circuit breaker: `CLOSED` → `OPEN` → `HALF_OPEN` fail-fast state
 //! machine, driven by the monotonic clock (`std::time::Instant`).
 //!
-//! Ports the C version's semantics: failures trip the breaker after a
+//! Ports the original implementation's semantics: failures trip the breaker after a
 //! threshold; the breaker stays `OPEN` for a cooldown; `HALF_OPEN`
 //! admits one probe call; a success resets to `CLOSED`, a failure
 //! re-`OPEN`s it.

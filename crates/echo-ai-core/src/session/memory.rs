@@ -1,7 +1,7 @@
 //! Persistent user-memory key/value store (`user_memory` table),
 //! injected into the agent's system prompt.
 //!
-//! The C version's known gap was `memory_get_dup`: a failed allocation
+//! the original implementation's known gap was `memory_get_dup`: a failed allocation
 //! was indistinguishable from "not found". Rust's ownership model
 //! removes the seam entirely — `memory_get` returns `Ok(None)` for a
 //! missing key and `Err` only for real store failures, and the table is
@@ -15,7 +15,7 @@ use rusqlite::Connection;
 
 use crate::error::{Error, Result};
 
-/// Sanity cap on a single fact's size (the C version had a similar
+/// Sanity cap on a single fact's size (the original implementation had a similar
 /// bound; facts are prompt material, not documents).
 pub const MAX_FACT_SIZE: usize = 4096;
 

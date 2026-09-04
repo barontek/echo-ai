@@ -2,7 +2,7 @@
 //! defaults (AGENTS.md "Structure and modules" — one responsibility per
 //! module; this file owns only the config surface, not parsing details).
 //!
-//! The C project used a custom `.conf` format; the port deliberately
+//! the original implementation used a custom `.conf` format; the port deliberately
 //! switched to `TOML` (user decision) while keeping section names and
 //! option semantics recognizable. A missing default config file loads
 //! clean defaults; an explicitly-provided `--config` path must exist and
@@ -196,7 +196,7 @@ impl Default for OpenCodeGo {
     }
 }
 
-/// Path-safety and approval policy. Mirrors the C version's semantics:
+/// Path-safety and approval policy. Mirrors the original implementation's semantics:
 /// configured blocklists *replace* the built-in defaults, and the
 /// workspace pinning is the real security boundary, not the lists.
 #[derive(Debug, Clone, Deserialize)]
@@ -295,8 +295,7 @@ impl Default for Search {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Server {
-    /// Listen port. `TLS` is on by default; the default port matches the
-    /// C project's Caddy-fronted 8443.
+    /// Listen port. `TLS` is on by default (port 8443).
     pub port: u16,
     /// Bind address; localhost by default now that `TLS` is built in.
     pub bind: String,

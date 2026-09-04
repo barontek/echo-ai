@@ -1,6 +1,6 @@
 //! Safety policy: workspace pinning, path/command/domain checks, and
 //! approval gating — the single enforcement point for "no escaping the
-//! workspace, no approval bypass" (mirrors the C project's `safety.c`).
+//! workspace, no approval bypass" (mirrors the original implementation's `safety.c`).
 //!
 //! The workspace pinning is the real security boundary; the blocklists
 //! are best-effort conveniences that (a) replace the built-in defaults

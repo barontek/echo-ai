@@ -1,7 +1,7 @@
 //! Shared utilities: logging, metrics, circuit breaker, rate limiter,
 //! string helpers, and the HTML-to-text pipeline.
 //!
-//! Mirrors the C project's `src/utils/` split (one responsibility per
+//! Mirrors the original implementation's `src/utils/` split (one responsibility per
 //! module, no catch-all `utils.rs`); `callbacks` lands with the agent
 //! (Phase 4) and `http_client` with the network tools (Phase 3).
 //!

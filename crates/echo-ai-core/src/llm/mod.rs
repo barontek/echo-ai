@@ -1,5 +1,5 @@
 //! LLM provider layer: the `LlmProvider` trait (contract-only, mirroring
-//! the C project's `provider.h`), the HTTP plumbing, and the concrete
+//! the provider contract), the HTTP plumbing, and the concrete
 //! providers.
 //!
 //! Providers: `ollama`, `openai_compatible` (LM Studio, vLLM,

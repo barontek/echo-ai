@@ -1,7 +1,7 @@
 //! `deep_search`: multi-step research — web search, fetch the top
 //! pages, and combine the findings into a single result.
 //!
-//! The C version's double-free bug (ownership transferred before
+//! the original implementation's double-free bug (ownership transferred before
 //! validation) is structurally impossible here: the search results are
 //! owned values, and fetch failures are recorded per-URL, never
 //! fatal to the whole run.

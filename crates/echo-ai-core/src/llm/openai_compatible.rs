@@ -3,7 +3,7 @@
 //! subclasses — `OpenCode Zen` and `OpenCode Go`.
 //!
 //! Parser is a pure function over SSE lines; tests feed fixture lines
-//! (the C version's `openai_compatible_stream` ported in spirit).
+//! (streaming parser).
 //!
 //! Depends on: `serde_json`, `tokio`, crate `llm::{http,provider}`.
 

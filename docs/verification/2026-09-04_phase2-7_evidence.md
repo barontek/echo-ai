@@ -68,7 +68,7 @@ All commands run inside `nix develop` (stable 1.98.0, nightly
   dispatcher, the TUI event loop, and `start_turn` — protocol tables and
   subsystem wiring, each with an in-code reason.
 
-## Design deviations from the C version (reviewed)
+## Design notes (reviewed)
 
 - `utils/html.rs` one module instead of seven files; `llm/http.rs`
   mockable client replaces `curl_stub`; `REGISTRY_TEST` seam dissolved;

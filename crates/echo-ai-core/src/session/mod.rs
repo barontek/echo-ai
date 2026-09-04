@@ -4,12 +4,12 @@
 //! `metadata` and `events` are kept as generic `serde_json::Value` — the
 //! branch/tag bookkeeping (Phase 4/5) and event logging evolve freely
 //! without churning this module's API. `messages` use the
-//! C-compatible [`crate::agent::message::Message`] shape.
+//! compatible [`crate::agent::message::Message`] shape.
 //!
 //! Submodules: `db` (schema), `encryption` (Fernet/scrypt vault),
 //! `manager` (the facade), `memory` (user facts), `migration`
 //! (crash-safe password change). `serialize`/`list`/`purge`/`branch`
-//! from the C project live inside the manager here — the split the C
+//! from the original implementation live inside the manager here — the split the C
 //! version needed for file-length discipline is handled by Rust's
 //! module system without extra files.
 //!
@@ -33,7 +33,7 @@ pub struct Session {
     /// Decrypted title; `None` until generated or set.
     pub title: Option<String>,
     /// Whether a title-generation attempt already happened (prevents
-    /// retry loops in the C version's flow).
+    /// retry loops in the original implementation's flow).
     pub title_generation_attempted: bool,
     /// Creation timestamp as stored in the DB (ISO-8601 text).
     pub created_at: String,
@@ -78,7 +78,7 @@ impl Session {
     }
 }
 
-/// ISO-8601-ish timestamp (the C version stored `time(NULL)`-derived
+/// ISO-8601-ish timestamp (the original implementation stored `time(NULL)`-derived
 /// text via `ctime`/`asctime`-style formatting; the exact string is not
 /// part of any compat contract, only its presence).
 fn now_iso() -> String {

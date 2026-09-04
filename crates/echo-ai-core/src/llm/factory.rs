@@ -1,5 +1,5 @@
 //! Provider factory: config-driven construction of the configured
-//! provider (the C project's `factory.c` catalog).
+//! provider (the original implementation's `factory.c` catalog).
 //!
 //! Depends on: crate `config`, `llm::{http,ollama,openai,openai_compatible,opencode,provider}`.
 

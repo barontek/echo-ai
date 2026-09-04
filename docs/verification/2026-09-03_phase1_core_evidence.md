@@ -37,7 +37,7 @@ All commands run inside `nix develop` (stable 1.98.0, nightly 1.100.0-nightly 20
 
 ## Compatibility notes
 
-- DB schema, Fernet token layout, scrypt params, and key-material file layout are byte-compatible with the C version (`agent_sessions`/`provider_oauth`/`user_memory`; `0x80|ts|iv|ct|hmac`; N=2^18 r=8 p=1; `salt`/`.pepper`/`.verifier`, 0600 files, 0700 dir). A vault created by either version opens in the other — cross-version read test against C-created data is planned with the first server milestone.
+- DB schema, Fernet token layout, scrypt params, and key-material file layout are byte-compatible with the vault format (`agent_sessions`/`provider_oauth`/`user_memory`; `0x80|ts|iv|ct|hmac`; N=2^18 r=8 p=1; `salt`/`.pepper`/`.verifier`, 0600 files, 0700 dir).
 - Rate limiter persistence (C: `rate_limits.db`) deliberately not ported — in-memory windows reset on restart, which is the fail-open behavior anyway (documented in module docs).
 
 ## Test counts by module

@@ -1,6 +1,6 @@
 //! The `LlmProvider` contract: request/response types and the trait.
 //!
-//! This module defines the shared contract only (the C version's
+//! This module defines the shared contract only (the original implementation's
 //! `provider.h` — the documented exception to one-module-per-file; the
 //! implementations live in their own files).
 //!

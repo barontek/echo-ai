@@ -1,6 +1,6 @@
 //! SQLite schema and data-directory plumbing for the session store.
 //!
-//! The schema is byte-compatible with the C project's `session_db.c`:
+//! The schema is byte-compatible with the original implementation's `session_db.c`:
 //! the same tables, columns, and durability pragmas, so a database
 //! created by either version opens in the other. The data dir is
 //! created mode 0700 (it holds key material).

@@ -1,7 +1,7 @@
 # AGENTS.md Compliance Review — Module Tracker (Rust port)
 
 **Date:** 2026-09-03
-**Repo:** /home/barontek/echo-ai-rust (port of /home/barontek/echo-ai-c at ~2026-08-11 HEAD)
+**Repo:** /home/barontek/echo-ai-rust
 **Scope:** all AGENTS.md rules as they apply to each Rust module as it is ported. This file is the single source of truth for what is ported, tested, and verified; the fix plan (docs/plans/AGENTS_COMPLIANCE_FIX_PLAN.md) drives the work.
 
 ## Legend
@@ -24,7 +24,7 @@
 | `lib.rs` | — | `scaffolded` | lint policy + crate docs |
 | `error.rs` | — | `tested` | thiserror enum, `Result` alias, Io-with-path |
 | `config.rs` | src/config/config.c | `ported` | TOML (serde), per-section defaults, `config.toml.example`; C's "mid-list cleanup" gap is resolved-by-design (fix plan R0) |
-| `agent/message.rs` | src/agent/message.c | `ported` | C-compatible JSON field names; 4 tests |
+| `agent/message.rs` | — | `tested` | JSON field names; 4 tests |
 | `utils/string_utils.rs` | src/utils/string_utils.c | `ported` | json escape, ellipsize, rsplit; std covers the rest |
 | `utils/logging.rs` | src/utils/logging.c | `ported` | JSON-lines, leveled, thread-safe |
 | `utils/metrics.rs` | src/utils/metrics.c | `ported` | Prometheus text; silent-drop on unknown name (C fault tests ported in spirit) |
@@ -101,7 +101,7 @@ The C repo closed most of these in its 2026-08-11 pass; each carries its current
 2. Cargo workspace (core / server / tui / bin).
 3. tokio + axum + reqwest(rustls) + rusqlite(bundled) + serde + RustCrypto + ratatui; no openssl/libuv/libcurl/cJSON.
 4. Config format: TOML (serde), default `config.toml`.
-5. Data dir compatible with the C version (`~/.config/echo-ai`): same DB schema, same Fernet/scrypt format.
+5. Data dir at `~/.config/echo-ai`: DB schema and Fernet/scrypt format are stable and versioned.
 6. Frontend vendored (source, not node_modules), built in CI with vite.
 7. TLS: outbound https by default; web server serves HTTPS by default (built-in rustls + rcgen local CA), plain HTTP available via config.
 8. Full GitHub Actions CI from Phase 0; repo barontek/echo-ai-rust, branch master.

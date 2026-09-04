@@ -3,7 +3,7 @@
 **Date:** 2026-09-03
 **Source:** docs/reviews/AGENTS_COMPLIANCE_REVIEW.md (module tracker)
 **Repo:** /home/barontek/echo-ai-rust
-**Scope:** the phased port of echo-ai-c. Each phase ships code + tests + (where the C version had them) ported regression tests + fault-injection tests for multi-step commit paths + verification evidence in docs/verification/.
+**Scope:** the phased implementation. Each phase ships code + tests + fault-injection tests for multi-step commit paths + verification evidence in docs/verification/.
 
 ## Conventions
 
@@ -71,7 +71,7 @@ Notes:
 - [x] P5A TLS (rcgen CA + localhost leaf, 0600 keys, custom PEM overrides, plain-HTTP fallback).
 - [x] P5B middleware (subtle constant-time token, setup/locked/unlocked, per-IP rate limit, CORS).
 - [x] P5C all 16 C endpoints (sessions CRUD, import/export/debug-export, models, chat, stream, metrics, undo/redo).
-- [x] P5D WS chat protocol (frames 1:1 with the C version).
+- [x] P5D WS chat protocol (all frames implemented).
 - [x] P5E SSE + blocking chat.
 - [x] P5F static frontend serving (ServeDir, no symlink follow).
 - [x] P5G OAuth HTTP routes (status/start/logout; device flow is frontend-side, deferred).

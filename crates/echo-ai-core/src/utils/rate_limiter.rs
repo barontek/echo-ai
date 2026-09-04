@@ -1,7 +1,7 @@
 //! In-memory rate limiter: per-IP fixed-window request throttling plus a
 //! rolling window on unlock attempts.
 //!
-//! The C version persisted buckets to SQLite (`rate_limits.db`); this
+//! the original implementation persisted buckets to SQLite (`rate_limits.db`); this
 //! port keeps the same policy surface in memory — a single-process
 //! server loses nothing, and restart resets windows, which is the
 //! fail-open behavior anyway. Stale buckets are swept on access, so the

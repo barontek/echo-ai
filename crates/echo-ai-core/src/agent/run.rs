@@ -4,7 +4,7 @@
 //! One `Agent` is shared by a frontend but each `run` invocation owns
 //! its working transcript; the agent itself is stateless between runs
 //! (safe to call from a single task at a time — the same serialization
-//! contract the C version enforced with its loop thread).
+//! contract the original implementation enforced with its loop thread).
 //!
 //! Depends on: `tokio` (+ `tokio-util` cancellation), crate `llm`,
 //! `safety`, `tools`, `session`, `change_tracker`.
@@ -31,7 +31,7 @@ use crate::tools::tool::{AskUser, ToolContext};
 pub struct AgentConfig {
     /// Model name for the configured provider.
     pub model: String,
-    /// System prompt prepended to every run (C-compatible).
+    /// System prompt prepended to every run .
     pub system_prompt: String,
     /// Sampling temperature.
     pub temperature: f64,
@@ -168,7 +168,7 @@ impl Agent {
     /// provide one.
     ///
     /// The length is inherent: one phase per loop iteration (stream the
-    /// turn, run each tool call, feed results back) — the C version's
+    /// turn, run each tool call, feed results back) — the original implementation's
     /// `agent_run.c` had the same shape.
     ///
     /// # Errors
@@ -186,7 +186,7 @@ impl Agent {
         let mut final_response = ChatResponse::default();
 
         // Inject the configured system prompt when the caller did not
-        // already provide one (C-compatible behavior).
+        // already provide one (compatible behavior).
         if !self.config.system_prompt.is_empty()
             && messages.first().map(|m| m.role.as_str()) != Some("system")
         {

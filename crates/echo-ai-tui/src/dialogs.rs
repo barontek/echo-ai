@@ -1,5 +1,5 @@
 //! Modal dialog state machine: password, ask-user, approval, and
-//! confirm-quit (the C version's `tui_dialogs.c`, model only).
+//! confirm-quit (model only).
 //!
 //! Depends on: `std` only.
 

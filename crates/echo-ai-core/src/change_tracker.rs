@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 
-/// Maximum undo/redo entries (the C version's `CT_MAX_STACK`).
+/// Maximum undo/redo entries (the original implementation's `CT_MAX_STACK`).
 pub const MAX_STACK: usize = 64;
 
 /// A captured file state.

@@ -1,5 +1,5 @@
 //! Scrollback model: greedy word-wrapped chat lines with block-append
-//! commit (the C version's `tui_chat.c`).
+//! commit .
 //!
 //! Pure and terminal-independent.
 //!

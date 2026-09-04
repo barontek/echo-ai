@@ -1,10 +1,10 @@
 //! Message model: the unit of conversation, persisted by the session
 //! store and exchanged with LLM providers.
 //!
-//! The JSON field names match the C project's `message.c` serialization
-//! exactly (a session DB created by the C version must deserialize
-//! cleanly here and vice versa). `serde` handles optionality: fields the
-//! C version conditionally emits map to `Option<T>` with `skip_serializing_if`.
+//! The JSON field names match the original implementation's `message.c` serialization
+//! exactly (a session DB created by the original implementation must deserialize
+//! cleanly here and vice versa). `serde` handles optionality: fields
+//! emitted conditionally map to `Option<T>` with `skip_serializing_if`.
 //!
 //! Depends on: `serde`.
 
@@ -36,7 +36,7 @@ pub struct Function {
     /// Tool name, as registered in the tool registry.
     pub name: String,
     /// JSON-encoded arguments string (kept as a string so the model's
-    /// exact text round-trips; the C version serialized it the same way).
+    /// exact text round-trips; the original implementation serialized it the same way).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments: Option<String>,
 }
@@ -128,13 +128,13 @@ impl Message {
     }
 }
 
-/// Unix epoch seconds; the C version used `time(NULL)` for the same field.
+/// Unix epoch seconds; the original implementation used `time(NULL)` for the same field.
 #[must_use]
 pub fn now_epoch_secs() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => i64::try_from(d.as_secs()).unwrap_or(i64::MAX),
-        // Clock before the epoch: 0 is the C version's clamp value too.
+        // Clock before the epoch: 0 is the original implementation's clamp value too.
         Err(_) => 0,
     }
 }

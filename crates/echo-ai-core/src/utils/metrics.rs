@@ -1,6 +1,6 @@
 //! Prometheus-text metrics registry: counters and histograms.
 //!
-//! The C version had a fault-injection-tested registry that silently
+//! the original implementation had a fault-injection-tested registry that silently
 //! dropped updates when full or on OOM; Rust's `try_reserve`-driven
 //! growth keeps the "never let metrics break the app" property without
 //! the injection seams — updates return `bool` and callers may ignore

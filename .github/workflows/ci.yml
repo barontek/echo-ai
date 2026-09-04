@@ -58,14 +58,12 @@ jobs:
       with:
         tool: cargo-nextest,cargo-audit,cargo-deny
 
-    - name: install nightly (flake pin 2026-08-25) for sanitizers + Miri
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2026-08-25
-        components: rust-src, llvm-tools-preview, miri
-
-    - name: record toolchain
+    # Nightly install is plain rustup (deterministic; dtolnay's
+    # multi-toolchain component semantics are unclear) and shares the
+    # traceability step. Pin must match flake.nix.
+    - name: install nightly (flake pin) + record toolchain
       run: |
+        rustup toolchain install nightly-2026-08-25 --profile minimal --component rust-src,llvm-tools-preview,miri
         rustup show
         rustc --version && cargo --version
         rustc +nightly-2026-08-25 --version

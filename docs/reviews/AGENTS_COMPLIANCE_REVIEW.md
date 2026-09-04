@@ -104,4 +104,4 @@ The C repo closed most of these in its 2026-08-11 pass; each carries its current
 5. Data dir at `~/.config/echo-ai`: DB schema and Fernet/scrypt format are stable and versioned.
 6. Frontend vendored (source, not node_modules), built in CI with vite.
 7. TLS: outbound https by default; web server serves HTTPS by default (built-in rustls + rcgen local CA), plain HTTP available via config.
-8. Full GitHub Actions CI from Phase 0; repo barontek/echo-ai-rust, branch master.
+8. Full GitHub Actions CI from Phase 0; repo barontek/echo-ai, branch master.

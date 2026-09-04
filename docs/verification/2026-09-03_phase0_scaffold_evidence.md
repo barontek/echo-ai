@@ -48,6 +48,6 @@ fail-fast on typos, with regression test).
 ## CI
 
 .github/workflows/ci.yml written but not yet exercised on GitHub
-(pending initial commit + push to barontek/echo-ai-rust). The ASan stage
+(pending initial commit + push to barontek/echo-ai). The ASan stage
 command was reproduced locally (row above); UBSan/TSan stages use the
 same invocation with `-Z sanitizer=undefined|thread`.

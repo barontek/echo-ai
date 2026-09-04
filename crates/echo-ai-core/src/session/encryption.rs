@@ -38,7 +38,15 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// Scrypt cost parameters (locked to the original implementation's values — changing
 /// them would make existing vaults unreadable).
+#[cfg(not(test))]
 const SCRYPT_LOG_N: u8 = 18; // N = 2^18 = 262144
+/// Test-only cheap cost (N = 2^10, ~1 MB): the suite exercises logic —
+/// roundtrips, tamper rejection, partial-commit rollback — not KDF
+/// strength, and no test pins real-parameter output bytes. Debug scrypt
+/// at N=2^18 takes ~50 s per derivation, which dominated the session
+/// tests (~21 min for 21 tests).
+#[cfg(test)]
+const SCRYPT_LOG_N: u8 = 10;
 const SCRYPT_R: u32 = 8;
 const SCRYPT_P: u32 = 1;
 

@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Dynamic gate — everything that runs the code, as opposed to the static
 # quality gate in lint.yml (fmt/clippy/build/doc, path-filtered). Runs
@@ -77,11 +77,13 @@ jobs:
         rustc --version && cargo --version
         rustc +nightly-2026-08-25 --version
 
-    # Cargo target + registry cache. Restored here so nextest reuses the
-    # artifacts lint.yml built (same stable 1.98.0 + Cargo.lock, so the
-    # cache keys match). The sanitizer/Miri stages below are uncached:
-    # -Z build-std cold-builds std every run anyway.
+    # Cargo target + registry cache. Uses a shared key so workflows running
+    # on the same toolchain + Cargo.lock can reuse cached artifacts across runs.
+    # The sanitizer/Miri stages below are uncached: -Z build-std cold-builds
+    # std every run anyway.
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "debian-stable"
 
     - name: nextest
       run: cargo nextest run --all --locked
@@ -168,6 +170,9 @@ jobs:
     - name: nextest
       run: nix develop -c cargo nextest run --all --locked
 
+    - name: doc tests
+      run: nix develop -c cargo test --doc --all --locked
+
     - name: file-size audit (non-blocking)
       run: nix develop -c scripts/check-file-lengths.sh
 
@@ -222,6 +227,8 @@ jobs:
         tool: cargo-nextest
 
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "macos-stable"
 
     - name: record toolchain
       run: rustup show && rustc --version && cargo --version
@@ -230,3 +237,6 @@ jobs:
       env:
         ASAN_OPTIONS: detect_leaks=0
       run: cargo nextest run --all --locked
+
+    - name: doc tests
+      run: cargo test --doc --all --locked

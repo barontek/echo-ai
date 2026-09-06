@@ -10,7 +10,9 @@ on:
       - 'flake.nix'
       - 'flake.lock'
       - 'crates/**'
-      - '.github/workflows/lint.yml'
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'deny.toml'
   pull_request:
     branches: [ "master" ]
     paths:
@@ -20,11 +22,13 @@ on:
       - 'flake.nix'
       - 'flake.lock'
       - 'crates/**'
-      - '.github/workflows/lint.yml'
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'deny.toml'
 
 concurrency:
   group: lint-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 # Static-quality gate (AGENTS.md "Build flags"): fmt/clippy/build/doc all
 # under -D warnings. Path-filtered to Rust-only changes so docs/frontend
@@ -60,9 +64,11 @@ jobs:
         toolchain: 1.98.0
         components: clippy, rustfmt, rust-src, llvm-tools-preview
 
-    # Cargo target + registry cache; the artifacts built here are reused
-    # by ci.yml's nextest (same toolchain + Cargo.lock, so the keys match).
+    # Cargo target + registry cache. Uses a shared key so workflows running
+    # on the same toolchain + Cargo.lock can reuse cached artifacts across runs.
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "debian-stable"
 
     - name: record toolchain
       run: rustup show && rustc --version && cargo --version
@@ -118,6 +124,8 @@ jobs:
         components: clippy, rustfmt, rust-src, llvm-tools-preview
 
     - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "macos-stable"
 
     - name: record toolchain
       run: rustup show && rustc --version && cargo --version
@@ -130,3 +138,6 @@ jobs:
 
     - name: build (-D warnings)
       run: RUSTFLAGS="-D warnings" cargo build --all-targets --locked
+
+    - name: doc (-D warnings)
+      run: RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items --locked

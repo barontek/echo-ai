@@ -1,4 +1,4 @@
-name: CI
+name: ci
 
 on:
   push:
@@ -6,16 +6,22 @@ on:
   pull_request:
     branches: [ "master" ]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Dynamic gate — everything that runs the code, as opposed to the static
+# quality gate in lint.yml (fmt/clippy/build/doc, path-filtered). Runs
+# unconditionally on every push/PR to master, like Kopuz's build.yml.
+#
 # Layout (mirrors echo-ai-c's CI split; see AGENTS.md "Environment and
 # toolchain" and "Build flags"):
-# - backend-debian runs the whole gate with a plain rustup toolchain
-#   inside a debian:trixie container. GitHub has no hosted Debian runners,
-#   so the container *is* the Debian environment — the same trick as the
-#   C project's debian:sid containers (C pins sid because notcurses was
-#   dropped from trixie's archive; this repo has no such dependency, so
-#   trixie works here). Stable 1.98.0 comes from rust-toolchain.toml via
-#   dtolnay/rust-toolchain; nightly 2026-08-25 (must match flake.nix's
-#   pin) supplies the sanitizer/Miri components.
+# - backend-debian runs the gate with a plain rustup toolchain inside a
+#   debian:trixie container. GitHub has no hosted Debian runners, so the
+#   container *is* the Debian environment — the same trick as the C
+#   project's debian:sid containers. Stable 1.98.0 comes from
+#   rust-toolchain.toml via dtolnay/rust-toolchain; nightly 2026-08-25
+#   (must match flake.nix's pin) supplies the sanitizer/Miri components.
 # - backend-nix runs the same gate via `nix develop`; flake.lock pins
 #   both toolchains, and `rustup show` records what actually ran.
 # - backend-macos is the sanctioned non-Nix path (rustup +
@@ -71,20 +77,21 @@ jobs:
         rustc --version && cargo --version
         rustc +nightly-2026-08-25 --version
 
-    - name: fmt
-      run: cargo fmt --all -- --check
-
-    - name: clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-
-    - name: build (-D warnings)
-      run: RUSTFLAGS="-D warnings" cargo build --all-targets --locked
-
-    - name: doc (-D warnings)
-      run: RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items --locked
+    # Cargo target + registry cache. Restored here so nextest reuses the
+    # artifacts lint.yml built (same stable 1.98.0 + Cargo.lock, so the
+    # cache keys match). The sanitizer/Miri stages below are uncached:
+    # -Z build-std cold-builds std every run anyway.
+    - uses: Swatinem/rust-cache@v2
 
     - name: nextest
       run: cargo nextest run --all --locked
+
+    # nextest doesn't run doc-tests, and the sanitizer stages below skip
+    # them (rust-lang/rust#146465: rustdoc doesn't pass -Zsanitizer to
+    # doctest rustc invocations, so doctests can't link against the
+    # build-std-instrumented std) — this step is where doc-tests run.
+    - name: doc tests
+      run: cargo test --doc --all --locked
 
     - name: file-size audit (non-blocking)
       run: scripts/check-file-lengths.sh
@@ -158,18 +165,6 @@ jobs:
     - name: record toolchain
       run: nix develop -c bash -c 'rustup show; rustc --version; cargo --version; rustc +nightly --version'
 
-    - name: fmt
-      run: nix develop -c cargo fmt --all -- --check
-
-    - name: clippy
-      run: nix develop -c cargo clippy --all-targets --all-features -- -D warnings
-
-    - name: build (-D warnings)
-      run: nix develop -c bash -c 'RUSTFLAGS="-D warnings" cargo build --all-targets --locked'
-
-    - name: doc (-D warnings)
-      run: nix develop -c bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items --locked'
-
     - name: nextest
       run: nix develop -c cargo nextest run --all --locked
 
@@ -226,17 +221,10 @@ jobs:
       with:
         tool: cargo-nextest
 
+    - uses: Swatinem/rust-cache@v2
+
     - name: record toolchain
       run: rustup show && rustc --version && cargo --version
-
-    - name: fmt
-      run: cargo fmt --all -- --check
-
-    - name: clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-
-    - name: build (-D warnings)
-      run: RUSTFLAGS="-D warnings" cargo build --all-targets --locked
 
     - name: nextest
       env:

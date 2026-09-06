@@ -1,0 +1,132 @@
+name: lint
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'crates/**'
+      - '.github/workflows/lint.yml'
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'crates/**'
+      - '.github/workflows/lint.yml'
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+# Static-quality gate (AGENTS.md "Build flags"): fmt/clippy/build/doc all
+# under -D warnings. Path-filtered to Rust-only changes so docs/frontend
+# commits skip it, mirroring Kopuz's lint.yml. Runs on all three
+# documented toolchain paths — the debian:trixie container (plain rustup),
+# nix develop, and macOS — so each one proves it compiles clean. The
+# dynamic gate (tests, sanitizers, Miri, audit/deny, frontend) lives in
+# ci.yml, which runs unconditionally.
+
+jobs:
+  rust-lint-debian:
+    runs-on: ubuntu-latest
+    container: debian:trixie-slim
+
+    steps:
+    # git must exist before checkout (actions/checkout runs inside the
+    # container), and the workspace mount is owned by the host runner UID
+    # — every later git invocation fails with "detected dubious ownership"
+    # unless the path is marked safe.
+    - name: install base deps
+      run: |
+        apt-get update
+        apt-get install -y --no-install-recommends git ca-certificates curl build-essential pkg-config python3
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+    - uses: actions/checkout@v4
+
+    # Stable 1.98.0 + components must be explicit: dtolnay/rust-toolchain
+    # no longer auto-reads rust-toolchain.toml and fails on an empty
+    # `toolchain` input.
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: 1.98.0
+        components: clippy, rustfmt, rust-src, llvm-tools-preview
+
+    # Cargo target + registry cache; the artifacts built here are reused
+    # by ci.yml's nextest (same toolchain + Cargo.lock, so the keys match).
+    - uses: Swatinem/rust-cache@v2
+
+    - name: record toolchain
+      run: rustup show && rustc --version && cargo --version
+
+    - name: fmt
+      run: cargo fmt --all -- --check
+
+    - name: clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: build (-D warnings)
+      run: RUSTFLAGS="-D warnings" cargo build --all-targets --locked
+
+    - name: doc (-D warnings)
+      run: RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items --locked
+
+  rust-lint-nix:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: DeterminateSystems/nix-installer-action@v16
+    - uses: DeterminateSystems/magic-nix-cache-action@v9
+
+    # No Swatinem/rust-cache here: cargo isn't on the runner PATH outside
+    # nix develop, so the action can't compute its cache key; this job
+    # relies on magic-nix-cache (nix store) for the toolchain instead.
+    - name: record toolchain
+      run: nix develop -c bash -c 'rustup show; rustc --version; cargo --version'
+
+    - name: fmt
+      run: nix develop -c cargo fmt --all -- --check
+
+    - name: clippy
+      run: nix develop -c cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: build (-D warnings)
+      run: nix develop -c bash -c 'RUSTFLAGS="-D warnings" cargo build --all-targets --locked'
+
+    - name: doc (-D warnings)
+      run: nix develop -c bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --document-private-items --locked'
+
+  rust-lint-macos:
+    runs-on: macos-15
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@master # explicit; see rust-lint-debian for why
+      with:
+        toolchain: 1.98.0
+        components: clippy, rustfmt, rust-src, llvm-tools-preview
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: record toolchain
+      run: rustup show && rustc --version && cargo --version
+
+    - name: fmt
+      run: cargo fmt --all -- --check
+
+    - name: clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: build (-D warnings)
+      run: RUSTFLAGS="-D warnings" cargo build --all-targets --locked

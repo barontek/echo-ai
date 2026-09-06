@@ -13,3 +13,4 @@
 # Local config (holds API keys — mirror of the C project's gitignored
 # config.conf).
 /config.toml
+.vscode

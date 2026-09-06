@@ -107,18 +107,20 @@ jobs:
       run: cargo deny --locked check
 
     # One stage per sanitizer; -Z build-std needs the rust-src component.
+    # --all-targets runs all targets while skipping doctests (which fail
+    # under -Zsanitizer per rust-lang/rust#146465; tested in 'doc tests').
     - name: test under ASan
       run: |
         set -euo pipefail
         export RUSTFLAGS="-Z sanitizer=address -D warnings"
         export ASAN_OPTIONS=detect_leaks=0
-        cargo +nightly-2026-08-25 test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
+        cargo +nightly-2026-08-25 test -Z build-std --target x86_64-unknown-linux-gnu --all --all-targets --locked
 
     - name: test under TSan
       run: |
         set -euo pipefail
         export RUSTFLAGS="-Z sanitizer=thread -D warnings"
-        cargo +nightly-2026-08-25 test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
+        cargo +nightly-2026-08-25 test -Z build-std --target x86_64-unknown-linux-gnu --all --all-targets --locked
 
     - name: miri setup (build sysroot)
       run: cargo +nightly-2026-08-25 miri setup
@@ -191,7 +193,7 @@ jobs:
           set -euo pipefail
           export RUSTFLAGS="-Z sanitizer=address -D warnings"
           export ASAN_OPTIONS=detect_leaks=0
-          cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
+          cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all --all-targets --locked
         '
 
     - name: test under TSan
@@ -199,7 +201,7 @@ jobs:
         nix develop -c bash -c '
           set -euo pipefail
           export RUSTFLAGS="-Z sanitizer=thread -D warnings"
-          cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all --locked
+          cargo +nightly test -Z build-std --target x86_64-unknown-linux-gnu --all --all-targets --locked
         '
 
     - name: miri test (echo-ai-core)

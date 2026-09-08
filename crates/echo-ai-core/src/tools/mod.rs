@@ -10,6 +10,7 @@
 //! Depends on: crate `config`, `error`, `safety`, `session`,
 //! `change_tracker`, `llm::http`, `tokio`.
 
+pub mod delegate;
 pub mod fs;
 pub mod git;
 pub mod knowledge;

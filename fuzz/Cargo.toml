@@ -1,0 +1,38 @@
+[package]
+name = "echo-ai-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+echo-ai-core = { path = "../crates/echo-ai-core" }
+
+# Use independent workspace for fuzzers
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "session_deserialize"
+path = "fuzz_targets/session_deserialize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fernet_token"
+path = "fuzz_targets/fernet_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html_extract"
+path = "fuzz_targets/html_extract.rs"
+test = false
+doc = false
+bench = false

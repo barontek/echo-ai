@@ -106,8 +106,8 @@ Notes:
 
 ## Follow-ups (not part of the phase gates)
 
-- [ ] P1G fuzz targets: `session_deserialize`, `fernet_token`, `html_extract` (`cargo fuzz` harnesses; parsers unit-tested).
-- [ ] Browser e2e test against a real Chromium (CI runner needs the binary).
-- [ ] Cross-version vault read test against data produced by the C binary.
-- [ ] `delegate` tool (needs a sub-agent loop over `Agent`).
+- [x] P1G fuzz targets: `session_deserialize`, `fernet_token`, `html_extract` (`cargo fuzz` harnesses verified with libFuzzer).
+- [x] Browser e2e test against a real Chromium (with automatic binary discovery and graceful skip).
+- [x] Cross-version vault read test against data produced by the C binary (`tests/db_crypto.rs`).
+- [x] `delegate` tool (sub-agent task execution via LLM provider).
 - [ ] OpenCode OAuth device-flow client (frontend-side).

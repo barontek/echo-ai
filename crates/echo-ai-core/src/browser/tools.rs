@@ -689,4 +689,28 @@ mod tests {
             manager.close().await;
         });
     }
+
+    #[tokio::test]
+    async fn e2e_browser_nav_and_eval_if_available() {
+        let binary = std::env::var("ECHO_AI_BROWSER")
+            .or_else(|_| std::env::var("CHROME_BIN"))
+            .unwrap_or_else(|_| String::from("chromium"));
+
+        let found = std::env::var_os("PATH").is_some_and(|paths| {
+            std::env::split_paths(&paths).any(|dir| dir.join(&binary).is_file())
+        });
+        if !found {
+            return;
+        }
+
+        let manager = BrowserManager::new();
+        let browser = manager.get().await.expect("launch");
+        browser
+            .navigate("about:blank", Duration::from_secs(10))
+            .await
+            .expect("navigate");
+        let res = browser.evaluate("1 + 1").await.expect("eval");
+        assert_eq!(res.get("value"), Some(&json!(2)));
+        manager.close().await;
+    }
 }

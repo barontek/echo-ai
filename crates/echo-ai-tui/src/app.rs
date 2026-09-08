@@ -53,13 +53,18 @@ pub fn build_agent(config: &Config) -> Result<Arc<Agent>, echo_ai_core::error::E
     let http: Arc<dyn HttpClient> = Arc::new(ReqwestClient::new());
     let index = Arc::new(SemanticIndex::new());
     let search = SearchProvider::from_config(config).map(Arc::new);
-    let registry = Arc::new(Registry::build(
+    let mut registry = Registry::build(
         config,
         search,
         index,
         Arc::new(echo_ai_core::browser::BrowserManager::new()),
-    ));
+    );
     let provider = echo_ai_core::llm::factory::create_provider(config, Some(http.clone()), None)?;
+    registry.register(Arc::new(echo_ai_core::tools::delegate::Delegate::new(
+        provider.clone(),
+        config.agent.model.clone(),
+    )));
+    let registry = Arc::new(registry);
     Ok(Arc::new(Agent {
         provider,
         registry,

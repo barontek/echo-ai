@@ -134,6 +134,11 @@ impl Registry {
         registry
     }
 
+    /// Registers an additional tool into the registry.
+    pub fn register(&mut self, tool: Arc<dyn Tool>) {
+        self.tools.insert(String::from(tool.name()), tool);
+    }
+
     /// Looks up a tool by name.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {

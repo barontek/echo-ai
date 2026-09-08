@@ -92,6 +92,22 @@ pub const MIGRATION_MARKER: &str = ".changing_pwd";
 pub const DB_FILE: &str = "echo-ai.db";
 
 impl EncryptionKey {
+    #[inline]
+    fn scrypt_log_n() -> u8 {
+        #[cfg(test)]
+        {
+            SCRYPT_LOG_N
+        }
+        #[cfg(not(test))]
+        {
+            if std::env::var_os("ECHO_AI_TEST_FAST_SCRYPT").is_some() {
+                10
+            } else {
+                SCRYPT_LOG_N
+            }
+        }
+    }
+
     /// Derives the key from a password, salt, and pepper.
     ///
     /// # Errors
@@ -106,7 +122,7 @@ impl EncryptionKey {
                 "pepper must be at most 64 bytes",
             )));
         }
-        let params = ScryptParams::new(SCRYPT_LOG_N, SCRYPT_R, SCRYPT_P, 32)
+        let params = ScryptParams::new(Self::scrypt_log_n(), SCRYPT_R, SCRYPT_P, 32)
             .map_err(|e| Error::Crypto(format!("invalid scrypt params: {e}")))?;
         let mut combined = Vec::with_capacity(salt.len() + pepper.len());
         combined.extend_from_slice(salt);

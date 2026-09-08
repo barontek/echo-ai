@@ -110,12 +110,7 @@ impl AppState {
         let index = Arc::new(SemanticIndex::new());
         let search = SearchProvider::from_config(&config).map(Arc::new);
         let browser = Arc::new(echo_ai_core::browser::BrowserManager::new());
-        let registry = Arc::new(Registry::build(
-            &config,
-            search,
-            index.clone(),
-            Arc::clone(&browser),
-        ));
+        let mut registry = Registry::build(&config, search, index.clone(), Arc::clone(&browser));
         let tracker = Arc::new(Mutex::new(ChangeTracker::new()));
 
         let session_slot: Arc<Mutex<Option<Arc<SessionManager>>>> = Arc::new(Mutex::new(session));
@@ -126,6 +121,11 @@ impl AppState {
             .as_ref()
             .and_then(|sm| sm.oauth_get("openai").ok().flatten());
         let provider = factory::create_provider(&config, Some(http.clone()), codex_token)?;
+        registry.register(Arc::new(echo_ai_core::tools::delegate::Delegate::new(
+            provider.clone(),
+            config.agent.model.clone(),
+        )));
+        let registry = Arc::new(registry);
 
         let agent_config = AgentConfig::from(&config);
         let agent = Arc::new(Agent {

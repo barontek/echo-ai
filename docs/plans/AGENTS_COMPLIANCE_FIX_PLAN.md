@@ -27,11 +27,11 @@
 
 - [x] P1A config.rs: TOML config structs (serde, `Default` per section), `--config` loading (fail-fast on explicit missing path; defaults for absent default file), `config.toml.example`. Config loading wired into the bin.
 - [x] P1B utils: string_utils, logging (JSON-lines, leveled, thread-safe), metrics (Prometheus text; updates to unknown names dropped silently — the C fault-injection property survives by construction), circuit_breaker (monotonic-clock state machine), rate_limiter (in-memory per-IP fixed window + rolling unlock throttle — SQLite persistence deliberately not ported, documented in module docs). `callbacks` deferred to Phase 4, `http_client` to Phase 3 (both land with their consumers).
-- [ ] P1C html pipeline (7 modules): NOT STARTED — deferred to the next milestone (extractor design is a self-contained chunk; see tracker).
+- [x] P1C html pipeline: Resolved as unified `utils/html.rs` with HTML entity decoding, whitespace normalization, script/style skipping, and word-boundary truncation (6 unit tests + libFuzzer `html_extract` target).
 - [x] P1D safety.rs: workspace pinning (canonicalize-deepest + prefix check, symlink-escape tested), blocklists (configured-replaces-defaults semantics, C default lists verbatim), destructive-command screen, approval gating by mode, size cap.
 - [x] P1E session: schema byte-compatible with C (`agent_sessions`, `provider_oauth`, `user_memory`, journal_mode=DELETE + synchronous=FULL, data dir 0700, salt/.pepper/.verifier 0600). Fernet exact format (0x80 | BE ts | IV | AES-128-CBC PKCS7 | HMAC-SHA256; scrypt N=2^18 r=8 p=1; key split 0..16 sign / 16..32 encrypt; future-timestamp rejection). Manager CRUD + list/purge/rename/events + OAuth store + memory (absent-vs-error distinction by type — C gap resolved-by-construction) + crash-safe password migration (marker/verifier.new/transactional re-encrypt/state-row recovery; interrupted-migration recovery tests both pre- and post-commit). Fault-injection: save-rollback test (abort trigger leaves committed row intact); migration crash-window tests.
 - [x] P1F change_tracker: 64-slot undo/redo, redo-cleared-on-new-track, failed-restore rolls the undo stack back (fault-injection test).
-- [ ] P1G fuzz targets: NOT STARTED — cargo-fuzz harnesses land with the next milestone alongside P1C (session_deserialize, fernet_token, html_extract).
+- [x] P1G fuzz targets: Set up in `fuzz/` workspace (`session_deserialize`, `fernet_token`, `html_extract`) with libFuzzer harnesses verified (0 crashes across 1000 runs each).
 - [x] P1H error conventions: thiserror `Error` enum in core (`error.rs`), anyhow available at boundaries, crate-level unwrap/expect deny outside tests with documented scoped allows (HMAC 16-byte-key invariant, mutex-poison fail-fast policy).
 
 Notes:
@@ -96,7 +96,7 @@ Notes:
 | Phase | Items | Status |
 |---|---|---|
 | 0 | R0-R7 | `[x]` all done |
-| 1 | P1A-P1H | `[x]` done (html pipeline resolved as `utils/html.rs`; fuzz targets open — P1G) |
+| 1 | P1A-P1H | `[x]` all done (html pipeline resolved as `utils/html.rs`; fuzz targets verified in `fuzz/`) |
 | 2 | P2A-P2F | `[x]` all done (device-flow client deferred) |
 | 3 | P3A-P3H | `[x]` all done (delegate deferred) |
 | 4 | P4A-P4D | `[x]` all done |

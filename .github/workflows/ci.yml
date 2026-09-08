@@ -129,13 +129,13 @@ jobs:
       # -Zmiri-disable-isolation: tests read the wall clock (message
       # timestamps, Fernet freshness); Miri's default isolation blocks
       # clock_gettime(REALTIME).
-      # --skip: rusqlite is bundled C FFI and subprocess tests need
-      # real pipes/socketpairs — neither is Miri-interpretable; the
-      # session store and process runner are covered by the sanitizer
-      # stages instead.
+      # --lib: only test in-memory library unit tests; rusqlite is bundled
+      # C FFI and subprocess tests need real pipes/socketpairs — neither
+      # is Miri-interpretable; the session store and process runner are
+      # covered by the sanitizer stages instead.
       # Quoted: plain YAML scalars cannot contain ": " (the --skip
       # values end in "::").
-      run: 'MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly-2026-08-25 miri test -p echo-ai-core --all-features --locked -- --skip session:: --skip tools::git:: --skip tools::shell:: --skip tools::process::'
+      run: 'MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly-2026-08-25 miri test -p echo-ai-core --lib --all-features --locked -- --skip session:: --skip tools::git:: --skip tools::shell:: --skip tools::process::'
 
     - name: setup node (frontend)
       # The vendored React frontend: install, typecheck, build dist
@@ -207,7 +207,7 @@ jobs:
     - name: miri test (echo-ai-core)
       # Same --skip rationale as backend-debian; quoted for the same
       # plain-scalar ": " reason.
-      run: "nix develop -c bash -c 'MIRIFLAGS=\"-Zmiri-disable-isolation\" cargo +nightly miri test -p echo-ai-core --all-features --locked -- --skip session:: --skip tools::git:: --skip tools::shell:: --skip tools::process::'"
+      run: "nix develop -c bash -c 'MIRIFLAGS=\"-Zmiri-disable-isolation\" cargo +nightly miri test -p echo-ai-core --lib --all-features --locked -- --skip session:: --skip tools::git:: --skip tools::shell:: --skip tools::process::'"
 
     - name: frontend build + typecheck
       # nodejs_22 is part of the dev shell, so the frontend builds inside

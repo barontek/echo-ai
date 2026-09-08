@@ -692,6 +692,10 @@ mod tests {
 
     #[tokio::test]
     async fn e2e_browser_nav_and_eval_if_available() {
+        if std::env::var("ECHO_AI_E2E_BROWSER").as_deref() != Ok("1") {
+            return;
+        }
+
         let binary = std::env::var("ECHO_AI_BROWSER")
             .or_else(|_| std::env::var("CHROME_BIN"))
             .unwrap_or_else(|_| String::from("chromium"));

@@ -26,6 +26,9 @@ pub fn parse_key(s: &str) -> Key {
             .map_or_else(|| Key::Named(String::from("none")), Key::Char);
     }
     let lower = s.to_ascii_lowercase();
+    if lower == "ctrl+space" || lower == "ctrl+@" {
+        return Key::Char('\0');
+    }
     if lower.starts_with("ctrl+") {
         return lower
             .strip_prefix("ctrl+")

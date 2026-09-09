@@ -108,7 +108,22 @@ async fn run_loop(
     agent: Arc<Agent>,
 ) -> std::io::Result<()> {
     let (agent_tx, agent_rx) = mpsc::channel::<AgentEvent>(128);
-    let (_, mut ui_rx) = mpsc::channel::<UiEvent>(128);
+    let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(128);
+
+    // Dedicated key reader thread: avoids the race condition where multiple
+    // `spawn_blocking(event::read)` tasks compete on stdin during loop ticks.
+    let key_tx = ui_tx.clone();
+    let _key_thread = std::thread::Builder::new()
+        .name(String::from("tui-input"))
+        .spawn(move || {
+            while let Ok(evt) = event::read() {
+                if let Event::Key(k) = evt
+                    && key_tx.blocking_send(UiEvent::Key(k)).is_err()
+                {
+                    break;
+                }
+            }
+        });
 
     // Keymap with defaults (mirroring the C TUI's bindings).
     let mut keymap = Keymap::new();
@@ -131,8 +146,13 @@ async fn run_loop(
     // Optional session store (persistence).
     let mut session_mgr: Option<Arc<SessionManager>> = None;
     if config.session.enabled {
-        let home = std::env::var("HOME").unwrap_or_else(|_| String::from("."));
-        let dir = std::path::PathBuf::from(home).join(".config/echo-ai");
+        let dir = std::env::var("ECHO_AI_DATA_DIR").map_or_else(
+            |_| {
+                let home = std::env::var("HOME").unwrap_or_else(|_| String::from("."));
+                std::path::PathBuf::from(home).join(".config/echo-ai")
+            },
+            std::path::PathBuf::from,
+        );
         // A wrong/missing password is reported, not fatal — chat still
         // works, persistence is just off.
         match SessionManager::open(&dir, &std::env::var("ECHO_AI_PASSWORD").unwrap_or_default()) {
@@ -147,16 +167,11 @@ async fn run_loop(
             render_frame(f, &chat, &input, dialog.as_ref(), &status, &title, running);
         })?;
 
-        // Wait for the next event: keyboard (crossterm's blocking read runs
-        // on a worker thread), agent (streaming), or a 200ms tick for
-        // cursor blink.
+        // Wait for the next event: keyboard (from dedicated reader),
+        // agent (streaming), or a 200ms tick for cursor blink.
         let ui_event = tokio::select! {
             e = ui_rx.recv() => e,
             e = agent_rx.recv() => e.map(UiEvent::Agent),
-            e = tokio::task::spawn_blocking(event::read) => match e {
-                Ok(Ok(Event::Key(k))) => Some(UiEvent::Key(k)),
-                _ => Some(UiEvent::Tick),
-            },
             () = tokio::time::sleep(Duration::from_millis(200)) => Some(UiEvent::Tick),
         };
 
@@ -276,7 +291,14 @@ async fn run_loop(
 fn to_model_key(key: &KeyEvent) -> keys::Key {
     match key.code {
         KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            keys::Key::Char(((c.to_ascii_lowercase() as u8) - b'a' + 1) as char)
+            let lower = c.to_ascii_lowercase();
+            if lower.is_ascii_lowercase() {
+                keys::Key::Char(((lower as u8) - b'a' + 1) as char)
+            } else if c == ' ' || c == '@' || c == '\0' {
+                keys::Key::Char('\0')
+            } else {
+                keys::Key::Char(c)
+            }
         }
         KeyCode::Char(c) => keys::Key::Char(c),
         KeyCode::Enter => keys::Key::Named(String::from("enter")),

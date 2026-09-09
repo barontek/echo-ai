@@ -71,9 +71,21 @@ pub(super) async fn public_config(State(state): State<Arc<AppState>>) -> Json<Va
     }))
 }
 
-/// `GET /api/models`: live model list for the configured provider.
-pub(super) async fn models(State(state): State<Arc<AppState>>) -> Json<Value> {
-    let provider = state.config.agent.provider.clone();
+/// Query parameters for `GET /api/models`.
+#[derive(serde::Deserialize, Default)]
+pub(super) struct ModelsQuery {
+    /// Optional provider catalog name to list models for (e.g. `ollama`, `opencode_zen`).
+    pub(super) provider: Option<String>,
+}
+
+/// `GET /api/models`: live model list for the configured or requested provider.
+pub(super) async fn models(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ModelsQuery>,
+) -> Json<Value> {
+    let provider = query
+        .provider
+        .unwrap_or_else(|| state.config.agent.provider.clone());
     let base_url = echo_ai_core::llm::factory::models_base_url(&state.config, &provider);
     let token = state
         .config

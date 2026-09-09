@@ -36,6 +36,9 @@ all = "warn"
 pedantic = "warn"
 cargo = "warn"
 
+[profile.dev.package.scrypt]
+opt-level = 3
+
 [profile.release]
 # Kept on in release builds per AGENTS.md "Build flags": overflow-checks
 # turns signed overflow into a panic instead of silent wraparound, and

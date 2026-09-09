@@ -144,31 +144,64 @@ pub async fn ws_chat(
     headers: HeaderMap,
     Query(query): Query<Value>,
 ) -> Response {
-    // Token comes from the `Sec-WebSocket-Protocol` subprotocol value
-    // (browsers can't set headers), or the `X-Unlock-Token` header.
-    let token = headers
-        .get("X-Unlock-Token")
+    // Token comes from:
+    // 1. `Sec-WebSocket-Protocol` subprotocol: `echo-ai-token-<token>` prefix,
+    //    or a direct token element.
+    // 2. `X-Unlock-Token` header.
+    // 3. `token` query parameter.
+    let mut selected_proto = None;
+    let mut token = None;
+
+    if let Some(proto_hdr) = headers
+        .get("sec-websocket-protocol")
         .and_then(|v| v.to_str().ok())
-        .map(String::from)
-        .or_else(|| {
-            headers
-                .get("sec-websocket-protocol")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.split(',').next())
-                .map(|v| v.trim().to_string())
-        });
-    let Some(token) = token.filter(|t| state.validate_token(t)) else {
+    {
+        for proto in proto_hdr.split(',') {
+            let trimmed = proto.trim();
+            if trimmed == "echo-ai" {
+                selected_proto = Some("echo-ai");
+                continue;
+            }
+            let candidate = trimmed.strip_prefix("echo-ai-token-").unwrap_or(trimmed);
+            if state.validate_token(candidate) {
+                token = Some(String::from(candidate));
+                break;
+            }
+        }
+    }
+
+    if token.is_none() {
+        token = headers
+            .get("X-Unlock-Token")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from)
+            .filter(|t| state.validate_token(t))
+            .or_else(|| {
+                query
+                    .get("token")
+                    .and_then(Value::as_str)
+                    .map(String::from)
+                    .filter(|t| state.validate_token(t))
+            });
+    }
+
+    if token.is_none() {
         return Response::builder()
             .status(401)
             .body(axum::body::Body::from("invalid unlock token"))
             .expect("response build");
-    };
-    let _ = token;
+    }
+
     let session_id = query
         .get("session_id")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+
+    let mut ws = ws;
+    if let Some(proto) = selected_proto {
+        ws = ws.protocols([proto]);
+    }
 
     ws.on_upgrade(move |socket| handle_socket(state, socket, session_id))
 }

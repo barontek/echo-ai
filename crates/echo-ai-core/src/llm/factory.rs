@@ -187,7 +187,7 @@ pub async fn list_models(
         "ollama" => {
             let url = format!("{base}/api/tags");
             let json = http
-                .post_json(&url, &[], serde_json::json!({}))
+                .get_json(&url, &[])
                 .await
                 .map_err(|e| Error::Session(e.to_string()))?;
             let mut models = Vec::new();
@@ -226,6 +226,8 @@ pub async fn list_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::provider::LlmError;
+    use serde_json::Value;
 
     fn cfg_with(provider: &str) -> Config {
         let mut cfg = Config::default();
@@ -313,5 +315,51 @@ mod tests {
             models_base_url(&cfg, "openai"),
             cfg.openai_compatible.base_url
         );
+    }
+
+    struct MockOllamaHttp;
+    impl HttpClient for MockOllamaHttp {
+        fn post_json(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: Value,
+        ) -> futures_util::future::BoxFuture<'_, Result<Value, LlmError>> {
+            Box::pin(async { panic!("unexpected POST to ollama tags") })
+        }
+        fn get_json(
+            &self,
+            url: &str,
+            _headers: &[(&str, &str)],
+        ) -> futures_util::future::BoxFuture<'_, Result<Value, LlmError>> {
+            let url = url.to_string();
+            Box::pin(async move {
+                assert!(url.ends_with("/api/tags"));
+                Ok(serde_json::json!({
+                    "models": [
+                        { "name": "qwen3:4b-instruct" },
+                        { "name": "lfm2.5:8b" }
+                    ]
+                }))
+            })
+        }
+        fn post_stream(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: Value,
+        ) -> futures_util::future::BoxFuture<'_, Result<super::super::http::LineStream, LlmError>>
+        {
+            Box::pin(async { panic!("unexpected stream call") })
+        }
+    }
+
+    #[tokio::test]
+    async fn list_models_ollama_uses_get_tags() {
+        let http = MockOllamaHttp;
+        let models = list_models("ollama", "http://localhost:11434", None, &http)
+            .await
+            .expect("list models");
+        assert_eq!(models, vec!["qwen3:4b-instruct", "lfm2.5:8b"]);
     }
 }
